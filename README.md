@@ -66,7 +66,7 @@ Continuous file synchronization, team accounts, permissions, and cloud storage a
 
 **Receive files**
 
-1. In `파일 가져오기` (Receive files), select an `.envhandoff` file, or open a connection link you received.
+1. Select `공유 파일 열기` (Open a shared file) on the home page and choose an `.envhandoff` file, or open a connection link you received.
 2. Enter the shared code. Once authentication succeeds, review the file list and shared paths.
 3. Download the original files you need and place them in your project using the shared paths as a guide. File contents appear only when you select `내용 보기` (View contents).
 
@@ -128,7 +128,7 @@ The root and all workspace packages start at version `0.0.1`. This is separate f
 
 ## Validation and deployment status
 
-The [current web 0.0.1 interface](docs/images/web-home.png) supports light and dark themes and mobile widths. The new home page and desktop app are planned work.
+Web 0.0.1 connects the introduction home directly to working send and receive screens, with light and dark themes and responsive layouts. The desktop app is planned work.
 
 `pnpm check` covers encryption round trips, public test vectors, incorrect codes, tampering, truncation, size and path limits, relay approval, role tokens, recipient limits, acknowledgements, cancellation, and prevention of link reuse. Relay tests start and stop a real workerd process with a separate port and temporary storage.
 

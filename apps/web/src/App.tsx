@@ -1,15 +1,13 @@
 import { useEffect, useState } from 'react'
 import {
-  ArrowDownToLine,
-  ArrowRight,
   ArrowRightLeft,
-  ArrowUpFromLine,
+  ArrowUpRight,
   Home,
-  LockKeyhole,
   Moon,
   Sun,
 } from 'lucide-react'
 import { version } from '../package.json'
+import { LandingHome } from './components/LandingHome.tsx'
 import { SendFlow } from './components/SendFlow.tsx'
 import { ReceiveFlow } from './components/ReceiveFlow.tsx'
 import { readInvitation } from './lib/relay.ts'
@@ -41,26 +39,39 @@ export default function App() {
   useEffect(() => {
     document.documentElement.dataset.theme = dark ? 'dark' : 'light'
   }, [dark])
-  const home = () => {
-    setRoute({ view: 'home' })
+  const navigate = (view: 'home' | 'send' | 'receive') => {
+    setRoute({ view })
     window.scrollTo({ top: 0 })
   }
+  const home = () => navigate('home')
 
   return (
     <div className="page-wrap">
       <div className="app-window">
         <header className="appbar">
-          <div className="brand">
+          <button type="button" className="brand" onClick={home} aria-label="EnvHandoff 소개 홈">
             <span className="brand-mark">
               <ArrowRightLeft aria-hidden="true" />
             </span>
             EnvHandoff
-          </div>
+          </button>
           <div className="header-actions">
-            {route.view !== 'home' && (
+            {route.view === 'home' ? (
+              <button
+                type="button"
+                className="text-button"
+                onClick={() => {
+                  const heading = document.getElementById('how-it-works')
+                  heading?.focus({ preventScroll: true })
+                  heading?.scrollIntoView({ block: 'start' })
+                }}
+              >
+                사용 방법
+              </button>
+            ) : (
               <button type="button" className="text-button" onClick={home}>
                 <Home aria-hidden="true" />
-                <span>시작 화면</span>
+                <span>소개로 돌아가기</span>
               </button>
             )}
             <button
@@ -73,58 +84,38 @@ export default function App() {
             </button>
           </div>
         </header>
-        <main className="app-inner">
-          {route.view === 'home' && (
-            <div className="start">
-              <div className="intro-mark">
-                <ArrowRightLeft aria-hidden="true" />
-              </div>
-              <h1>설정 파일, 안전하게 건네기</h1>
-              <p className="lead">
-                Git에 없는 개발 설정을
-                <br className="mobile-break" /> 함께 일하는 사람에게 전달하세요.
-              </p>
-              <div className="choices">
-                <button className="choice" type="button" onClick={() => setRoute({ view: 'send' })}>
-                  <span className="choice-icon">
-                    <ArrowUpFromLine aria-hidden="true" />
-                  </span>
-                  <strong>파일 보내기</strong>
-                  <ArrowRight aria-hidden="true" />
-                  <span className="choice-description">
-                    필요한 파일만 골라
-                    <br /> 암호화해서 전달해요.
-                  </span>
-                </button>
-                <button className="choice" type="button" onClick={() => setRoute({ view: 'receive' })}>
-                  <span className="choice-icon">
-                    <ArrowDownToLine aria-hidden="true" />
-                  </span>
-                  <strong>파일 가져오기</strong>
-                  <ArrowRight aria-hidden="true" />
-                  <span className="choice-description">
-                    공유 파일과 코드로 열고
-                    <br /> 원본 파일을 다운로드해요.
-                  </span>
-                </button>
-              </div>
-              <p className="start-note">
-                <LockKeyhole aria-hidden="true" />
-                파일은 이 브라우저에서 암호화돼요.
-              </p>
+        <main className={route.view === 'home' ? 'landing-main' : 'work-area'}>
+          {route.view === 'home' ? (
+            <LandingHome onSend={() => navigate('send')} onReceive={() => navigate('receive')} />
+          ) : (
+            <div className="work-card">
+              {route.view === 'send' && <SendFlow onHome={home} />}
+              {route.view === 'receive' && (
+                <ReceiveFlow key={arrival} invitation={route.invitation} invalid={route.invalid} onHome={home} />
+              )}
             </div>
-          )}
-          {route.view === 'send' && <SendFlow onHome={home} />}
-          {route.view === 'receive' && (
-            <ReceiveFlow key={arrival} invitation={route.invitation} invalid={route.invalid} onHome={home} />
           )}
         </main>
         <footer className="app-footer">
           <span>아는 사람끼리, 필요한 파일만.</span>
-          <span>v{version}</span>
+          <div className="footer-links">
+            <span>v{version}</span>
+            <a
+              className="text-button repository-link"
+              href="https://github.com/mabyko/EnvHandoff"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="GitHub 저장소 (새 탭)"
+            >
+              GitHub
+              <ArrowUpRight aria-hidden="true" />
+            </a>
+          </div>
         </footer>
       </div>
-      <p className="page-note">새로고침하거나 탭을 닫으면 진행 중인 작업이 지워져요.</p>
+      {route.view !== 'home' && (
+        <p className="page-note">새로고침하거나 탭을 닫으면 진행 중인 작업이 지워져요.</p>
+      )}
     </div>
   )
 }
