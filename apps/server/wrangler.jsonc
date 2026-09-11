@@ -4,10 +4,17 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-09-11",
   "workers_dev": false,
+  "routes": [{ "pattern": "envhandoff.mabyko.com", "custom_domain": true }],
   "preview_urls": false,
   "send_metrics": false,
   "vars": {
-    "WEB_ORIGINS": "http://localhost:5173,http://127.0.0.1:5173"
+    // ponytail: localhost entries stay so `wrangler dev` and tests read this file as-is; move them to `--var` if that ever matters
+    "WEB_ORIGINS": "https://envhandoff.mabyko.com,http://localhost:5173,http://127.0.0.1:5173"
+  },
+  "assets": {
+    "directory": "../web/dist",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
   },
   "durable_objects": {
     "bindings": [
