@@ -53,7 +53,7 @@ The web app lets people exchange files without installation. The planned desktop
 
 The folder selection and application flow is described in the [desktop design](docs/app-design.md).
 
-Continuous file synchronization, team accounts, permissions, and cloud storage are outside the current version. The next steps are deploying the web app and testing across devices and browsers. Desktop and team features follow the [product plan](docs/product-plan.md).
+Continuous file synchronization, team accounts, permissions, and cloud storage are outside the current version. The next steps are deploying the web app and testing across devices and browsers. Desktop and team features follow the [product plan](docs/product-plan.md). The web app is planned through v2.0 and stays free on Cloudflare together with the relay. v3.0 and v4.0 are the paid Pro tier, delivered in the desktop app and backed by a separate Node server.
 
 ## Usage
 
@@ -134,6 +134,6 @@ Web 0.0.1 connects the introduction home directly to working send and receive sc
 
 Browser checks used public dummy files in Aside's Chromium. Original bytes matched after file selection → encrypted download → reopening → original download, and after live transfer between two tabs. Responsive layouts were checked in 320, 375, 560, 700, 800, and 1024px iframes and at desktop size. Long paths and previews caused no horizontal overflow, and both light and dark themes worked.
 
-The app has not been deployed to Cloudflare yet. Deployment must serve the static web app and relay under the same origin, with the relay routed through `/api/*`, and set `WEB_ORIGINS` in `apps/server/wrangler.jsonc` to the actual HTTPS web origin. Web and Worker remain separate build and deployment targets. The configuration uses the free plan and SQLite Durable Objects and does not automatically enable paid usage. Actual Cloudflare limits and failures, two separate devices, Safari, Firefox, and mobile devices still need to be tested before deployment.
+The app has not been deployed to Cloudflare yet. The Worker serves the web build (`apps/web/dist`) as static assets and handles `/api/*` itself, so web and relay share one origin; `apps/server/wrangler.jsonc` sets the custom domain and `WEB_ORIGINS`. The web build runs before `wrangler deploy`. The configuration uses the free plan and SQLite Durable Objects and does not automatically enable paid usage. Actual Cloudflare limits and failures, two separate devices, Safari, Firefox, and mobile devices still need to be tested before deployment.
 
 Further product scope is defined in the [web design](docs/web-design.md), [product plan](docs/product-plan.md), [desktop design](docs/app-design.md), and [shared terminology](CONTEXT.md).

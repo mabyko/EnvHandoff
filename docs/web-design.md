@@ -40,6 +40,7 @@
 apps/
   web/                  웹 화면과 브라우저 파일·암호화 처리
   server/               Cloudflare Workers + Durable Objects relay
+  api/                  예정: v3.0·v4.0 Pro Node 서버 (가칭)
   desktop/              예정: 후속 Tauri 앱과 Rust 코어
 packages/
   protocol/             함께 쓰는 연결 메시지·검증 규칙
