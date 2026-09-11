@@ -1,0 +1,22 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "envhandoff-relay",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-11",
+  "workers_dev": false,
+  "preview_urls": false,
+  "send_metrics": false,
+  "vars": {
+    "WEB_ORIGINS": "http://localhost:5173,http://127.0.0.1:5173"
+  },
+  "durable_objects": {
+    "bindings": [
+      { "name": "RELAY", "class_name": "RelayRoom" },
+      { "name": "REQUEST_LIMITS", "class_name": "RequestLimits" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["RelayRoom", "RequestLimits"] }
+  ],
+  "observability": { "enabled": false }
+}

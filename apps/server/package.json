@@ -1,0 +1,24 @@
+{
+  "name": "@envhandoff/server",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --local --port 8787",
+    "build": "wrangler deploy --dry-run --outdir dist",
+    "lint": "oxlint --deny-warnings src tests",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test tests/*.test.ts"
+  },
+  "dependencies": {
+    "@envhandoff/protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20260911.1",
+    "@types/node": "^24.13.3",
+    "oxlint": "^1.81.0",
+    "typescript": "~6.0.2",
+    "wrangler": "4.131.0",
+    "ws": "8.21.0"
+  }
+}

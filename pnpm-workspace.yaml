@@ -1,0 +1,16 @@
+packages:
+  - apps/*
+  - packages/*
+
+allowBuilds:
+  esbuild: true
+  workerd: true
+
+minimumReleaseAgeExclude:
+  - vite@8.3.0
+  - lucide-react@1.44.0
+  - '@cloudflare/workers-types@5.20260911.1'
+  - miniflare@5.20260910.0-alpha
+  - wrangler@4.131.0
+
+saveExact: true

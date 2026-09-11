@@ -1,0 +1,23 @@
+{
+  "notice": "PUBLIC TEST VECTOR. This fixed key and nonce are test data only. Never reuse them for real files.",
+  "code": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+  "headerHex": "454e5648414e444f46460001000102030405060708090a0b",
+  "payload": {
+    "formatVersion": 1,
+    "bundleId": "00000000-0000-4000-8000-000000000001",
+    "projectLabel": "public-example",
+    "environment": "development",
+    "createdAt": "2026-09-11T00:00:00.000Z",
+    "files": [
+      {
+        "path": ".env",
+        "contentBase64": "IyBQdWJsaWMgdGVzdCBmaXh0dXJlIG9ubHkNCkRFTU9fVkFMVUU9aGVsbG8NCg=="
+      },
+      {
+        "path": "config/example.json",
+        "contentBase64": "eyJleGFtcGxlIjp0cnVlfQo="
+      }
+    ]
+  },
+  "bundleBase64": "RU5WSEFORE9GRgABAAECAwQFBgcICQoLPCCwdLeIo2/bJOX42IYWT7nnqxaSDjEYVAKs4T9TIoIxIJ7Mn/EitUSUT92lsxgI3nRYvWrmjuoPpxopKNPF3sAM91j/81YTcz7PDZvDb4pd5utYVBMmCpGU/eEdiNjgu5Q8xIhjrXTodUzdJhhEEc5FWImHoFP/IZAnoOeIGiyXcGO00ba/NmygPIMH+H7yBMLOBQw8onvYb9hNyuLT3qO5riXZpe5ShQW0lrrzpIHGtehS6t8bnl/97qIfs5XfMS/llHm4uL11N6CDjHX7vsM3gTRsZO27AvDNiiYsyKw5R5fti0FbTWIj4ELZWDto3fHxHtNz4vdRPzJK7copx1mHp8Wkuw9oBL01P/luXTfnlrfh+6nxzgVHT2sol9UlZ2q5Z9+9r3riUF90YObPvbrmeT0m+rty9kVfd+RYc93rr11P8ioUjOSmD0Maq3Er+Wrn5/JC6W4YzEVE8Ow1JP7jOSkkyPxs1WkVymCJdA=="
+}
