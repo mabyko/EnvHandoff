@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowLeft, ArrowRight, Download, File, FilePlus2, LockKeyhole, Radio, Trash2 } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Download, File, FilePlus2, LockKeyhole, Plus, Radio, Trash2 } from 'lucide-react'
 import { createBundle, explainError, LIMITS, validateFiles } from '../lib/bundle.ts'
 import type { SealedBundle, SourceFile } from '../lib/bundle.ts'
 import { downloadFile, formatSize } from '../lib/files.ts'
+import { createEnvFile } from '../lib/env.ts'
 import { CopyField, Heading, Notice, Steps } from './ui.tsx'
 import { LiveSender } from './live.tsx'
 
@@ -17,14 +18,29 @@ export function SendFlow({ onHome }: { onHome: () => void }) {
   const [sealed, setSealed] = useState<SealedBundle | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [dragging, setDragging] = useState(false)
+  const [envRows, setEnvRows] = useState([{ id: 0, key: '', value: '' }])
+  const [envError, setEnvError] = useState('')
+  const [envAdded, setEnvAdded] = useState(false)
+  const envEditor = useRef<HTMLDetailsElement>(null)
   const epoch = useRef(0)
-  const nextId = useRef(0)
-  useEffect(
-    () => () => {
-      epoch.current++
-    },
-    [],
-  )
+  const nextId = useRef(1)
+  useEffect(() => {
+    const operationEpoch = epoch
+    const preventFileNavigation = (event: DragEvent) => {
+      if (!event.dataTransfer?.types.includes('Files')) return
+      event.preventDefault()
+      event.dataTransfer.dropEffect = 'none'
+      if (event.type === 'drop') setDragging(false)
+    }
+    window.addEventListener('dragover', preventFileNavigation)
+    window.addEventListener('drop', preventFileNavigation)
+    return () => {
+      operationEpoch.current++
+      window.removeEventListener('dragover', preventFileNavigation)
+      window.removeEventListener('drop', preventFileNavigation)
+    }
+  }, [])
   const selected = files.filter((file) => file.selected)
   const total = selected.reduce((sum, item) => sum + item.file.size, 0)
   const edit = () => {
@@ -38,19 +54,42 @@ export function SendFlow({ onHome }: { onHome: () => void }) {
     setError('')
     setStep(target)
   }
-  const addFiles = (incoming: FileList | null) => {
-    if (!incoming?.length) return
+  const addFiles = (incoming: FileList | File[] | null) => {
+    if (!incoming?.length) return false
     if (files.length + incoming.length > LIMITS.files) {
       setError('최대 100개까지 추가할 수 있어요.')
-      return
+      return false
     }
     edit()
     setFiles([
       ...files,
       ...Array.from(incoming, (file) => ({ file, path: file.name, id: nextId.current++, selected: true })),
     ])
+    return true
+  }
+  const editEnv = () => {
+    edit()
+    setEnvError('')
+    setEnvAdded(false)
+  }
+  const addEnv = () => {
+    try {
+      const file = createEnvFile(envRows)
+      if (!addFiles([file])) return
+      setEnvRows([{ id: nextId.current++, key: '', value: '' }])
+      setEnvError('')
+      setEnvAdded(true)
+    } catch (reason) {
+      setEnvError(explainError(reason))
+    }
   }
   const check = () => {
+    if (envRows.some(({ key, value }) => key !== '' || value !== '')) {
+      setEnvError('입력한 환경변수를 .env 파일로 추가하거나 입력을 지운 뒤 다음으로 넘어가주세요.')
+      if (envEditor.current) envEditor.current.open = true
+      document.getElementById(`env-key-${envRows[0].id}`)?.focus()
+      return
+    }
     try {
       validateFiles(selected.map(({ path, file }) => ({ path, size: file.size })))
       setError('')
@@ -125,9 +164,31 @@ export function SendFlow({ onHome }: { onHome: () => void }) {
               <p className="help">예: development, staging</p>
             </div>
           </div>
-          <label className={`file-picker ${files.length ? 'compact' : ''}`}>
+          <label
+            className={`file-picker ${files.length ? 'compact' : ''} ${dragging ? 'dragging' : ''}`}
+            onDragOver={(event) => {
+              if (!event.dataTransfer.types.includes('Files')) return
+              event.preventDefault()
+              event.stopPropagation()
+              event.dataTransfer.dropEffect = 'copy'
+              setDragging(true)
+            }}
+            onDragLeave={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false)
+            }}
+            onDrop={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              setDragging(false)
+              if (Array.from(event.dataTransfer.items).some((item) => item.webkitGetAsEntry?.()?.isDirectory)) {
+                setError('폴더 대신 공유할 파일을 선택해서 끌어다 놓아주세요.')
+                return
+              }
+              addFiles(event.dataTransfer.files)
+            }}
+          >
             <FilePlus2 aria-hidden="true" />
-            <strong>{files.length ? '파일 더 추가하기' : '보낼 파일 선택'}</strong>
+            <strong>{dragging ? '여기에 파일을 놓아주세요' : '파일을 끌어다 놓거나 눌러서 선택'}</strong>
             <span>파일당 1 MiB · 전체 10 MiB · 최대 100개</span>
             <input
               type="file"
@@ -139,6 +200,82 @@ export function SendFlow({ onHome }: { onHome: () => void }) {
               }}
             />
           </label>
+          <details className="env-editor" ref={envEditor}>
+            <summary>환경변수 직접 입력</summary>
+            <p className="help" id="env-help">
+              파일이 없어도 키와 값을 입력해 공유할 수 있어요. 값은 따옴표로 감싸지 말고 그대로 입력해주세요.
+            </p>
+            <div className="env-rows">
+              {envRows.map((row, index) => (
+                <div className="env-row" key={row.id}>
+                  <div className="field">
+                    <label htmlFor={`env-key-${row.id}`}>키 <span className="sr-only">{index + 1}</span></label>
+                    <input
+                      id={`env-key-${row.id}`}
+                      className="mono"
+                      value={row.key}
+                      placeholder="API_KEY"
+                      autoComplete="off"
+                      autoCapitalize="none"
+                      spellCheck={false}
+                      onChange={(event) => {
+                        editEnv()
+                        setEnvRows(envRows.map((item) => item.id === row.id ? { ...item, key: event.target.value } : item))
+                      }}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor={`env-value-${row.id}`}>값 <span className="sr-only">{index + 1}</span></label>
+                    <textarea
+                      id={`env-value-${row.id}`}
+                      className="mono"
+                      value={row.value}
+                      rows={2}
+                      placeholder="값 (빈 값도 가능)"
+                      aria-describedby="env-help"
+                      autoComplete="off"
+                      autoCapitalize="none"
+                      spellCheck={false}
+                      onChange={(event) => {
+                        editEnv()
+                        setEnvRows(envRows.map((item) => item.id === row.id ? { ...item, value: event.target.value } : item))
+                      }}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    className="icon-button"
+                    aria-label={`환경변수 ${index + 1} 삭제`}
+                    onClick={() => {
+                      editEnv()
+                      setEnvRows(envRows.length === 1
+                        ? [{ id: row.id, key: '', value: '' }]
+                        : envRows.filter((item) => item.id !== row.id))
+                      const adjacent = envRows[index + 1] ?? envRows[index - 1] ?? row
+                      document.getElementById(`env-key-${adjacent.id}`)?.focus()
+                    }}
+                  >
+                    <Trash2 aria-hidden="true" />
+                  </button>
+                </div>
+              ))}
+            </div>
+            {envError && <Notice error>{envError}</Notice>}
+            <div className="env-actions">
+              <button
+                type="button"
+                className="button"
+                onClick={() => {
+                  editEnv()
+                  setEnvRows([...envRows, { id: nextId.current++, key: '', value: '' }])
+                }}
+              >
+                <Plus aria-hidden="true" />변수 추가
+              </button>
+              <button type="button" className="button" onClick={addEnv}>.env 파일로 추가</button>
+            </div>
+            <p className="help" role="status">{envAdded ? '.env 파일을 아래 목록에 추가했어요. 공유 경로를 확인해주세요.' : ''}</p>
+          </details>
           {files.length > 0 && (
             <section className="file-list" aria-label="보낼 파일 목록">
               <div className="file-list-header">

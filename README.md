@@ -44,7 +44,7 @@ The web app lets people exchange files without installation. The planned desktop
 
 | Capability | Web 0.0.1 — available now | Desktop app — planned |
 |---|---|---|
-| File selection | Browser file picker; review and edit shared paths manually | Choose a project folder; inspect configuration candidates and Git status |
+| File selection | Browser file picker, drag and drop, or individual environment variable entry; review and edit shared paths manually | Choose a project folder; inspect configuration candidates and Git status |
 | Delivery | Encrypted file sharing and live transfer | Exchange with the web app using the same format and relay |
 | Import | Review after authentication and download original files | Choose a destination folder and compare existing files |
 | Apply to a project | Place downloaded files manually | Back up selected files, then add or replace them |
@@ -59,7 +59,7 @@ Continuous file synchronization, team accounts, permissions, and cloud storage a
 
 **Send files**
 
-1. In `파일 보내기` (Send files), select the files, review their shared paths, and enter a project label and environment name.
+1. In `파일 보내기` (Send files), select or drag and drop files into the file area. To enter settings individually, enter key/value rows under `환경변수 직접 입력` (Enter environment variables), use `변수 추가` (Add variable) for more rows or remove unwanted rows, then select `.env 파일로 추가` (Add as an .env file). Review the resulting file list and shared paths, and enter a project label and environment name.
 2. Choose a shared file or live transfer.
 3. For a shared file, download it and send it to the recipient. Share the code through a different conversation channel.
 4. For live transfer, send the connection link, compare the confirmation numbers on both screens in a private conversation, and approve the transfer. Share the code separately.
