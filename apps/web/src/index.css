@@ -50,7 +50,8 @@ body {
   min-width: 280px;
 }
 button,
-input {
+input,
+textarea {
   font: inherit;
   letter-spacing: inherit;
   accent-color: var(--accent);
@@ -68,7 +69,7 @@ button:disabled {
   cursor: default;
   opacity: 0.5;
 }
-:is(button, input, a, pre, summary):focus-visible {
+:is(button, input, textarea, a, pre, summary):focus-visible {
   outline: 3px solid var(--accent);
   outline-offset: 3px;
 }
@@ -555,7 +556,8 @@ pre {
   font-weight: 600;
   margin-bottom: 7px;
 }
-input:not([type='checkbox'], [type='radio'], [type='file']) {
+input:not([type='checkbox'], [type='radio'], [type='file']),
+textarea {
   width: 100%;
   min-width: 0;
   min-height: 44px;
@@ -566,7 +568,8 @@ input:not([type='checkbox'], [type='radio'], [type='file']) {
   border-radius: 9px;
   font-size: 16px;
 }
-input::placeholder {
+input::placeholder,
+textarea::placeholder {
   color: var(--muted);
   opacity: 1;
 }
@@ -624,7 +627,8 @@ input[type='radio'] {
   outline: 3px solid var(--accent);
   outline-offset: 3px;
 }
-.file-picker:hover {
+.file-picker:hover,
+.file-picker.dragging {
   border-color: var(--accent);
   background: var(--wash);
 }
@@ -641,6 +645,46 @@ input[type='radio'] {
 }
 .file-picker.compact span {
   margin-left: auto;
+}
+.file-picker.dragging {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}
+.env-editor {
+  margin-bottom: 24px;
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+.env-editor summary {
+  cursor: pointer;
+  min-height: 44px;
+  align-content: center;
+  font-weight: 600;
+}
+.env-rows {
+  display: grid;
+  gap: 16px;
+  margin: 16px 0;
+}
+.env-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) 44px;
+  gap: 12px;
+  align-items: start;
+}
+.env-row > button {
+  margin-top: 28px;
+}
+.env-row textarea {
+  display: block;
+  resize: vertical;
+}
+.env-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
 }
 .file-list {
   border: 1px solid var(--line);
@@ -1163,6 +1207,16 @@ progress::-moz-progress-bar {
   .picked-file {
     gap: 8px;
     padding: 12px 8px 12px 12px;
+  }
+  .env-row {
+    grid-template-columns: minmax(0, 1fr) 44px;
+  }
+  .env-row .field {
+    grid-column: 1;
+  }
+  .env-row > button {
+    grid-column: 2;
+    grid-row: 1;
   }
   .file-select > svg {
     display: none;
