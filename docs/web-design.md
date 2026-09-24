@@ -42,7 +42,7 @@ apps/
   web/                  웹 화면과 브라우저 파일·암호화 처리
   server/               Cloudflare Workers + Durable Objects relay
   api/                  예정: v3.0·v4.0 Pro Node 서버 (가칭)
-  desktop/              예정: 후속 Tauri 앱과 Rust 코어
+  desktop/              예정: v4.0 네이티브 앱 (구조는 착수 시 결정)
 packages/
   protocol/             함께 쓰는 연결 메시지·검증 규칙
 fixtures/
@@ -50,7 +50,7 @@ fixtures/
 docs/
 ```
 
-Turborepo + pnpm workspaces로 시작한다. Node.js 24.21.0과 pnpm 12.3.4는 `mise.toml`, Turborepo 2.10.12는 루트 `package.json`에 고정했다. 프로젝트마다 실행·검사·빌드 명령과 의존성을 선언하고, 루트에서 Turborepo로 실행한다. JS/TS 의존성 잠금 파일은 공유하되 후속 Rust 코드는 Cargo로 빌드한다. 공통 패키지는 내부 의존성으로 연결하며 npm 배포를 전제로 하지 않는다. [pnpm workspaces](https://pnpm.io/workspaces)
+Turborepo + pnpm workspaces로 시작한다. Node.js 24.21.0과 pnpm 12.3.4는 `mise.toml`, Turborepo 2.10.12는 루트 `package.json`에 고정했다. 프로젝트마다 실행·검사·빌드 명령과 의존성을 선언하고, 루트에서 Turborepo로 실행한다. JS/TS 의존성 잠금 파일은 공유하되 후속 네이티브 앱의 빌드 방식은 착수 시 정한다. 공통 패키지는 내부 의존성으로 연결하며 npm 배포를 전제로 하지 않는다. [pnpm workspaces](https://pnpm.io/workspaces)
 
 | 도구 | 맡는 일 | 현재 선택 |
 |---|---|---|
@@ -62,11 +62,11 @@ Turborepo + pnpm workspaces로 시작한다. Node.js 24.21.0과 pnpm 12.3.4는 `
 
 Turborepo·Nx·Lerna는 pnpm과 같은 종류의 선택지가 아니다. pnpm workspaces 위에 필요한 작업 도구를 얹을 수 있다. 비교 근거: [Turborepo 캐시](https://github.com/vercel/turborepo/blob/main/apps/docs/content/docs/crafting-your-repository/caching.mdx), [Nx 기능](https://nx.dev/docs/features), [Lerna 버전·배포](https://lerna.js.org/docs/features/version-and-publish), [Lerna와 Nx](https://lerna.js.org/docs/lerna-and-nx).
 
-Bun도 workspaces와 의존성 격리를 지원하고 Turborepo와 함께 쓸 수 있다. Bun을 설치 도구로 쓰면서 개발 도구는 Node.js로 실행하는 구성도 가능하다. 이 프로젝트는 브라우저·Cloudflare Workers·후속 Rust 앱이 실행 환경이므로 Bun 런타임 도입이 필수는 아니다. 초기에는 Node.js LTS와 pnpm으로 개발 환경을 맞추는 쪽을 택했다. 설치 속도의 우열은 이 저장소에서 측정하지 않았다. [Bun workspaces](https://bun.com/docs/pm/workspaces), [Bun 의존성 격리](https://bun.com/docs/pm/isolated-installs), [Bun 설치 도구](https://bun.com/docs/pm/cli/install), [Turborepo workspace 구성](https://github.com/vercel/turborepo/blob/main/apps/docs/content/docs/crafting-your-repository/structuring-a-repository.mdx).
+Bun도 workspaces와 의존성 격리를 지원하고 Turborepo와 함께 쓸 수 있다. Bun을 설치 도구로 쓰면서 개발 도구는 Node.js로 실행하는 구성도 가능하다. 이 프로젝트는 브라우저·Cloudflare Workers가 현재 실행 환경이고 네이티브 앱은 별도로 개발하므로 Bun 런타임 도입이 필수는 아니다. 초기에는 Node.js LTS와 pnpm으로 개발 환경을 맞추는 쪽을 택했다. 설치 속도의 우열은 이 저장소에서 측정하지 않았다. [Bun workspaces](https://bun.com/docs/pm/workspaces), [Bun 의존성 격리](https://bun.com/docs/pm/isolated-installs), [Bun 설치 도구](https://bun.com/docs/pm/cli/install), [Turborepo workspace 구성](https://github.com/vercel/turborepo/blob/main/apps/docs/content/docs/crafting-your-repository/structuring-a-repository.mdx).
 
 웹과 서버는 빌드·배포를 따로 구성한다. 공통 규약 변경은 관련 클라이언트와 함께 검사하되, 같은 저장소에 있다는 이유로 이미 배포된 클라이언트와의 호환성을 생략하지 않는다. Cloudflare도 프로젝트별 빌드·배포 설정을 가진 모노레포를 지원한다. [Cloudflare 모노레포 문서](https://developers.cloudflare.com/workers/ci-cd/builds/advanced-setups/#monorepos)
 
-파일 규격과 테스트 벡터를 웹과 후속 Rust 코어가 함께 사용한다. 서버가 알아야 할 연결 메시지와 크기 제한을 파일 복호화 동작과 분리하고, 서버는 복호화 키를 받지 않는다. UI 패키지는 두 클라이언트에서 실제로 함께 사용할 화면이 생길 때 추출한다.
+파일 규격과 테스트 벡터를 웹과 후속 네이티브 앱이 함께 사용한다. 서버가 알아야 할 연결 메시지와 크기 제한을 파일 복호화 동작과 분리하고, 서버는 복호화 키를 받지 않는다. 공통 코드는 실제로 함께 사용할 부분이 생길 때 추출한다.
 
 ## 4. 0.0.1에서 확정한 구현 항목
 
@@ -76,6 +76,8 @@ Bun도 workspaces와 의존성 격리를 지원하고 Turborepo와 함께 쓸 �
 4. 실시간 relay: [relay 프로토콜](relay-protocol.md)에 역할별 토큰, 송신 승인, 64 KiB 조각과 한 조각씩의 수신 응답, 10분 세션, 30초 전송 대기, 2분 열기 대기, 요청 제한과 재사용 방지를 고정했다. 서버에는 요청 제한 카운터만 저장한다.
 
 후속 데스크톱에 남은 완료 백업 진입, 부모 폴더 처리, Git 검사 실패 등 기존 설계 검토 항목은 데스크톱 착수 전에 해결한다. 웹에 직접 적용 기능을 조용히 추가하거나 기존 데스크톱의 보호 조건을 완화해서 해결하지 않는다.
+
+v3.0 전 무료 웹 고도화로 공유 경로를 Git 저장소 루트 기준 배치 경로라고 명확히 안내한다. 브라우저는 Git 루트를 자동 탐색하거나 다운로드한 파일을 직접 적용하지 않는다. 업로드한 기존 `.env`는 안전하게 읽을 수 있는 변수만 수정하고, 변경된 줄과 결과 파일을 확인한 뒤 공유 목록의 파일로 바꾼다. 해석이 모호한 구문이나 값은 변수별 저장을 막고 파일 전체를 다시 올리도록 안내한다. 새 `.env`를 만드는 `환경변수 직접 입력`과 구분한다.
 
 ## 5. 첫 구현의 완료 증거
 

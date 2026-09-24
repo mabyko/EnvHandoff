@@ -2,6 +2,65 @@ import { BundleError, validateFiles } from './bundle.ts'
 
 export type EnvEntry = { key: string; value: string }
 
+type EditableEntry = EnvEntry & { start: number; end: number; quote: "'" | '"' | null }
+export type EditableEnv = { text: string; entries: EditableEntry[] }
+
+const unsafeEnv = () => new BundleError('ENV_FORMAT', '이 .env 파일은 변수별로 안전하게 수정할 수 없어요. 파일 전체를 다시 올려주세요.')
+
+export function parseEditableEnv(bytes: Uint8Array): EditableEnv {
+  if (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) throw unsafeEnv()
+  let text: string
+  try {
+    text = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+  } catch {
+    throw unsafeEnv()
+  }
+  if (/\r(?!\n)/.test(text)) throw unsafeEnv()
+  const entries: EditableEntry[] = []
+  const keys = new Set<string>()
+  const lines = text.split(/(\r?\n)/)
+  let offset = 0
+  for (let index = 0; index < lines.length; index += 2) {
+    const line = lines[index]
+    if (!/^\s*(?:#.*)?$/.test(line)) {
+      const match = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(line)
+      if (!match || keys.has(match[1])) throw unsafeEnv()
+      const raw = match[2]
+      const quote = raw[0] === "'" || raw[0] === '"' ? raw[0] : null
+      const value = quote ? raw.slice(1, -1) : raw
+      if (quote ? raw.length < 2 || !raw.endsWith(quote) || value.includes(quote) || value.includes('\\')
+        : /[\s#'"`]/.test(value)) throw unsafeEnv()
+      keys.add(match[1])
+      entries.push({ key: match[1], value, start: offset + match[1].length + 1, end: offset + line.length, quote })
+    }
+    offset += line.length + (lines[index + 1]?.length ?? 0)
+  }
+  if (!entries.length) throw unsafeEnv()
+  return { text, entries }
+}
+
+export function previewEnvEdit(source: EditableEnv, values: string[]): { text: string; changed: string[] } {
+  if (values.length !== source.entries.length) throw unsafeEnv()
+  let text = source.text
+  const changed: string[] = []
+  for (let index = source.entries.length - 1; index >= 0; index--) {
+    const entry = source.entries[index]
+    const value = values[index]
+    if (value === entry.value) continue
+    // ponytail: preserve existing quote style; add parser-aware rewriting if broader .env syntax is needed.
+    // eslint-disable-next-line no-control-regex
+    if (/\u0000|\r|\n|\p{Surrogate}/u.test(value) || (entry.quote
+      ? value.includes(entry.quote) || value.includes('\\')
+      : /[\s#'"`]/.test(value))) {
+      throw new BundleError('ENV_VALUE', `${entry.key} 값은 이 파일 형식에 안전하게 저장할 수 없어요. 파일 전체를 다시 올려주세요.`)
+    }
+    text = text.slice(0, entry.start) + (entry.quote ? `${entry.quote}${value}${entry.quote}` : value) + text.slice(entry.end)
+    changed.unshift(entry.key)
+  }
+  if (!changed.length) throw new BundleError('ENV_EMPTY', '변경한 변수가 없어요.')
+  return { text, changed }
+}
+
 export function createEnvFile(rows: EnvEntry[]): File {
   const keys = new Set<string>()
   const lines: string[] = []

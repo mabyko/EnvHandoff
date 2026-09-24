@@ -6,7 +6,7 @@
 
 EnvHandoff encrypts `.env` and other development configuration files for sharing. It bundles the settings a teammate still needs after cloning a repository, preserving each file as it is. The recipient opens the bundle with a separately shared code, extracts the original files, and uses them in their own project.
 
-The web app starts with file sharing and downloads. A planned desktop app will add comparison, application, and recovery within a project folder. The current version is **0.0.1**, with file sharing and live transfer available in local development. The app interface and design documents are currently in Korean.
+The web app starts with file sharing and downloads. A planned native desktop app in v4.0 will add comparison, application, and recovery within a project folder. The current version is **0.0.1**, with file sharing and live transfer available in local development. The app interface and design documents are currently in Korean.
 
 ## Screenshots
 
@@ -49,7 +49,7 @@ The web app lets people exchange files without installation. The planned desktop
 | Import | Review after authentication and download original files | Choose a destination folder and compare existing files |
 | Apply to a project | Place downloaded files manually | Back up selected files, then add or replace them |
 | Undo | Does not directly modify project files | Restore the state before import |
-| Runtime | Browser; runnable in local development | Planned macOS and Windows app built with Tauri 2 |
+| Runtime | Browser; runnable in local development | Planned native macOS and Windows app in v4.0 |
 
 The folder selection and application flow is described in the [desktop design](docs/app-design.md).
 
@@ -59,7 +59,7 @@ Continuous file synchronization, team accounts, permissions, and cloud storage a
 
 **Send files**
 
-1. In `파일 보내기` (Send files), select or drag and drop files into the file area. To enter settings individually, enter key/value rows under `환경변수 직접 입력` (Enter environment variables), use `변수 추가` (Add variable) for more rows or remove unwanted rows, then select `.env 파일로 추가` (Add as an .env file). Review the resulting file list and shared paths, and enter a project label and environment name.
+1. In `파일 보내기` (Send files), select or drag and drop files. Use `환경변수 직접 입력` (Enter environment variables) to create a new `.env` file. For an uploaded `.env`, use `기존 .env 변수 편집` (Edit existing .env variables), review the changed lines and resulting file, then apply the edit. Check each placement path relative to the Git repository root, and enter a project label and environment name.
 2. Choose a shared file or live transfer.
 3. For a shared file, download it and send it to the recipient. Share the code through a different conversation channel.
 4. For live transfer, send the connection link, compare the confirmation numbers on both screens in a private conversation, and approve the transfer. Share the code separately.
@@ -68,11 +68,11 @@ Continuous file synchronization, team accounts, permissions, and cloud storage a
 
 1. Select `공유 파일 열기` (Open a shared file) on the home page and choose an `.envhandoff` file, or open a connection link you received.
 2. Enter the shared code. Once authentication succeeds, review the file list and shared paths.
-3. Download the original files you need and place them in your project using the shared paths as a guide. File contents appear only when you select `내용 보기` (View contents).
+3. Download the original files you need and place them in your project using the placement paths relative to the Git repository root. File contents appear only when you select `내용 보기` (View contents).
 
 After a live transfer reaches 100%, the sender waits for receipt confirmation. The receiving app must authenticate the ciphertext and acknowledge it before the sender sees completion. If the connection drops, reconnect with a new link or download the same bundle as a shared file. A completed download or receipt does not mean the files have been applied to a project.
 
-Limits are 100 files, 1 MiB per file, 10 MiB of original file data in total, and 16 MiB for an encrypted shared file. Enter a shared path such as `config/.env` to represent a subfolder. Both creation and opening reject duplicate paths, case collisions, parent traversal, reserved names, and other invalid paths.
+Limits are 100 files, 1 MiB per file, 10 MiB of original file data in total, and 16 MiB for an encrypted shared file. Enter a placement path such as `config/.env` relative to the Git repository root to represent a subfolder. Existing `.env` files with ambiguous syntax require replacing the whole file instead of variable editing. Both creation and opening reject duplicate paths, case collisions, parent traversal, reserved names, and other invalid paths.
 
 ## File and code handling
 
@@ -122,7 +122,7 @@ docs/                   Product, web, desktop, bundle format, and relay designs
   images/               Product screenshots for the README
 ```
 
-Turborepo runs workspace tasks. Tests and development servers are not cached. Build output goes into each app's `dist/`; no remote cache is connected. `apps/desktop/` and the Rust core are future work. JavaScript and TypeScript dependencies use one root `pnpm-lock.yaml`. Only the required esbuild and workerd dependency installation scripts are allowed in `pnpm-workspace.yaml`.
+Turborepo runs workspace tasks. Tests and development servers are not cached. Build output goes into each app's `dist/`; no remote cache is connected. Native desktop apps are separate work in v4.0. JavaScript and TypeScript dependencies use one root `pnpm-lock.yaml`. Only the required esbuild and workerd dependency installation scripts are allowed in `pnpm-workspace.yaml`.
 
 The root and all workspace packages start at version `0.0.1`. This is separate from the product plan's v1.0 and v2.0 feature stages and shared file format version 1.
 

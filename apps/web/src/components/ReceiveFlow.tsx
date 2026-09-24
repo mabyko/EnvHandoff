@@ -203,8 +203,8 @@ function OpenedFiles({ bundle }: { bundle: OpenedBundle }) {
         </div>
       </div>
       <Notice>
-        다운로드한 원본 파일을 표시된 공유 경로에 직접 넣어주세요. 같은 이름의 기존 파일이 있다면 내용을 먼저
-        확인해주세요.
+        표시된 배치 경로는 Git 저장소 루트 기준이에요. <code>config/.env</code>라면 저장소의 <code>config</code>{' '}
+        폴더에 넣어주세요. 브라우저는 파일을 자동 적용하지 않아요. 기존 파일이 있다면 내용을 먼저 확인해주세요.
       </Notice>
       <div className="received-files">
         {bundle.files.map((file) => {

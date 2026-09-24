@@ -66,7 +66,7 @@ export function LandingHome({ onSend, onReceive }: { onSend: () => void; onRecei
           <li>
             <span className="landing-step-number" aria-hidden="true">01</span>
             <h3>필요한 파일만 고르기</h3>
-            <p>동료에게 전달할 설정 파일과<br />공유 경로를 확인해요.</p>
+            <p>동료에게 전달할 설정 파일과<br />Git 루트 기준 배치 경로를 확인해요.</p>
           </li>
           <li>
             <span className="landing-step-number" aria-hidden="true">02</span>

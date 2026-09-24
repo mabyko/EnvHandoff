@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { parseEnv } from 'node:util'
 import { BundleError, createBundle, explainError, LIMITS, openBundle } from '../src/lib/bundle.ts'
-import { createEnvFile } from '../src/lib/env.ts'
+import { createEnvFile, parseEditableEnv, previewEnvEdit } from '../src/lib/env.ts'
 
 const isError = (code: string) => (error: unknown) => error instanceof BundleError && error.code === code
 
@@ -56,4 +56,30 @@ test('applies existing file size and path collision limits to generated files', 
   const file = createEnvFile([{ key: 'KEY', value: 'value' }])
   await assert.rejects(createBundle([{ file, path: '.env' }, { file, path: '.ENV' }], 'demo', 'test'), isError('PATH'))
   await assert.rejects(createBundle([{ file, path: '../.env' }], 'demo', 'test'), isError('PATH'))
+})
+
+test('edits only safe .env values while preserving comments, line endings, and other bytes', async () => {
+  const original = '# keep this comment\r\nKEY=old\r\nQUOTED="old value"\r\nUNCHANGED=stay\r\n'
+  const source = parseEditableEnv(new TextEncoder().encode(original))
+  const result = previewEnvEdit(source, ['new', 'new value #1', 'stay'])
+  assert.deepEqual(result.changed, ['KEY', 'QUOTED'])
+  assert.equal(result.text, '# keep this comment\r\nKEY=new\r\nQUOTED="new value #1"\r\nUNCHANGED=stay\r\n')
+  assert.deepEqual(parseEnv(result.text), { KEY: 'new', QUOTED: 'new value #1', UNCHANGED: 'stay' })
+  assert.equal(parseEditableEnv(new TextEncoder().encode(result.text)).entries.length, 3)
+  const file = new File([result.text], '.env')
+  const sealed = await createBundle([{ file, path: 'config/.env' }], 'demo', 'development')
+  const opened = await openBundle(sealed.bytes, sealed.code)
+  assert.equal(opened.files[0].path, 'config/.env')
+  assert.equal(new TextDecoder().decode(opened.files[0].bytes), result.text)
+})
+
+test('blocks ambiguous .env syntax and values instead of changing another variable', () => {
+  for (const source of ['export KEY=value\n', 'KEY=value # comment\n', 'KEY=one\nKEY=two\n', 'KEY="escaped \\" quote"\n']) {
+    assert.throws(() => parseEditableEnv(new TextEncoder().encode(source)), isError('ENV_FORMAT'))
+  }
+  assert.throws(() => parseEditableEnv(Uint8Array.from([0xff])), isError('ENV_FORMAT'))
+  const source = parseEditableEnv(new TextEncoder().encode('KEY=old\n'))
+  for (const value of ['with space', 'secret#part', 'line\nbreak', 'carriage\rreturn']) {
+    assert.throws(() => previewEnvEdit(source, [value]), isError('ENV_VALUE'))
+  }
 })

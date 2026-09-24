@@ -3,11 +3,13 @@ import { ArrowLeft, ArrowRight, Download, File, FilePlus2, LockKeyhole, Plus, Ra
 import { createBundle, explainError, LIMITS, validateFiles } from '../lib/bundle.ts'
 import type { SealedBundle, SourceFile } from '../lib/bundle.ts'
 import { downloadFile, formatSize } from '../lib/files.ts'
-import { createEnvFile } from '../lib/env.ts'
+import { createEnvFile, parseEditableEnv, previewEnvEdit } from '../lib/env.ts'
+import type { EditableEnv } from '../lib/env.ts'
 import { CopyField, Heading, Notice, Steps } from './ui.tsx'
 import { LiveSender } from './live.tsx'
 
 type PickedFile = SourceFile & { id: number; selected: boolean }
+type EnvDraft = { id: number; source: EditableEnv; values: string[]; preview: ReturnType<typeof previewEnvEdit> | null; error: string }
 
 export function SendFlow({ onHome }: { onHome: () => void }) {
   const [step, setStep] = useState(0)
@@ -22,6 +24,9 @@ export function SendFlow({ onHome }: { onHome: () => void }) {
   const [envRows, setEnvRows] = useState([{ id: 0, key: '', value: '' }])
   const [envError, setEnvError] = useState('')
   const [envAdded, setEnvAdded] = useState(false)
+  const [envDraft, setEnvDraft] = useState<EnvDraft | null>(null)
+  const [envEditLoading, setEnvEditLoading] = useState<number | null>(null)
+  const [envEditNotice, setEnvEditNotice] = useState('')
   const envEditor = useRef<HTMLDetailsElement>(null)
   const epoch = useRef(0)
   const nextId = useRef(1)
@@ -47,6 +52,9 @@ export function SendFlow({ onHome }: { onHome: () => void }) {
     epoch.current++
     setSealed(null)
     setError('')
+    setEnvDraft(null)
+    setEnvEditLoading(null)
+    setEnvEditNotice('')
   }
   const back = (target: number) => {
     epoch.current++
@@ -81,6 +89,35 @@ export function SendFlow({ onHome }: { onHome: () => void }) {
       setEnvAdded(true)
     } catch (reason) {
       setEnvError(explainError(reason))
+    }
+  }
+  const openEnvEdit = async (item: PickedFile) => {
+    const operation = ++epoch.current
+    setEnvEditLoading(item.id)
+    setError('')
+    setEnvEditNotice('')
+    try {
+      const source = parseEditableEnv(new Uint8Array(await item.file.arrayBuffer()))
+      if (operation === epoch.current) setEnvDraft({ id: item.id, source, values: source.entries.map(({ value }) => value), preview: null, error: '' })
+    } catch (reason) {
+      if (operation === epoch.current) setError(explainError(reason))
+    } finally {
+      if (operation === epoch.current) setEnvEditLoading(null)
+    }
+  }
+  const saveEnvEdit = () => {
+    if (!envDraft?.preview) return
+    const item = files.find(({ id }) => id === envDraft.id)
+    if (!item) return
+    try {
+      const file = new globalThis.File([envDraft.preview.text], item.file.name, { type: item.file.type })
+      validateFiles([{ path: item.path, size: file.size }])
+      edit()
+      setFiles(files.map((current) => current.id === item.id ? { ...current, file } : current))
+      setEnvDraft(null)
+      setEnvEditNotice(`${item.file.name} 변경 내용을 공유할 파일 목록에 적용했어요.`)
+    } catch (reason) {
+      setEnvDraft({ ...envDraft, error: explainError(reason) })
     }
   }
   const check = () => {
@@ -317,8 +354,8 @@ export function SendFlow({ onHome }: { onHome: () => void }) {
                       <span className="mono">{item.file.name}</span>
                       <span>{formatSize(item.file.size)}</span>
                     </div>
-                    <label className="sr-only" htmlFor={`path-${item.id}`}>
-                      {item.file.name} 공유 경로
+                    <label className="help" htmlFor={`path-${item.id}`}>
+                      {item.file.name}의 Git 저장소 루트 기준 배치 경로
                     </label>
                     <input
                       id={`path-${item.id}`}
@@ -335,6 +372,11 @@ export function SendFlow({ onHome }: { onHome: () => void }) {
                       autoComplete="off"
                       spellCheck={false}
                     />
+                    {/^\.env(?:\..+)?$/.test(item.file.name) && (
+                      <button type="button" className="text-button" disabled={envEditLoading !== null} onClick={() => void openEnvEdit(item)}>
+                        {envEditLoading === item.id ? '읽는 중…' : '기존 .env 변수 편집'}
+                      </button>
+                    )}
                   </div>
                   <button
                     type="button"
@@ -349,11 +391,44 @@ export function SendFlow({ onHome }: { onHome: () => void }) {
                   </button>
                 </div>
               ))}
+              {envDraft && (
+                <div className="preview env-file-editor">
+                  <h2>{files.find(({ id }) => id === envDraft.id)?.file.name} 변수 편집</h2>
+                  <p className="help">원본의 주석·줄바꿈·변경하지 않은 값은 유지해요. 모호한 구문은 파일 전체를 다시 올려주세요.</p>
+                  <div className="env-rows">
+                    {envDraft.source.entries.map((entry, index) => (
+                      <div className="fields two-columns" key={entry.key}>
+                        <div className="field"><label htmlFor={`edit-key-${index}`}>변수</label><input id={`edit-key-${index}`} className="mono" value={entry.key} readOnly /></div>
+                        <div className="field"><label htmlFor={`edit-value-${index}`}>{entry.key} 값</label><textarea id={`edit-value-${index}`} className="mono" rows={2} value={envDraft.values[index]} autoComplete="off" autoCapitalize="none" spellCheck={false} onChange={(event) => setEnvDraft({ ...envDraft, values: envDraft.values.map((value, i) => i === index ? event.target.value : value), preview: null, error: '' })} /></div>
+                      </div>
+                    ))}
+                  </div>
+                  {envDraft.error && <Notice error>{envDraft.error}</Notice>}
+                  <div className="env-actions">
+                    <button type="button" className="button" onClick={() => {
+                      try { setEnvDraft({ ...envDraft, preview: previewEnvEdit(envDraft.source, envDraft.values), error: '' }) }
+                      catch (reason) { setEnvDraft({ ...envDraft, preview: null, error: explainError(reason) }) }
+                    }}>변경 미리보기</button>
+                    <button type="button" className="button" onClick={() => setEnvDraft(null)}>취소</button>
+                  </div>
+                  {envDraft.preview && (
+                    <div className="preview">
+                      <p>변경된 줄</p>
+                      <pre tabIndex={0} aria-label="변경 전후 줄">{envDraft.source.entries.flatMap((entry, index) => envDraft.values[index] === entry.value ? [] : [`- ${entry.key}=${entry.quote ? `${entry.quote}${entry.value}${entry.quote}` : entry.value}`, `+ ${entry.key}=${entry.quote ? `${entry.quote}${envDraft.values[index]}${entry.quote}` : envDraft.values[index]}`]).join('\n')}</pre>
+                      <p>결과 파일</p>
+                      <pre tabIndex={0} aria-label="수정된 .env 파일 내용">{envDraft.preview.text.slice(0, 16384)}</pre>
+                      {envDraft.preview.text.length > 16384 && <p className="help">미리보기는 앞의 16,384자만 표시해요. 공유 파일에는 전체 내용이 들어가요.</p>}
+                      <button type="button" className="button" onClick={saveEnvEdit}>변경 적용</button>
+                    </div>
+                  )}
+                </div>
+              )}
+              <p className="help" role="status">{envEditNotice}</p>
             </section>
           )}
           <p className="help spaced">
-            공유 경로는 프로젝트 폴더 기준이에요. 하위 폴더가 필요하면 <code>config/.env</code>처럼
-            수정해주세요.
+            배치 경로는 보내는 프로젝트의 Git 저장소 루트 기준 상대 경로예요. 예를 들어 저장소의{' '}
+            <code>config/.env</code> 파일은 <code>config/.env</code>로 적어주세요. 브라우저는 Git 루트를 자동으로 찾지 않아요.
           </p>
           {error && <Notice error>{error}</Notice>}
           <div className="actions">

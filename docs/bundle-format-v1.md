@@ -60,6 +60,6 @@
 
 형식 식별 실패, 미지원 버전, 크기·경로 오류, 입력 코드 형식 오류를 구분한다. 올바른 형식의 다른 키와 변조된 암호문은 같은 인증 실패로 처리한다. 인증에 실패한 데이터에서 파일 목록이나 부분 내용을 복구해 표시하지 않는다.
 
-공개 벡터는 고정된 **테스트 전용 키·nonce**로 독립적인 Node `crypto` 구현에서 생성했다. 제품의 내보내기에서는 고정값을 사용하지 않는다. 자동 테스트는 해당 벡터 읽기, 새 키·nonce의 왕복, 잘못된 코드·변조·잘림, 인증된 잘못된 payload, 경로 충돌, 최대 100개·10 MiB 경계를 확인한다. 후속 Rust 코어도 같은 공개 벡터를 읽어야 한다.
+공개 벡터는 고정된 **테스트 전용 키·nonce**로 독립적인 Node `crypto` 구현에서 생성했다. 제품의 내보내기에서는 고정값을 사용하지 않는다. 자동 테스트는 해당 벡터 읽기, 새 키·nonce의 왕복, 잘못된 코드·변조·잘림, 인증된 잘못된 payload, 경로 충돌, 최대 100개·10 MiB 경계를 확인한다. 후속 네이티브 앱도 같은 공개 벡터를 읽어야 한다.
 
 근거: [Web Crypto encrypt](https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/encrypt), [AES-GCM 매개변수](https://developer.mozilla.org/en-US/docs/Web/API/AesGcmParams).

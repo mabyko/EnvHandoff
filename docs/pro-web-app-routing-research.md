@@ -1,6 +1,6 @@
 # Pro 웹·앱 배포 경로 조사
 
-조사일: 2026-09-24. 현재 구현은 `envhandoff.mabyko.com`을 Worker Custom Domain으로 쓰고, 정적 SPA를 함께 배포하며, `run_worker_first`는 `/api/*`에만 적용한다. Worker의 실제 동적 경로는 `/api/health`, `/api/relay`다. [현재 배포 설정](../apps/server/wrangler.jsonc), [Worker 구현](../apps/server/src/index.ts). 제품 계획의 Pro Node 서버와 후속 Tauri 앱은 아직 구현 전이다. [제품 계획](product-plan.md)
+조사일: 2026-09-24. 현재 구현은 `envhandoff.mabyko.com`을 Worker Custom Domain으로 쓰고, 정적 SPA를 함께 배포하며, `run_worker_first`는 `/api/*`에만 적용한다. Worker의 실제 동적 경로는 `/api/health`, `/api/relay`다. [현재 배포 설정](../apps/server/wrangler.jsonc), [Worker 구현](../apps/server/src/index.ts). 제품 계획의 Pro Node 서버와 v4.0 네이티브 앱은 아직 구현 전이다. [제품 계획](product-plan.md)
 
 ## 결론
 
