@@ -3,6 +3,7 @@
   "extends": ["//"],
   "tasks": {
     "dev": { "dependsOn": ["@envhandoff/web#build"] },
+    "build": { "dependsOn": ["^build", "typecheck", "@envhandoff/web#build"] },
     "test": { "dependsOn": ["^build", "@envhandoff/web#build"] }
   }
 }

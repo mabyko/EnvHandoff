@@ -47,7 +47,7 @@ export function relayError(reason: string): string {
     case 'PROTOCOL':
       return '전달 데이터가 올바르지 않아 연결을 닫았어요.'
     default:
-      return '연결이 끊겼어요. 두 화면을 열어둔 채 새 링크로 다시 시도해주세요.'
+      return '연결할 수 없어요. 링크가 만료됐거나 이미 사용됐을 수 있어요. 새 링크로 다시 시도해주세요.'
   }
 }
 

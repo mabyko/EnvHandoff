@@ -53,7 +53,7 @@ The web app lets people exchange files without installation. The planned desktop
 
 The folder selection and application flow is described in the [desktop design](docs/app-design.md).
 
-Continuous file synchronization, team accounts, permissions, and cloud storage are outside the current version. The next steps are testing the public relay across devices and browsers. The original desktop and team scope is in the [product plan](docs/product-plan.md); a [Pro web design draft](docs/pro-web-design.md) explores delivering Pro in the browser first. The free web app and relay stay on Cloudflare, while the Pro API uses a separate Node server.
+Continuous file synchronization, team accounts, permissions, and cloud storage are outside the current version. The next steps are testing on separate devices and browsers and exercising public relay failures. The original desktop and team scope is in the [product plan](docs/product-plan.md); a [Pro web design draft](docs/pro-web-design.md) explores delivering Pro in the browser first. The free web app and relay stay on Cloudflare, while the Pro API uses a separate Node server.
 
 ## Usage
 
@@ -134,6 +134,6 @@ Web 0.0.1 connects the introduction home directly to working send and receive sc
 
 Browser checks used public dummy files in Aside's Chromium. Original bytes matched after file selection → encrypted download → reopening → original download, and after live transfer between two tabs. Responsive layouts were checked in 320, 375, 560, 700, 800, and 1024px iframes and at desktop size. Long paths and previews caused no horizontal overflow, and both light and dark themes worked.
 
-On 2026-09-24, `https://envhandoff.mabyko.com/` and `/api/health` responded, and the public HTML hash matched the current web build. The Worker serves the web build (`apps/web/dist`) as static assets and handles `/api/*` itself, so web and relay share one origin; `apps/server/wrangler.jsonc` sets the custom domain and `WEB_ORIGINS`. The web build runs before `wrangler deploy`. The configuration uses the free plan and SQLite Durable Objects and does not automatically enable paid usage. Actual Cloudflare limits and failures, two separate devices, Safari, Firefox, and mobile devices still need testing before formal release.
+On 2026-09-24, the public page and `/api/health` responded, and the HTML hash matched the web build used for that deployment. Two isolated Chromium browser contexts then transferred a dummy `.env` through the public relay, confirmed sender approval, decryption and receipt, and rejected reuse of the link. The Worker serves the web build (`apps/web/dist`) as static assets and handles `/api/*` itself, so web and relay share one origin; `apps/server/wrangler.jsonc` sets the custom domain and `WEB_ORIGINS`. Actual Cloudflare limits and failures, two separate devices, Safari, Firefox, and mobile devices still need testing before formal release.
 
 Further product scope is defined in the [web design](docs/web-design.md), [product plan](docs/product-plan.md), [desktop design](docs/app-design.md), and [shared terminology](CONTEXT.md).
