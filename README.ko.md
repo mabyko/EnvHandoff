@@ -53,7 +53,7 @@ EnvHandoff는 `.env`와 개발 설정 파일을 암호화해서 주고받는 도
 
 데스크톱 앱의 폴더 선택과 적용 흐름은 [데스크톱 설계](docs/app-design.md)에 정리했다.
 
-파일의 지속적인 동기화와 팀 계정·권한·클라우드 보관은 현재 버전에 포함하지 않는다. 다음 단계는 웹의 실제 배포와 여러 기기·브라우저 검증이다. 데스크톱 앱과 팀 기능은 [제품 계획](docs/product-plan.md)을 따라 확장한다. 웹 앱은 v2.0까지 개발하며 relay와 함께 Cloudflare 무료 플랜에 둔다. v3.0·v4.0은 유료 Pro 버전으로 데스크톱 앱에서 제공하고, 서버는 별도 Node 서버로 둔다.
+파일의 지속적인 동기화와 팀 계정·권한·클라우드 보관은 현재 버전에 포함하지 않는다. 다음 단계는 여러 기기·브라우저와 공개 relay 검증이다. 기존 데스크톱·팀 기능 계획은 [제품 계획](docs/product-plan.md)에 있고, Pro를 웹에서 먼저 제공하는 방향은 [Pro 웹 설계 초안](docs/pro-web-design.md)에서 검토한다. 무료 웹과 relay는 Cloudflare에 두고, Pro API는 별도 Node 서버로 둔다.
 
 ## 사용하기
 
@@ -134,6 +134,6 @@ Turborepo가 workspace 작업을 실행한다. 테스트와 개발 서버는 캐
 
 브라우저 검증은 Aside의 Chromium에서 공개 가짜 파일로 진행했다. 파일 선택 → 암호화 파일 다운로드 → 재열기 → 원본 다운로드와 두 탭의 실시간 전달에서 원본 바이트가 같음을 확인했다. 320·375·560·700·800·1024px iframe과 데스크톱 화면에서 반응형 배치를 확인했다. 긴 경로와 미리보기를 포함해 가로 넘침이 없고 밝은 화면·어두운 화면에서 동작했다.
 
-Cloudflare에는 아직 배포하지 않았다. Worker가 웹 빌드(`apps/web/dist`)를 정적 자산으로 제공하고 `/api/*`만 직접 처리하므로 웹과 relay는 같은 origin을 쓴다. 커스텀 도메인과 `WEB_ORIGINS`는 `apps/server/wrangler.jsonc`에 있고, `wrangler deploy` 전에 웹 빌드를 먼저 실행한다. 무료 플랜과 SQLite Durable Objects를 사용하며 유료 사용량을 자동으로 활성화하지 않는다. 실제 Cloudflare 한도·장애, 서로 다른 두 기기, Safari·Firefox와 모바일 기기 검증은 배포 전 작업으로 남아 있다.
+2026-09-24에 `https://envhandoff.mabyko.com/`과 `/api/health`의 응답을 확인했고, 공개 화면 HTML의 해시가 현재 웹 빌드와 일치했다. Worker가 웹 빌드(`apps/web/dist`)를 정적 자산으로 제공하고 `/api/*`만 직접 처리하므로 웹과 relay는 같은 origin을 쓴다. 커스텀 도메인과 `WEB_ORIGINS`는 `apps/server/wrangler.jsonc`에 있고, `wrangler deploy` 전에 웹 빌드를 먼저 실행한다. 무료 플랜과 SQLite Durable Objects를 사용하며 유료 사용량을 자동으로 활성화하지 않는다. 실제 Cloudflare 한도·장애, 서로 다른 두 기기, Safari·Firefox와 모바일 기기 검증은 정식 출시 전 작업으로 남아 있다.
 
 제품의 후속 범위는 [웹 설계](docs/web-design.md), [제품 계획](docs/product-plan.md), [데스크톱 설계](docs/app-design.md), [공통 용어](CONTEXT.md)를 따른다.
