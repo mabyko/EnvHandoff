@@ -1,19 +1,41 @@
 # Pro API 운영과 재해 복원
 
-이 문서는 현재 구현의 운영 절차다. 호스팅 업체·운영 접속 정보·실제 HTTPS 배포는 아직 정하지 않았으며, 로컬 검사 통과를 운영 구성 검증으로 취급하지 않는다. QA 결과는 [QA 기록](qa.md)에 둔다.
+이 문서는 현재 구현의 운영 절차다. API는 mabyko 서버의 자체 호스팅 Openship에 배포한다. 운영 HTTPS 배포는 아직 수행하지 않았으며, 로컬 검사 통과를 운영 구성 검증으로 취급하지 않는다. QA 결과는 [QA 기록](qa.md)에 둔다.
 
 ## 배포 전 조건
 
 - API와 웹은 HTTPS의 같은 site 하위 도메인으로 배포하고 정확한 `WEB_ORIGIN`, `API_ORIGIN`을 설정한다. 개발용 localhost 예외를 운영에 사용하지 않는다.
 - 운영 주소는 `WEB_ORIGIN=https://envhandoff.mabyko.com`, `API_ORIGIN=https://api.envhandoff.mabyko.com`이다. 웹 빌드의 `VITE_PRO_API_ORIGIN`도 API 주소와 맞추고 GitHub OAuth callback은 `https://api.envhandoff.mabyko.com/auth/github/callback`으로 등록한다. DNS·인증서·OAuth 운영 등록은 배포 시 수행하며 코드 기본값 변경만으로 적용되지 않는다.
 - API 호스트에 맞는 HTTPS 인증서를 발급한다. `mabyko.com`을 Cloudflare full DNS zone으로 운영하면서 프록시를 켠다면 기본 Universal SSL은 이 깊이의 하위 도메인을 덮지 않으므로 별도 edge 인증서 구성이 필요하다. DNS only로 연결한다면 Openship/서버가 해당 호스트의 공개적으로 신뢰되는 인증서를 제공해야 한다. [Cloudflare 인증서 범위](https://developers.cloudflare.com/ssl/edge-certificates/universal-ssl/limitations/), [Openship 사용자 도메인](https://openship.io/docs/guides/custom-domains)
-- `DATABASE_URL`은 전용 PostgreSQL 계정과 검증된 TLS 설정을 사용한다. 개발·테스트 DB를 운영에 재사용하지 않는다.
+- `DATABASE_URL`은 전용 PostgreSQL을 가리킨다. 아래 Compose는 같은 서버의 비공개 Docker 네트워크에서 DB에 연결하며 DB 포트를 호스트에 공개하지 않는다. DB를 별도 서버로 분리할 때는 인증서를 검증하는 TLS 연결을 설정한다. 개발·테스트 DB를 운영에 재사용하지 않는다.
 - `FILE_STORAGE_PATH`는 API만 접근하는 영속 경로다. 웹 정적 파일·CDN·공개 버킷과 분리하고 객체 백업·버전 보관을 끈다. 서버 재시작 때 경로가 교체되거나 초기화되지 않아야 한다.
 - API 인스턴스가 여러 개면 같은 객체 저장소를 읽고 삭제할 수 있어야 한다. 현재 접속 주소별 제한은 단일 프로세스용이며, 여러 인스턴스에는 공유 edge 제한이 필요하다.
 - 프록시는 정확한 Host를 API에 전달해야 한다. 현재 API는 임의의 forwarded IP 헤더를 신뢰하지 않는다. 요청/응답 본문, 쿠키, 공유 토큰 헤더, URL fragment와 공유 코드가 로그·분석 도구에 수집되지 않도록 설정한다.
 - `TOTP_ENCRYPTION_KEY`는 DB 밖에서 보호하고 재배포 때 유지한다. 운영 키나 OAuth secret을 웹의 `VITE_*` 설정에 넣지 않는다.
 - `DELETION_LEDGER_PATH`는 DB 스냅샷과 독립된 영속 삭제대장 전용 디렉터리다. `FILE_STORAGE_PATH`와 공유하지 않고 DB 복원 때 과거 사본으로 되돌리지 않는다. 최초 설치에서만 `pnpm --filter @envhandoff/api deletion-ledger --init`으로 생성한다. 기존 디렉터리는 덮어쓰지 않으며 분실·손상·다른 대장 연결은 API 시작/요청을 차단한다. 개발 기본 경로도 최초 명시 초기화가 필요하다.
 - 베타 한도는 [limits.ts](../apps/api/src/limits.ts)에 모아 버전 관리한다. 초기 값 조정은 해당 설정과 화면의 한도 안내를 함께 갱신하고 재배포·회귀 검사를 거친다. 파일 형식·암호 규격·보안 유효 시간은 이 설정으로 바꾸지 않는다.
+
+## Openship 최초 배포
+
+배포 입력은 저장소 루트의 [compose.production.yaml](../compose.production.yaml), [API Dockerfile](../apps/api/Dockerfile), [.env.production.example](../.env.production.example)이다. 기존 `compose.yaml`은 개발 전용이다. API 빌드 context는 저장소 루트이며 Node 24.21.0과 pnpm 12.3.4를 사용한다. `.dockerignore`는 API와 공용 프로토콜의 빌드 입력만 허용한다.
+
+1. Openship에서 배포할 커밋과 `compose.production.yaml`을 선택한다. API 1개와 PostgreSQL을 같은 서버에 두고 자동 절전·자동 확장은 끈다. PostgreSQL은 Internal로 유지한다. API 서비스의 도메인 대상 포트를 `3000`으로 명시하고 공개 연결은 HTTPS 프록시를 통해 설정한다. Compose의 `expose`만으로 Openship에 포트가 자동 등록된다고 가정하지 않는다. Compose 자체는 호스트 포트를 열지 않는다.
+2. 예제의 환경변수를 Openship에 입력한다. GitHub OAuth 앱은 운영 웹 주소와 API callback을 사용한다. DB 암호와 TOTP 키는 각각 독립적으로 생성하고 TOTP 키는 재배포 때 유지한다. 처음에는 `PRO_ACCEPT_NEW_TRANSFERS=false`로 둔다. 비밀값을 Git·빌드 로그·웹 변수에 넣지 않는다. Openship이 서비스 환경변수를 빌드 인수로 전달할 수 있으므로 Dockerfile에서 비밀값을 `ARG`로 선언하거나 빌드에 사용하지 않는다.
+3. `postgres-data`, `encrypted-objects`, `deletion-ledger`를 별도 영속 볼륨으로 연결한다. API는 UID/GID `1000:1000`으로 실행한다. 새 named volume은 이미지의 소유권을 이어받지만 기존 볼륨이나 bind mount는 직접 쓰기 권한을 확인해야 한다. 객체·삭제대장을 DB와 함께 스냅샷 복원하지 않는다.
+4. API 트래픽을 연결하기 전에 같은 이미지·볼륨·UID로 `node src/deletions.ts --init`을 **최초 한 번만** 실행한다. 경로는 마운트 지점 아래 `/var/lib/envhandoff/deletions/ledger`다. 이미 초기화한 디렉터리를 다시 만들지 않는다. 이후 API 시작 시 DB 마이그레이션과 삭제대장 재적용이 실행된다.
+5. 내부 준비 상태를 확인한 다음 `api.envhandoff.mabyko.com`의 DNS·인증서를 연결한다. 프록시가 공개 Host를 보존해야 한다. 내부 헬스체크는 정확한 Host로 `/auth/session`을 호출하고 무쿠키 `401`을 정상으로 본다. 이는 DB·삭제대장 접근을 포함하지만 객체 볼륨의 쓰기·삭제는 별도로 확인해야 한다.
+6. 웹은 기존 Cloudflare Worker에 배포한다. `VITE_PRO_API_ORIGIN`을 맞춰 웹·Worker를 빌드하고 `/pro` 및 `/receive/:id`의 SPA 경로를 확인한다. 실제 GitHub 로그인·쿠키·CORS·패스키/TOTP를 확인한 뒤 신규 접수를 열고 합성 파일로 팀 전달·외부 공유·회수·재시작을 검사한다. 남은 [QA](qa.md)와 삭제 감시·백업 복원 훈련을 마친 뒤 베타 초대를 확대한다.
+
+동일 구성을 일반 Docker Compose로 최초 실행하는 순서는 다음과 같다. `.env.production`에는 운영 대상의 값을 별도로 넣고 Git에 추가하지 않는다. 운영 볼륨에 `down -v`를 실행하지 않는다.
+
+```sh
+docker compose --env-file .env.production -f compose.production.yaml config --quiet
+docker compose --env-file .env.production -f compose.production.yaml build api
+docker compose --env-file .env.production -f compose.production.yaml run --rm --no-deps api node src/deletions.ts --init
+docker compose --env-file .env.production -f compose.production.yaml up -d --wait
+```
+
+Openship은 Compose의 모든 필드를 그대로 실행하는 방식이 아니다. 설치 버전에서 서비스별 이미지·환경변수·볼륨·헬스체크와 API 도메인의 포트 설정이 가져와졌는지 확인한다. 특히 `expose`, `init`, `user`, `stop_grace_period`는 공식 문서의 모델링 필드에 포함되지 않는다. 실행 UID는 Dockerfile에도 지정했으며, 종료 유예 시간은 업로드 중 재배포 검사에서 확인한다. [Compose 지원 범위](https://openship.io/docs/guides/compose-multi-service), [영속 저장소](https://openship.io/docs/guides/persistent-storage)
 
 ## 삭제와 관찰
 
