@@ -1,0 +1,157 @@
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { LogOut, Settings } from 'lucide-react'
+import { Heading, Notice } from './ui.tsx'
+import { ProOrganizations } from './ProOrganizations.tsx'
+import { ProSecurity } from './ProSecurity.tsx'
+import { followProLink, pendingProRoute, proPath, proReturnKey, readProRoute } from '../lib/pro-navigation.ts'
+import type { ProRoute } from '../lib/pro-navigation.ts'
+import { confirmWorkLoss } from '../lib/external-share.ts'
+import { pendingInvitation } from '../lib/invitation.ts'
+
+const api = import.meta.env.VITE_PRO_API_ORIGIN ?? (import.meta.env.DEV ? 'http://localhost:3001' : 'https://api.envhandoff.mabyko.com')
+type Session = { user: { id: string; login: string }; csrf: string; expiresAt: number; acceptNewTransfers?: boolean }
+
+export function ProLogin() {
+  const [route, setRoute] = useState(pendingProRoute)
+  const [initialToken, setInitialToken] = useState(pendingInvitation)
+  const [session, setSession] = useState<Session | null>(null)
+  const [busy, setBusy] = useState(true)
+  const [sessionUnavailable, setSessionUnavailable] = useState(false)
+  const [error, setError] = useState(() => new URLSearchParams(location.search).has('auth') ? 'GitHub 로그인을 완료하지 못했어요. 다시 시도해주세요.' : '')
+  const channel = useRef<BroadcastChannel | null>(null)
+  const generation = useRef(0)
+  const currentRoute = useRef(route)
+  const historyIndex = useRef(0)
+  const restoring = useRef(false)
+  const refreshSession = useRef<() => void>(() => {})
+  useLayoutEffect(() => { currentRoute.current = route }, [route])
+
+  const canNavigate = (next: ProRoute | null) => {
+    const previous = currentRoute.current
+    if (previous && next && proPath(previous) === proPath(next)) return true
+    if (previous?.page === 'shares' && next?.page === 'shares' && previous.orgId === next.orgId) return true
+    return confirmWorkLoss()
+  }
+  function navigate(next: ProRoute) {
+    const path = proPath(next)
+    if (restoring.current || !canNavigate(next)) return
+    if (currentRoute.current && proPath(currentRoute.current) === path) return
+    history.pushState({ envhandoffProIndex: ++historyIndex.current }, '', path)
+    setRoute(next)
+  }
+  function resolveOrganization(orgId: string) {
+    const previous = currentRoute.current
+    if (!previous || previous.orgId) return
+    const next = { ...previous, orgId }
+    history.replaceState({ ...history.state, envhandoffProIndex: historyIndex.current }, '', proPath(next))
+    setRoute(next)
+  }
+
+  useEffect(() => {
+    historyIndex.current = Number.isSafeInteger(history.state?.envhandoffProIndex) ? history.state.envhandoffProIndex : 0
+    history.replaceState({ ...history.state, envhandoffProIndex: historyIndex.current }, '', currentRoute.current ? proPath(currentRoute.current) : location.pathname + location.search)
+    const onPop = () => {
+      if (restoring.current) { restoring.current = false; return }
+      const next = readProRoute(location.pathname, location.search)
+      const nextIndex = history.state?.envhandoffProIndex
+      if (!canNavigate(next)) {
+        if (Number.isSafeInteger(nextIndex) && nextIndex !== historyIndex.current) {
+          restoring.current = true
+          history.go(historyIndex.current - nextIndex)
+        } else history.pushState({ envhandoffProIndex: historyIndex.current }, '', currentRoute.current ? proPath(currentRoute.current) : '/pro')
+        return
+      }
+      historyIndex.current = Number.isSafeInteger(nextIndex) ? nextIndex : 0
+      setRoute(next)
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>('.pro-content')?.focus({ preventScroll: true })
+      window.scrollTo({ top: 0 })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [route])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    const refresh = async () => {
+      const current = ++generation.current
+      setBusy(true)
+      try {
+        const response = await fetch(api + '/auth/session', { credentials: 'include', signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]) })
+        if (!response.ok && response.status !== 401) throw new Error('Session request failed')
+        const value = response.ok ? await response.json() as Session : null
+        if (!controller.signal.aborted && current === generation.current) {
+          setSession(value); setSessionUnavailable(false)
+          if (value) { try { sessionStorage.removeItem(proReturnKey) } catch { /* Navigation works without storage. */ } }
+        }
+      } catch {
+        if (!controller.signal.aborted && current === generation.current) setSessionUnavailable(true)
+      } finally { if (!controller.signal.aborted && current === generation.current) setBusy(false) }
+    }
+    const broadcast = new BroadcastChannel('envhandoff-auth')
+    refreshSession.current = () => { void refresh() }
+    channel.current = broadcast
+    broadcast.onmessage = event => { if (event.data === 'signed-out') setSession(null); void refresh() }
+    broadcast.postMessage('changed')
+    void refresh()
+    const openInvitation = () => { if (location.hash.startsWith('#invite=')) location.reload() }
+    window.addEventListener('hashchange', openInvitation)
+    window.addEventListener('focus', refresh)
+    return () => { controller.abort(); broadcast.close(); channel.current = null; window.removeEventListener('focus', refresh); window.removeEventListener('hashchange', openInvitation) }
+  }, [])
+
+  useEffect(() => {
+    if (!session) return
+    const expiry = setTimeout(() => { generation.current++; setSession(null); setBusy(false); channel.current?.postMessage('signed-out') }, Math.max(0, session.expiresAt - Date.now()))
+    return () => clearTimeout(expiry)
+  }, [session])
+
+  async function act(action: 'start' | 'logout') {
+    if (action === 'logout' && !confirmWorkLoss()) return
+    const current = ++generation.current
+    setBusy(true); setError('')
+    try {
+      const response = await fetch(api + (action === 'start' ? '/auth/github/start' : '/auth/logout'), {
+        method: 'POST', credentials: 'include', headers: session ? { 'x-csrf-token': session.csrf } : {}, signal: AbortSignal.timeout(15_000),
+      })
+      if (response.status === 401) { setSession(null); channel.current?.postMessage('signed-out'); throw new Error('Expired session') }
+      if (!response.ok) throw new Error('Authentication request failed')
+      if (action === 'start') {
+        const { url } = await response.json() as { url: string }
+        const destination = new URL(url)
+        if (destination.origin !== 'https://github.com' || destination.pathname !== '/login/oauth/authorize') throw new Error('Invalid login URL')
+        if (current === generation.current) {
+          try { if (route) sessionStorage.setItem(proReturnKey, proPath(route)); else sessionStorage.removeItem(proReturnKey) } catch { /* The user can reopen the detail link after login. */ }
+          location.assign(destination.href)
+        }
+      } else {
+        setSession(null); channel.current?.postMessage('signed-out')
+      }
+    } catch {
+      if (current === generation.current) setError(action === 'start' ? '로그인을 시작하지 못했어요. 잠시 후 다시 시도해주세요.' : '로그아웃을 확인하지 못했어요. 새로고침 후 다시 시도해주세요.')
+    } finally { if (current === generation.current) setBusy(false) }
+  }
+  const settingsRoute: ProRoute = { page: 'settings', ...(route?.orgId ? { orgId: route.orgId } : {}) }
+  const expired = () => { generation.current++; setSession(null); setBusy(false); channel.current?.postMessage('signed-out') }
+  return (
+    <section className="pro-app" aria-busy={busy}>
+      <div className="pro-topbar">
+        <div><p className="pro-eyebrow">TEAM WORKSPACE</p><h1>EnvHandoff <span>Pro</span></h1></div>
+        {session && <div className="pro-account"><span className="pro-account-name">{session.user.login}</span><a className="text-button" href={proPath(settingsRoute)} aria-current={route?.page === 'settings' ? 'page' : undefined} onClick={event => followProLink(event, settingsRoute, navigate)}><Settings aria-hidden="true" />내 설정</a><button type="button" className="text-button" disabled={busy} onClick={() => { void act('logout') }}><LogOut aria-hidden="true" />로그아웃</button></div>}
+      </div>
+      {error && <Notice error>{error}</Notice>}
+      {sessionUnavailable && <Notice error>서버에 연결하지 못해 작업을 잠시 멈췄어요. 이 탭의 파일과 코드는 유지돼요. <button className="button" type="button" disabled={busy} onClick={() => refreshSession.current()}>연결 다시 확인</button></Notice>}
+      {busy && <p className="pro-session-status" role="status">로그인 상태를 확인하고 있어요.</p>}
+      {!route ? <div className="pro-entry"><Heading title="페이지를 찾을 수 없어요">링크 주소를 확인하거나 Pro 시작 화면으로 돌아가세요.</Heading><a className="button" href="/pro" onClick={event => followProLink(event, { page: 'start' }, navigate)}>Pro 시작으로</a></div> : session ? (
+        <>{session.acceptNewTransfers === false && <Notice>신규 전달 접수가 종료됐어요. 기존 전달은 원래 기한까지 받을 수 있어요.</Notice>}
+        <ProOrganizations key={'organizations:' + session.user.id + ':' + session.csrf} route={route} onNavigate={navigate} onResolvedOrganization={resolveOrganization} api={api} userId={session.user.id} csrf={session.csrf} initialToken={initialToken} disabled={busy || sessionUnavailable} onAccepted={() => setInitialToken('')} onExpired={expired}
+          settings={<ProSecurity key={'security:' + session.user.id + ':' + session.csrf} api={api} userId={session.user.id} csrf={session.csrf} disabled={busy || sessionUnavailable} onExpired={expired} onDeleted={warning => { setError(warning); expired() }} />} /></>
+      ) : !busy && <div className="pro-entry"><Heading title="팀의 설정 파일을 안전하게 주고받으세요">초대받은 GitHub 계정으로 로그인해 워크스페이스에 참여하세요.</Heading><ul className="pro-entry-benefits"><li>필요한 환경 파일을 팀원에게 요청</li><li>승인된 내 브라우저에서 파일 수신</li><li>링크와 별도 코드로 외부에 전달</li></ul><button type="button" className="button primary" disabled={busy} onClick={() => { void act('start') }}>GitHub로 로그인</button><p className="help">첫 베타는 무료 초대제로 운영해요. 초대가 없다면 팀 Owner에게 문의해주세요.</p></div>}
+    </section>
+  )
+}

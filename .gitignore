@@ -16,6 +16,7 @@ coverage/
 .dev.vars.*
 !.dev.vars.example
 !.dev.vars.*.example
+.data/
 *.envhandoff
 !fixtures/bundles/*.envhandoff
 

@@ -186,7 +186,7 @@ export function ReceiveFlow({
   )
 }
 
-function OpenedFiles({ bundle }: { bundle: OpenedBundle }) {
+export function OpenedFiles({ bundle }: { bundle: OpenedBundle }) {
   const [preview, setPreview] = useState<string | null>(null)
   const [requested, setRequested] = useState<string[]>([])
   const [notice, setNotice] = useState('')
