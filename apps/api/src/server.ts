@@ -6,9 +6,11 @@ import { pipeline } from 'node:stream/promises'
 import { AuthApi } from './auth.ts'
 import { canonicalPath } from './http.ts'
 import { deletionHealth } from './deletion-health.ts'
+import { clientIpPolicy } from './client-ip.ts'
 
 const development = process.env.NODE_ENV === 'development'
 const apiOrigin = process.env.API_ORIGIN ?? 'https://api.envhandoff.mabyko.com'
+const clientIp = clientIpPolicy(process.env.CLOUDFLARE_PROXY_IP)
 let db: Database
 try {
   db = new Database(process.env.DATABASE_URL ?? '')
@@ -45,6 +47,8 @@ const server = createServer({ maxHeaderSize: 8192, requestTimeout: 120_000, head
     if (!path || incoming.headers.host !== new URL(apiOrigin).host) {
       outgoing.writeHead(400).end(); return
     }
+    const ip = clientIp(incoming.socket.remoteAddress, incoming.headers, incoming.method, path)
+    if (!ip) { outgoing.writeHead(403, { connection: 'close' }).end(); return }
     if (incoming.headers.origin && incoming.headers.origin === process.env.WEB_ORIGIN) {
       outgoing.setHeader('access-control-allow-origin', incoming.headers.origin)
       outgoing.setHeader('access-control-allow-credentials', 'true')
@@ -57,7 +61,7 @@ const server = createServer({ maxHeaderSize: 8192, requestTimeout: 120_000, head
     }
     if (!jsonRequest || incoming.method !== 'POST') incoming.resume()
     if (path.startsWith('/shares/') && incoming.method !== 'OPTIONS') {
-      const now = Date.now(), address = 'share:' + (incoming.socket.remoteAddress ?? 'unknown')
+      const now = Date.now(), address = 'share:' + ip
       for (const [ip, attempt] of attempts) if (attempt.until <= now) attempts.delete(ip)
       const attempt = attempts.get(address) ?? { count: 0, until: now + 60_000 }
       if (attempt.count >= limits.ipRequestsPerMinute || (!attempts.has(address) && attempts.size >= 1000)) {
@@ -68,7 +72,7 @@ const server = createServer({ maxHeaderSize: 8192, requestTimeout: 120_000, head
     if (!path.startsWith('/shares/') && (path === '/auth/github/start' || (jsonRequest && incoming.method === 'POST'))) {
       const transferRequest = /^\/organizations\/[^/]+\/shares(\/|$)/.test(path) || /^\/organizations\/[^/]+\/requests\/[^/]+\/(transfer|uploads)(\/|$)/.test(path)
       const limit = transferRequest ? 120 : 20
-      const now = Date.now(), address = (transferRequest ? 'transfer:' : 'other:') + (incoming.socket.remoteAddress ?? 'unknown')
+      const now = Date.now(), address = (transferRequest ? 'transfer:' : 'other:') + ip
       for (const [ip, attempt] of attempts) if (attempt.until <= now) attempts.delete(ip)
       const attempt = attempts.get(address) ?? { count: 0, until: now + 10 * 60_000 }
       if (attempt.count >= limit || (!attempts.has(address) && attempts.size >= 1000)) {
