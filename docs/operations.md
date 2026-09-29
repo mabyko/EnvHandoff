@@ -1,6 +1,6 @@
 # Pro API 운영과 재해 복원
 
-이 문서는 현재 구현의 운영 절차다. API는 mabyko 서버의 자체 호스팅 Openship에 배포한다. 운영 HTTPS 배포는 아직 수행하지 않았으며, 로컬 검사 통과를 운영 구성 검증으로 취급하지 않는다. QA 결과는 [QA 기록](qa.md)에 둔다.
+이 문서는 현재 구현의 운영 절차다. 2026-09-29 API·DB를 mabyko 서버의 자체 호스팅 Openship에, 웹·relay를 Cloudflare에 배포했다. 운영 HTTPS·CORS·API 재시작 후 영속 볼륨과 삭제 지연 진단을 확인했다. 실제 기기·감시 연결·백업 복원 훈련까지 완료한 상태는 아니다. QA 결과는 [QA 기록](qa.md)에 둔다.
 
 ## 배포 전 조건
 
@@ -19,7 +19,7 @@
 
 [배포 가이드](deployment.md)에 대시보드·CLI·Git push 자동 배포·직접 Compose 방식의 비교와 최초 설정, 삭제대장 초기화, DNS·OAuth, 웹 배포, QA 순서를 모았다. 현재 mabyko 서버에서는 최초 배포를 통제해 검증한 다음 반복 배포를 자동화하는 방식을 권장한다.
 
-Openship은 Compose의 모든 필드를 그대로 실행하지 않는다. 서비스별 이미지·환경변수·볼륨·헬스체크와 API 도메인의 포트 설정이 가져와졌는지 확인한다. `expose`, `init`, `user`, `stop_grace_period`는 공식 문서의 모델링 필드에 포함되지 않는다. 실행 UID는 Dockerfile에도 지정했으며, 종료 유예 시간은 업로드 중 재배포 검사에서 확인한다. [Compose 지원 범위](https://openship.io/docs/guides/compose-multi-service)
+Openship은 Compose의 모든 필드를 그대로 실행하지 않는다. 서비스별 이미지·환경변수·볼륨·헬스체크와 API 도메인의 포트 설정이 가져와졌는지 확인한다. `expose`, `init`, `user`, `stop_grace_period`는 공식 문서의 모델링 필드에 포함되지 않는다. 실행 UID는 Dockerfile에도 지정했다. 이번 실제 컨테이너의 UID/GID `1000:1000`과 종료 유예 120초는 확인했으며, 업로드 중 재배포 검사는 남아 있다. [Compose 지원 범위](https://openship.io/docs/guides/compose-multi-service)
 
 ## 삭제와 관찰
 

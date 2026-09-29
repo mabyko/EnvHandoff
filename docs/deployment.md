@@ -4,7 +4,7 @@ API는 mabyko 서버의 Openship에, 웹과 무료 relay는 기존 Cloudflare에
 
 이 문서는 공식 클라우드의 서버·도메인을 기준으로 한다. 자신의 서버와 계정에 설치하려면 [자체 호스팅 가이드](self-hosting.md)의 Cloudflare 단독·Docker·Openship 경로를 따른다.
 
-기준일: 2026-09-28 · Openship 0.8.0. 배포 파일과 로컬 검사는 준비됐으며, 실제 운영 배포는 아직 진행하지 않았다.
+기준일: 2026-09-29 · Openship 0.8.0. 개인 워크스페이스의 기존 EnvHandoff 프로젝트에 API·PostgreSQL을, Cloudflare `mabyko` 계정에 웹·relay를 배포했다. HTTPS·CORS·영속 볼륨·공개 relay 검사를 통과했다. 신규 Pro 전달과 자동 배포는 QA가 끝날 때까지 꺼둔다. 상세 결과와 남은 범위는 [QA 기록](qa.md#2026-09-29-운영-배포-검사)에 둔다.
 
 | 지금 하려는 일 | 읽을 부분 |
 | --- | --- |
@@ -52,6 +52,10 @@ API는 mabyko 서버의 Openship에, 웹과 무료 relay는 기존 Cloudflare에
 
 API는 공용 `packages/protocol`도 사용한다. build context를 `apps/api`로 좁히면 필요한 파일을 가져오지 못한다.
 
+Openship 0.8.0의 소스 필터는 `.dockerignore`의 디렉터리 예외 뒤에 `/`가 있으면 필요한 디렉터리를 제외할 수 있다. 이 저장소는 `!apps/api`, `!packages/protocol`처럼 끝의 `/`를 생략한다. `COPY`에서 파일 없음 오류가 나면 build context와 이 예외를 확인한다.
+
+GitHub API 한도 오류가 나면 `Settings → Git clone credentials`의 PAT와 `Use by default`를 확인한다. 설치된 버전은 기본 clone PAT를 저장소 API 조회에도 사용한다. 최초 스캔 결과가 저장만으로 반영되지 않으면 기존 프로젝트의 `Deploy now`에서 Compose를 다시 읽고 두 서비스·환경변수를 확인해 배포한다.
+
 **확인:** 배포할 브랜치와 두 서비스가 보이고, 운영 Compose 파일이 적용되어 있다.
 
 ### 2. GitHub 로그인과 환경변수 설정하기
@@ -62,6 +66,8 @@ EnvHandoff 사용자가 로그인할 **운영용 GitHub OAuth 앱**을 준비한
 | --- | --- |
 | Homepage URL | `https://envhandoff.mabyko.com` |
 | Authorization callback URL | `https://api.envhandoff.mabyko.com/auth/github/callback` |
+
+기존 OAuth 앱에 운영 콜백을 추가하면 Client ID와 Secret은 그대로 쓸 수 있다. 현재 배포는 기존 개발용 콜백도 유지한 같은 앱을 사용한다. 개발·운영 자격 증명을 분리하려면 운영용 앱을 따로 만들고 API의 두 값을 함께 교체한다.
 
 발급받은 값과 새로 생성한 비밀값을 Openship 환경변수에 입력한다.
 
@@ -131,6 +137,8 @@ DNS를 서버로 연결하고 해당 호스트의 HTTPS 인증서를 발급한�
 
 API가 준비되면 같은 릴리스의 웹을 배포한다. Cloudflare 배포 권한이 연결된 로컬 환경에서, 저장소 루트를 기준으로 실행한다.
 
+여러 Cloudflare 계정을 쓰면 계정과 인증 프로필을 명시한다. 이번 배포는 Wrangler 4.131.0의 `wrangler auth create mabyko --browser=false`로 `mabyko` 계정만 허용한 프로필을 만들었다. 기존 기본 프로필은 유지했다. [Wrangler 인증 프로필](https://developers.cloudflare.com/workers/wrangler/profiles/)
+
 먼저 웹을 빌드하고 Worker 배포 내용을 점검한다. 이 단계는 실제 배포하지 않는다.
 
 ```sh
@@ -141,7 +149,8 @@ pnpm --filter @envhandoff/server exec wrangler deploy --dry-run
 빌드와 배포 대상이 맞으면 실행한다.
 
 ```sh
-pnpm --filter @envhandoff/server exec wrangler deploy
+CLOUDFLARE_ACCOUNT_ID=5a6f1112ebbc56a66a3de83bdb52ae3f \
+  pnpm --filter @envhandoff/server exec wrangler deploy --profile mabyko
 ```
 
 **확인:** `/pro`, `/pro/requests` 등으로 직접 접속하거나 새로고침해도 화면이 열리고, 웹이 운영 API에 연결된다.
