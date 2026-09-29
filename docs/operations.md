@@ -17,25 +17,9 @@
 
 ## Openship 최초 배포
 
-배포 입력은 저장소 루트의 [compose.production.yaml](../compose.production.yaml), [API Dockerfile](../apps/api/Dockerfile), [.env.production.example](../.env.production.example)이다. 기존 `compose.yaml`은 개발 전용이다. API 빌드 context는 저장소 루트이며 Node 24.21.0과 pnpm 12.3.4를 사용한다. `.dockerignore`는 API와 공용 프로토콜의 빌드 입력만 허용한다.
+[배포 가이드](deployment.md)에 대시보드·CLI·Git push 자동 배포·직접 Compose 방식의 비교와 최초 설정, 삭제대장 초기화, DNS·OAuth, 웹 배포, QA 순서를 모았다. 현재 mabyko 서버에서는 최초 배포를 통제해 검증한 다음 반복 배포를 자동화하는 방식을 권장한다.
 
-1. Openship에서 배포할 커밋과 `compose.production.yaml`을 선택한다. API 1개와 PostgreSQL을 같은 서버에 두고 자동 절전·자동 확장은 끈다. PostgreSQL은 Internal로 유지한다. API 서비스의 도메인 대상 포트를 `3000`으로 명시하고 공개 연결은 HTTPS 프록시를 통해 설정한다. Compose의 `expose`만으로 Openship에 포트가 자동 등록된다고 가정하지 않는다. Compose 자체는 호스트 포트를 열지 않는다.
-2. 예제의 환경변수를 Openship에 입력한다. GitHub OAuth 앱은 운영 웹 주소와 API callback을 사용한다. DB 암호와 TOTP 키는 각각 독립적으로 생성하고 TOTP 키는 재배포 때 유지한다. 처음에는 `PRO_ACCEPT_NEW_TRANSFERS=false`로 둔다. 비밀값을 Git·빌드 로그·웹 변수에 넣지 않는다. Openship이 서비스 환경변수를 빌드 인수로 전달할 수 있으므로 Dockerfile에서 비밀값을 `ARG`로 선언하거나 빌드에 사용하지 않는다.
-3. `postgres-data`, `encrypted-objects`, `deletion-ledger`를 별도 영속 볼륨으로 연결한다. API는 UID/GID `1000:1000`으로 실행한다. 새 named volume은 이미지의 소유권을 이어받지만 기존 볼륨이나 bind mount는 직접 쓰기 권한을 확인해야 한다. 객체·삭제대장을 DB와 함께 스냅샷 복원하지 않는다.
-4. API 트래픽을 연결하기 전에 같은 이미지·볼륨·UID로 `node src/deletions.ts --init`을 **최초 한 번만** 실행한다. 경로는 마운트 지점 아래 `/var/lib/envhandoff/deletions/ledger`다. 이미 초기화한 디렉터리를 다시 만들지 않는다. 이후 API 시작 시 DB 마이그레이션과 삭제대장 재적용이 실행된다.
-5. 내부 준비 상태를 확인한 다음 `api.envhandoff.mabyko.com`의 DNS·인증서를 연결한다. 프록시가 공개 Host를 보존해야 한다. 내부 헬스체크는 정확한 Host로 `/auth/session`을 호출하고 무쿠키 `401`을 정상으로 본다. 이는 DB·삭제대장 접근을 포함하지만 객체 볼륨의 쓰기·삭제는 별도로 확인해야 한다.
-6. 웹은 기존 Cloudflare Worker에 배포한다. `VITE_PRO_API_ORIGIN`을 맞춰 웹·Worker를 빌드하고 `/pro` 및 `/receive/:id`의 SPA 경로를 확인한다. 실제 GitHub 로그인·쿠키·CORS·패스키/TOTP를 확인한 뒤 신규 접수를 열고 합성 파일로 팀 전달·외부 공유·회수·재시작을 검사한다. 남은 [QA](qa.md)와 삭제 감시·백업 복원 훈련을 마친 뒤 베타 초대를 확대한다.
-
-동일 구성을 일반 Docker Compose로 최초 실행하는 순서는 다음과 같다. `.env.production`에는 운영 대상의 값을 별도로 넣고 Git에 추가하지 않는다. 운영 볼륨에 `down -v`를 실행하지 않는다.
-
-```sh
-docker compose --env-file .env.production -f compose.production.yaml config --quiet
-docker compose --env-file .env.production -f compose.production.yaml build api
-docker compose --env-file .env.production -f compose.production.yaml run --rm --no-deps api node src/deletions.ts --init
-docker compose --env-file .env.production -f compose.production.yaml up -d --wait
-```
-
-Openship은 Compose의 모든 필드를 그대로 실행하는 방식이 아니다. 설치 버전에서 서비스별 이미지·환경변수·볼륨·헬스체크와 API 도메인의 포트 설정이 가져와졌는지 확인한다. 특히 `expose`, `init`, `user`, `stop_grace_period`는 공식 문서의 모델링 필드에 포함되지 않는다. 실행 UID는 Dockerfile에도 지정했으며, 종료 유예 시간은 업로드 중 재배포 검사에서 확인한다. [Compose 지원 범위](https://openship.io/docs/guides/compose-multi-service), [영속 저장소](https://openship.io/docs/guides/persistent-storage)
+Openship은 Compose의 모든 필드를 그대로 실행하지 않는다. 서비스별 이미지·환경변수·볼륨·헬스체크와 API 도메인의 포트 설정이 가져와졌는지 확인한다. `expose`, `init`, `user`, `stop_grace_period`는 공식 문서의 모델링 필드에 포함되지 않는다. 실행 UID는 Dockerfile에도 지정했으며, 종료 유예 시간은 업로드 중 재배포 검사에서 확인한다. [Compose 지원 범위](https://openship.io/docs/guides/compose-multi-service)
 
 ## 삭제와 관찰
 
@@ -98,7 +82,7 @@ pnpm --filter @envhandoff/api deletion-health
 
 `DATABASE_URL`과 독립 `DELETION_LEDGER_PATH`를 확인하고 다음 명령으로 대상을 먼저 조회한다. 두 ID가 같은 계정에 속해야 하며 로그인 이름으로 대상을 추측하지 않는다.
 
-```sh
+```text
 pnpm --filter @envhandoff/api disable-account <내부-사용자-UUID> <GitHub-숫자-ID>
 ```
 
