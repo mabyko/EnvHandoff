@@ -165,3 +165,5 @@
 - 브라우저 재실행: Vite origin에서 `await (await import('/tests/pro-beta.browser.tsx')).verifyBetaFlow()` 또는 `verifyBetaOperator()`. 모의 API는 해당 컴포넌트 전용이며 종료 시 원래 fetch를 복원한다.
 
 운영 배포: API `a0ba027` / Openship `dep_vjiXoTdd4TW5ffES` Ready, API·PostgreSQL healthy/restarts=0. 마이그레이션 9, 기존 활성화 계정 1개와 워크스페이스 보존, 발급 코드 0개 확인. `PRO_OPERATOR_GITHUB_ID`는 기존 로그인 계정의 숫자 ID와 대조해 설정했다. 비로그인 `/beta` 401, 원본 서버 직접 접근 403 확인. 웹 Worker `731d2d64-96d7-474d-8851-e6f1efe3cfaa` 배포 완료. 신규 파일 전달 접수는 기존 중지 상태를 유지한다.
+
+참여 UX 후속 검증: 웹 lint·typecheck·27개 테스트·운영 빌드 통과. 격리 Chrome의 `verifyWorkspaceNavigation()`에서 메뉴/워크스페이스 선택 유지, 이전 화면 오류 제거, 잘못된 코드 유형 안내, 초대 폼 열기와 포커스를 확인했다. `verifyMemberInvitation()`은 베타 미활성 계정의 링크 확인→Member 참여 후에도 베타 자격/소유 수가 그대로임을 확인했다. 기존 베타 활성화·개설·발급/취소 검사와 함께 총 19항목 통과. 1360px 다크·375px 라이트에서 가로 넘침 없이 두 참여 경로를 구분했다. 회원/초대는 모의 API만 사용했다.

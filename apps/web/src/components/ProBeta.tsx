@@ -23,10 +23,10 @@ export function ProBeta({ status, busy, call, run, onActivated, onCreate, onSett
     }
   }, [status.operator, busy, run, refresh])
   return <section className="pro-page">
-    <header className="pro-page-header"><div><span className="pro-badge">{status.operator ? '운영자' : '무료 베타'}</span><h2>{status.operator ? '베타 참여 관리' : 'Pro Beta 참여하기'}</h2><p>베타 참여 자격과 팀의 멤버 권한은 따로 관리돼요.</p></div></header>
+    <header className="pro-page-header"><div><span className="pro-badge">{status.operator ? '운영자' : '무료 베타'}</span><h2>{status.operator ? '베타 참여 관리' : 'Pro Beta 참여하기'}</h2><p>베타 코드는 워크스페이스 개설 권한을 활성화해요. 다른 워크스페이스 참여에는 별도의 초대가 필요해요.</p></div></header>
     {status.active ? <div className="pro-welcome-card"><ShieldCheck aria-hidden="true" /><div><h3>Pro Beta가 활성화됐어요</h3><p>소유 워크스페이스 {status.owned} / {status.workspaceLimit}개 · 초대받아 참여한 워크스페이스는 별도예요.</p><button className="button primary" disabled={busy || status.owned >= status.workspaceLimit} onClick={onCreate}>워크스페이스 만들기</button></div></div> :
       <form className="pro-welcome-card pro-form" onSubmit={event => { event.preventDefault(); void run(async () => { onActivated(await call('/beta/redeem', { code }) as BetaStatus); setCode('') }) }}>
-        <KeyRound aria-hidden="true" /><div><h3>초대 코드로 시작하세요</h3><p>운영자에게 받은 베타 코드를 입력하면 내 워크스페이스를 최대 2개 만들 수 있어요. 팀 초대 링크는 ‘시작하기’에서 수락해주세요.</p>
+        <KeyRound aria-hidden="true" /><div><h3>베타 참여 코드를 입력하세요</h3><p>운영자에게 받은 베타 코드를 입력하면 내 워크스페이스를 최대 2개 만들 수 있어요. 워크스페이스 초대 링크는 ‘워크스페이스 참여’에서 수락해주세요.</p>
         <label htmlFor="beta-code">베타 참여 코드</label><input id="beta-code" value={code} required maxLength={64} autoComplete="off" spellCheck={false} onChange={event => setCode(event.target.value)} disabled={busy} />
         <button className="button primary" disabled={busy} type="submit">Pro Beta 활성화</button></div>
       </form>}

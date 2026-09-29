@@ -1,3 +1,5 @@
+import { invitationToken } from './invitation.ts'
+
 export type ProDestination = { orgId: string; requestId?: string; shareId?: string }
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 export const proReturnKey = 'envhandoff-pro-return'
@@ -64,6 +66,7 @@ export function proPath(route: ProRoute): string {
 
 export function pendingProRoute(): ProRoute | null {
   const current = readProRoute(location.pathname, location.search)
+  if (current?.page === 'start' && invitationToken(location.href, location.origin)) return current
   if (!current || location.pathname.replace(/\/$/, '') !== '/pro' || new URLSearchParams(location.search).has('org')) return current
   try {
     const saved = sessionStorage.getItem(proReturnKey)

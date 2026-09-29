@@ -35,7 +35,7 @@ test('Pro detail restoration accepts only an organization and one UUID target, n
 
 test('Pro routes round trip pages and creation context while rejecting unsafe or ambiguous links', () => {
   const orgId = crypto.randomUUID(), id = crypto.randomUUID(), environmentId = crypto.randomUUID()
-  for (const page of ['start', 'requests', 'shares', 'projects', 'team', 'settings'] as const) {
+  for (const page of ['start', 'requests', 'shares', 'projects', 'team', 'settings', 'beta'] as const) {
     for (const route of [{ page }, { page, orgId }]) {
       const url = new URL(proPath(route), 'https://example.test')
       assert.deepEqual(readProRoute(url.pathname, url.search), route)
@@ -55,11 +55,13 @@ test('Pro routes round trip pages and creation context while rejecting unsafe or
 test('OAuth return keeps only a validated Pro route; explicit current routes win and modified clicks stay native', () => {
   const locationDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'location'), storageDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'sessionStorage')
   const orgId = crypto.randomUUID(), id = crypto.randomUUID()
-  let saved = `/pro/shares/${id}?org=${orgId}`, pathname = '/pro', search = ''
+  let saved = `/pro/shares/${id}?org=${orgId}`, pathname = '/pro', search = '', hash = ''
   try {
-    Object.defineProperty(globalThis, 'location', { configurable: true, get: () => ({ pathname, search }) })
+    Object.defineProperty(globalThis, 'location', { configurable: true, get: () => ({ pathname, search, href: 'https://example.test' + pathname + search + hash, origin: 'https://example.test' }) })
     Object.defineProperty(globalThis, 'sessionStorage', { configurable: true, value: { getItem: () => saved } })
     assert.deepEqual(pendingProRoute(), { page: 'shares', orgId, id })
+    hash = '#invite=' + 'a'.repeat(43); assert.deepEqual(pendingProRoute(), { page: 'start' })
+    hash = ''; assert.deepEqual(pendingProRoute(), { page: 'shares', orgId, id })
     pathname = '/pro/settings'; assert.deepEqual(pendingProRoute(), { page: 'settings' })
     pathname = '/pro'; search = '?org=bad'; assert.equal(pendingProRoute(), null)
     search = ''; saved = 'https://evil.test/pro'; assert.deepEqual(pendingProRoute(), { page: 'start' })

@@ -151,7 +151,7 @@ export function ProLogin() {
         <>{session.acceptNewTransfers === false && <Notice>새로운 파일 전달이 일시 중지돼 있어요. 기존 전달은 원래 기한까지 받을 수 있어요.</Notice>}
         <ProOrganizations key={'organizations:' + session.user.id + ':' + session.csrf} route={route} onNavigate={navigate} onResolvedOrganization={resolveOrganization} api={api} userId={session.user.id} csrf={session.csrf} initialToken={initialToken} disabled={busy || sessionUnavailable} onAccepted={() => setInitialToken('')} onExpired={expired}
           settings={<ProSecurity key={'security:' + session.user.id + ':' + session.csrf} api={api} userId={session.user.id} csrf={session.csrf} disabled={busy || sessionUnavailable} onExpired={expired} onDeleted={warning => { setError(warning); expired() }} />} /></>
-      ) : !busy && <div className="pro-entry"><Heading title="팀의 설정 파일을 안전하게 주고받으세요">GitHub로 로그인한 뒤 베타 코드 또는 팀 초대로 시작하세요.</Heading><ul className="pro-entry-benefits"><li>필요한 환경 파일을 팀원에게 요청</li><li>승인된 내 브라우저에서 파일 수신</li><li>링크와 별도 코드로 외부에 전달</li></ul><button type="button" className="button primary" disabled={busy} onClick={() => { void act('start') }}>GitHub로 로그인</button><p className="help">무료 초대 베타예요. 운영자의 베타 코드로 워크스페이스를 만들거나, 팀 Owner의 초대로 기존 팀에 참여할 수 있어요.</p></div>}
+      ) : !busy && <div className="pro-entry"><Heading title="팀의 설정 파일을 안전하게 주고받으세요">GitHub로 로그인한 뒤 베타 참여 코드 또는 워크스페이스 초대로 시작하세요.</Heading><ul className="pro-entry-benefits"><li>필요한 환경 파일을 팀원에게 요청</li><li>승인된 내 브라우저에서 파일 수신</li><li>링크와 별도 코드로 외부에 전달</li></ul><button type="button" className="button primary" disabled={busy} onClick={() => { void act('start') }}>GitHub로 로그인</button><p className="help">무료 초대 베타예요. 운영자의 베타 코드로 워크스페이스를 만들거나, 워크스페이스 Owner의 초대 링크로 참여할 수 있어요.</p></div>}
     </section>
   )
 }
