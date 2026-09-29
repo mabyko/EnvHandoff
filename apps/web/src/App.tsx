@@ -74,6 +74,7 @@ export default function App() {
             EnvHandoff
           </button>
           <div className="header-actions">
+            {route.view === 'home' && <a className="text-button" href="/pro">Pro</a>}
             {route.view === 'home' ? (
               <button
                 type="button"
