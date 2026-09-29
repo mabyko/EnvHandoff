@@ -47,6 +47,9 @@ export function ProSecurity({ api, userId, csrf, disabled, onExpired, onDeleted 
   expired.current = onExpired
   const mine = state?.devices.find(device => device.identity.deviceId === local?.deviceId)
   const locked = busy || disabled
+  const removalReason = !state ? '' : state.passkeys.length + Number(state.totp) <= 1
+    ? errors.last_factor
+    : state.reauthenticatedUntil <= Date.now() ? '인증 수단을 삭제하려면 위에서 먼저 본인 확인을 해주세요.' : ''
 
   async function call(path: string, body?: Record<string, unknown>) {
     const response = await fetch(api + path, { method: body ? 'POST' : 'GET', credentials: 'include', redirect: 'error',
@@ -121,7 +124,7 @@ export function ProSecurity({ api, userId, csrf, disabled, onExpired, onDeleted 
     {state && <>
       <fieldset className="plain-fieldset" disabled={locked}>
         <legend>본인 확인</legend>
-        <p>기기 승인·회수 전에 등록한 패스키 또는 인증 앱으로 확인해주세요. 확인은 현재 로그인에서 15분간 유효해요.</p>
+        <p>인증 수단 추가·삭제나 기기 승인·회수 전에 등록한 패스키 또는 인증 앱으로 확인해주세요. 확인은 현재 로그인에서 15분간 유효해요.</p>
         {state.reauthenticatedUntil > Date.now() && <p>본인 확인 완료 · {new Date(state.reauthenticatedUntil).toLocaleTimeString()}까지</p>}
         {state.passkeys.length > 0 && <button className="button" type="button" onClick={() => { void run(async () => {
           const { id, options } = await call('/security/reauth/options', {})
@@ -140,7 +143,8 @@ export function ProSecurity({ api, userId, csrf, disabled, onExpired, onDeleted 
       <fieldset className="plain-fieldset" disabled={locked}>
         <legend>인증 수단</legend>
         <p>패스키와 인증 앱을 함께 등록해두면 하나를 잃어도 다른 수단을 쓸 수 있어요. 모든 수단을 잃으면 여기서 직접 복구할 수 없어요.</p>
-        <ul className="pro-members">{state.passkeys.map(key => <li key={key.id}><span>패스키 · {key.label}</span><button className="button" type="button" onClick={() => {
+        {(state.passkeys.length > 0 || state.totp) && removalReason && <p id="factor-removal-reason">{removalReason}</p>}
+        <ul className="pro-members">{state.passkeys.map(key => <li key={key.id}><span>패스키 · {key.label}</span><button className="button" type="button" disabled={!!removalReason} aria-describedby={removalReason ? 'factor-removal-reason' : undefined} onClick={() => {
           if (confirm(`${key.label} 패스키를 삭제할까요?`)) void run(async () => { await call('/security/passkeys/remove', { id: key.id }); setSetup(null) }, '패스키를 삭제했어요.')
         }}>삭제</button></li>)}</ul>
         <form className="pro-form" onSubmit={event => { event.preventDefault(); void run(async () => {
@@ -151,7 +155,7 @@ export function ProSecurity({ api, userId, csrf, disabled, onExpired, onDeleted 
           <label htmlFor="passkey-name">패스키 이름</label><input id="passkey-name" value={name} maxLength={60} required onChange={event => setName(event.target.value)} />
           <button className="button" type="submit" disabled={state.passkeys.length >= 5}>패스키 추가</button>
         </form>
-        {state.totp ? <div className="actions"><span>인증 앱 등록됨</span><button type="button" className="button" onClick={() => {
+        {state.totp ? <div className="actions"><span>인증 앱 등록됨</span><button type="button" className="button" disabled={!!removalReason} aria-describedby={removalReason ? 'factor-removal-reason' : undefined} onClick={() => {
           if (confirm('등록한 인증 앱을 삭제할까요?')) void run(async () => { await call('/security/totp/remove', {}); setCode('') }, '인증 앱을 삭제했어요.')
         }}>인증 앱 삭제</button></div> : <>
           <button type="button" className="button" disabled={!state.totpAvailable} onClick={() => { void run(async () => {
