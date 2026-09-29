@@ -12,6 +12,7 @@ export function limitMessage(code: string, retryAfter: string | null, now = Date
     const seconds = /^\d+$/.test(retryAfter) ? Number(retryAfter) : (Date.parse(retryAfter) - now) / 1000
     if (Number.isFinite(seconds) && seconds > 0 && seconds <= 7 * 86400) return `사용 한도에 도달했어요. ${Math.ceil(seconds / 60)}분 뒤 다시 시도해주세요.`
   }
+  if (code === 'beta_code_limit') return '사용 가능한 베타 코드는 최대 100개예요. 사용하지 않는 코드를 취소한 뒤 다시 발급해주세요.'
   if (code === 'storage_limit') return '조직 보관량 512 MiB 또는 동시 업로드 3개 한도에 도달했어요. 진행 중인 업로드가 끝난 뒤 다시 시도해주세요. 보관량 초과라면 회수·만료된 파일의 저장소 삭제가 끝나야 공간을 다시 쓸 수 있어요.'
   if (code === 'download_limit') return '동시 다운로드 3개 또는 하루 1 GiB 한도에 도달했어요. 진행 중인 다운로드가 끝난 뒤 다시 시도해주세요. 일일 한도는 다음 UTC 00:00(한국 시간 오전 9시)에 초기화돼요.'
   if (code === 'request_limit') return '진행 중인 요청 100개 한도에 도달했어요. 기존 요청을 완료하거나 취소한 뒤 다시 시도해주세요.'

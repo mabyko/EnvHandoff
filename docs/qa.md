@@ -163,3 +163,5 @@
 - 코드 마지막 자리 동시 사용, 계정별 재입력, 만료·취소 후 기존 활성화 유지, 비운영자 발급 거부, 최근 본인 확인·Origin·CSRF, 실패 입력 10분 20회 제한, 동시 개설 2개 한도, Owner 이전 우회 차단을 PostgreSQL 테스트로 확인.
 - Chrome 격리 프로필의 실제 React 컴포넌트에서 `verifyBetaFlow()` 7항목과 `verifyBetaOperator()` 4항목 통과. 375px 모바일·812px 가로·1280px 데스크톱, 밝은/어두운 화면 확인. 드롭다운 Escape와 대화상자 첫 입력 포커스, 두 개 생성 후 제한 확인. 실제 사용자 계정으로 코드 발급·워크스페이스 생성은 하지 않음.
 - 브라우저 재실행: Vite origin에서 `await (await import('/tests/pro-beta.browser.tsx')).verifyBetaFlow()` 또는 `verifyBetaOperator()`. 모의 API는 해당 컴포넌트 전용이며 종료 시 원래 fetch를 복원한다.
+
+운영 배포: API `a0ba027` / Openship `dep_vjiXoTdd4TW5ffES` Ready, API·PostgreSQL healthy/restarts=0. 마이그레이션 9, 기존 활성화 계정 1개와 워크스페이스 보존, 발급 코드 0개 확인. `PRO_OPERATOR_GITHUB_ID`는 기존 로그인 계정의 숫자 ID와 대조해 설정했다. 비로그인 `/beta` 401, 원본 서버 직접 접근 403 확인. 웹 Worker `731d2d64-96d7-474d-8851-e6f1efe3cfaa` 배포 완료. 신규 파일 전달 접수는 기존 중지 상태를 유지한다.

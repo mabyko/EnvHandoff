@@ -10,7 +10,7 @@ export function ProBeta({ status, busy, call, run, onActivated, onCreate, onSett
   status: BetaStatus; busy: boolean; call: Call; run: (action: () => Promise<void>) => Promise<void>;
   onActivated: (status: BetaStatus) => void; onCreate: () => void; onSettings: () => void;
 }) {
-  const [code, setCode] = useState(''), [label, setLabel] = useState(''), [maxUses, setMaxUses] = useState(10), [days, setDays] = useState(7)
+  const [code, setCode] = useState(''), [label, setLabel] = useState(''), [maxUses, setMaxUses] = useState('10'), [days, setDays] = useState('7')
   const [codes, setCodes] = useState<Code[]>([]), [issued, setIssued] = useState(''), [revoke, setRevoke] = useState<Code | null>(null)
   const loaded = useRef(false)
   const [now, setNow] = useState(() => Date.now())
@@ -34,12 +34,12 @@ export function ProBeta({ status, busy, call, run, onActivated, onCreate, onSett
       <section className="pro-panel pro-code-panel"><h3>참여 코드 발급</h3><p className="help">코드는 지정한 인원만 사용할 수 있어요. 유효 기간이 끝나도 이미 참여한 계정의 자격은 유지돼요.</p>
         <p className="help">발급·취소 전 최근 15분 이내 본인 확인이 필요해요. <button type="button" className="text-button" onClick={onSettings}>내 설정에서 확인</button></p>
         <form className="pro-form" onSubmit={event => { event.preventDefault(); void run(async () => {
-          const result = await call('/beta/codes', { label, maxUses, days }) as { code: string }
+          const result = await call('/beta/codes', { label, maxUses: Number(maxUses), days: Number(days) }) as { code: string }
           setIssued(result.code); setLabel(''); await refresh()
         }) }}><fieldset className="plain-fieldset" disabled={busy}>
           <label htmlFor="beta-label">관리용 이름</label><input id="beta-label" value={label} onChange={event => setLabel(event.target.value)} required maxLength={80} placeholder="예: 첫 번째 테스트 그룹" />
-          <div className="pro-form-columns"><div><label htmlFor="beta-uses">참여 가능 인원</label><input id="beta-uses" type="number" min={1} max={1000} required value={maxUses} onChange={event => setMaxUses(event.target.valueAsNumber)} /><small>1~1,000명 · 계정당 한 번</small></div>
-          <div><label htmlFor="beta-days">발급 시점부터 유효 일수</label><input id="beta-days" type="number" min={1} max={365} required value={days} onChange={event => setDays(event.target.valueAsNumber)} /><small>1~365일 · 참여 신청 기한</small></div></div>
+          <div className="pro-form-columns"><div><label htmlFor="beta-uses">참여 가능 인원</label><input id="beta-uses" type="number" min={1} max={1000} required value={maxUses} onChange={event => setMaxUses(event.target.value)} /><small>1~1,000명 · 계정당 한 번</small></div>
+          <div><label htmlFor="beta-days">발급 시점부터 유효 일수</label><input id="beta-days" type="number" min={1} max={365} required value={days} onChange={event => setDays(event.target.value)} /><small>1~365일 · 참여 신청 기한</small></div></div>
           <button className="button primary" type="submit">코드 발급</button>
         </fieldset></form>
         {issued && <div className="pro-confirm" role="status"><p>코드 원문은 지금만 볼 수 있어요. 복사해서 보관해주세요.</p><CopyField label="발급된 베타 코드" value={issued} /><button type="button" className="text-button" onClick={() => setIssued('')}>코드 숨기기</button></div>}
