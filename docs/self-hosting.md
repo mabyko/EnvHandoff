@@ -187,7 +187,7 @@ dc up -d --wait api
 
 ## C. Openship으로 Pro API 설치
 
-Cloudflare로 API도 프록시한다면 [Cloudflare 전용 접근 설정](deployment.md)을 적용할 수 있다. `CLOUDFLARE_PROXY_IP`에는 자신의 로컬 프록시 주소를 넣고 프록시의 `X-Real-IP` 덮어쓰기를 확인한다. Cloudflare 없이 직접 Docker로 운영할 때는 이 값을 비워 둔다.
+Cloudflare로 API도 프록시한다면 [Cloudflare 전용 접근 설정](deployment.md)을 적용할 수 있다. `CLOUDFLARE_ORIGIN_SECRET`에는 자신의 독립적인 난수 비밀값을 넣고, 자신의 zone에서 같은 비밀 요청 헤더를 설정한다. Cloudflare 없이 직접 Docker로 운영할 때는 이 값을 비워 둔다.
 
 자신의 워크스페이스에 서버를 연결하고 공개 저장소·검증한 커밋의 브랜치·`compose.production.yaml`을 선택한다. 자동 탐지가 개발용 `compose.yaml`을 고르면 운영 파일로 다시 지정한다. `api`와 `postgres` 두 서비스가 보여야 한다. 빌드 context는 저장소 루트 `.`, Dockerfile은 `apps/api/Dockerfile`이다.
 

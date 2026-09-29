@@ -40,7 +40,7 @@ services:
       FILE_STORAGE_PATH: /var/lib/envhandoff/objects
       DELETION_LEDGER_PATH: /var/lib/envhandoff/deletions/ledger
       PRO_ACCEPT_NEW_TRANSFERS: ${PRO_ACCEPT_NEW_TRANSFERS:-false}
-      CLOUDFLARE_PROXY_IP: ${CLOUDFLARE_PROXY_IP:-}
+      CLOUDFLARE_ORIGIN_SECRET: ${CLOUDFLARE_ORIGIN_SECRET:-}
     expose:
       - "3000"
     depends_on:

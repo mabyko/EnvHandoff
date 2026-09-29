@@ -10,7 +10,7 @@ import { clientIpPolicy } from './client-ip.ts'
 
 const development = process.env.NODE_ENV === 'development'
 const apiOrigin = process.env.API_ORIGIN ?? 'https://api.envhandoff.mabyko.com'
-const clientIp = clientIpPolicy(process.env.CLOUDFLARE_PROXY_IP)
+const clientIp = clientIpPolicy(process.env.CLOUDFLARE_ORIGIN_SECRET)
 let db: Database
 try {
   db = new Database(process.env.DATABASE_URL ?? '')

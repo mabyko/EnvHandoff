@@ -10,7 +10,7 @@
 - `DATABASE_URL`은 전용 PostgreSQL을 가리킨다. 아래 Compose는 같은 서버의 비공개 Docker 네트워크에서 DB에 연결하며 DB 포트를 호스트에 공개하지 않는다. DB를 별도 서버로 분리할 때는 인증서를 검증하는 TLS 연결을 설정한다. 개발·테스트 DB를 운영에 재사용하지 않는다.
 - `FILE_STORAGE_PATH`는 API만 접근하는 영속 경로다. 웹 정적 파일·CDN·공개 버킷과 분리하고 객체 백업·버전 보관을 끈다. 서버 재시작 때 경로가 교체되거나 초기화되지 않아야 한다.
 - API 인스턴스가 여러 개면 같은 객체 저장소를 읽고 삭제할 수 있어야 한다. 현재 접속 주소별 제한은 단일 프로세스용이며, 여러 인스턴스에는 공유 edge 제한이 필요하다.
-- 프록시는 정확한 Host를 API에 전달해야 한다. 기본 설정은 전달 IP 헤더를 무시한다. Cloudflare 전용 운영에서는 `CLOUDFLARE_PROXY_IP`로 로컬 프록시를 지정하고, 프록시의 TCP peer가 Cloudflare인지 확인한 뒤 실제 사용자 IP로 제한한다. [설정과 복구 조건](deployment.md#4-api-도메인과-https-연결하기)을 따른다. 요청/응답 본문, 쿠키, 공유 토큰 헤더, URL fragment와 공유 코드가 로그·분석 도구에 수집되지 않도록 설정한다.
+- 프록시는 정확한 Host를 API에 전달해야 한다. 기본 설정은 전달 IP 헤더를 무시한다. Cloudflare 전용 운영에서는 `CLOUDFLARE_ORIGIN_SECRET`으로 우리 zone의 비밀 요청 헤더를 검증한 뒤 실제 사용자 IP로 제한한다. [설정과 복구 조건](deployment.md#4-api-도메인과-https-연결하기)을 따른다. 요청/응답 본문, 쿠키, 공유 토큰 헤더, URL fragment와 공유 코드가 로그·분석 도구에 수집되지 않도록 설정한다.
 - `TOTP_ENCRYPTION_KEY`는 DB 밖에서 보호하고 재배포 때 유지한다. 운영 키나 OAuth secret을 웹의 `VITE_*` 설정에 넣지 않는다.
 - `DELETION_LEDGER_PATH`는 DB 스냅샷과 독립된 영속 삭제대장 전용 디렉터리다. `FILE_STORAGE_PATH`와 공유하지 않고 DB 복원 때 과거 사본으로 되돌리지 않는다. 최초 설치에서만 `pnpm --filter @envhandoff/api deletion-ledger --init`으로 생성한다. 기존 디렉터리는 덮어쓰지 않으며 분실·손상·다른 대장 연결은 API 시작/요청을 차단한다. 개발 기본 경로도 최초 명시 초기화가 필요하다.
 - 베타 한도는 [limits.ts](../apps/api/src/limits.ts)에 모아 버전 관리한다. 초기 값 조정은 해당 설정과 화면의 한도 안내를 함께 갱신하고 재배포·회귀 검사를 거친다. 파일 형식·암호 규격·보안 유효 시간은 이 설정으로 바꾸지 않는다.
