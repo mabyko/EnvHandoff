@@ -156,3 +156,10 @@
 - 실제 Aside 로그인 세션으로 새로고침 후 `mabyko` Owner와 워크스페이스 화면을 확인했다. 도메인·쿠키·등록한 패스키는 바꾸지 않았다.
 - 클라이언트 IP/HTTP 경계 테스트 2개, 인증·보안·조직 회귀 21개, API typecheck·lint PASS. 서로 다른 사용자 IP, IPv6 정규화, 잘못된/중복 비밀 헤더, 직접 접속, 로컬 healthcheck 예외를 검사했다. 운영 서비스에 임계치를 넘기는 부하 시험은 하지 않았다.
 - 중간 IP 대역 방식은 Openship의 전역 real-IP 변환으로 정상 요청도 403이 되어 설정을 비활성화하고 복구했다. 최종 구현은 zone 비밀 헤더를 검증한다. 별도 배포 한 건은 이미지 생성 후 진행이 멈춰 취소했고, 재배포 성공 후 위 결과를 확인했다.
+
+### 베타 참여 코드와 워크스페이스 개설 (2026-09-29)
+
+- `pnpm check`: 12개 작업 통과(API 104개 포함). 관리 복구에 소유 한도를 연결한 후 `tests/recovery.test.ts` 6개, API 타입 검사·lint 추가 통과.
+- 코드 마지막 자리 동시 사용, 계정별 재입력, 만료·취소 후 기존 활성화 유지, 비운영자 발급 거부, 최근 본인 확인·Origin·CSRF, 실패 입력 10분 20회 제한, 동시 개설 2개 한도, Owner 이전 우회 차단을 PostgreSQL 테스트로 확인.
+- Chrome 격리 프로필의 실제 React 컴포넌트에서 `verifyBetaFlow()` 7항목과 `verifyBetaOperator()` 4항목 통과. 375px 모바일·812px 가로·1280px 데스크톱, 밝은/어두운 화면 확인. 드롭다운 Escape와 대화상자 첫 입력 포커스, 두 개 생성 후 제한 확인. 실제 사용자 계정으로 코드 발급·워크스페이스 생성은 하지 않음.
+- 브라우저 재실행: Vite origin에서 `await (await import('/tests/pro-beta.browser.tsx')).verifyBetaFlow()` 또는 `verifyBetaOperator()`. 모의 API는 해당 컴포넌트 전용이며 종료 시 원래 fetch를 복원한다.

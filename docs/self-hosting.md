@@ -208,3 +208,7 @@ dc exec -T api node src/deletion-health.ts
 API 확인 후 A의 웹 build·dry-run·deploy를 같은 API 주소로 실행하고 로그인과 전달을 다시 검사한다. 새 버전의 `wrangler.jsonc`에 binding·migration 변경이 있다면 자신의 설정 복사본에도 반영하되 계정·도메인은 유지한다. 신규 전달을 잠시 막으려면 `PRO_ACCEPT_NEW_TRANSFERS=false`로 바꾸고 `dc up -d --wait api`를 실행한다. 기존 다운로드는 원래 기한까지 유지된다.
 
 설치자는 [운영·백업·복원 절차](operations.md)를 적용한다. 특히 객체 백업은 끄고, DB 백업에는 토큰 관련 제외 정책을 적용하며, 삭제대장을 DB와 함께 과거 시점으로 되돌리지 않는다. 삭제 지연 감시·API 중단 대응·복원 훈련을 완료한 뒤 사용 범위를 넓힌다. 공식 클라우드 운영자가 자체 호스팅 설치의 백업이나 장애 대응을 대신하지 않는다.
+
+## 베타 참여 코드 화면
+
+운영자의 GitHub 숫자 ID를 `PRO_OPERATOR_GITHUB_ID`에 설정하고 API를 재시작하면 `/pro/beta`에서 인원·기간을 지정한 코드를 발급할 수 있다. Compose는 해당 변수를 API에 전달한다. 빈 값이면 운영자 권한을 부여하지 않는다. GitHub 로그인 후 내 설정에서 인증 수단을 등록하고 본인 확인을 완료해야 발급·취소가 가능하다. 자세한 절차는 [API 가이드](../apps/api/README.md#베타-활성화와-워크스페이스-개설)를 따른다. 앞의 `invite-owner`는 자체 호스팅 호환 경로로 유지된다.

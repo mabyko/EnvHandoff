@@ -39,6 +39,7 @@ services:
       TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:?Set a stable independent 32-byte lowercase hex key}
       FILE_STORAGE_PATH: /var/lib/envhandoff/objects
       DELETION_LEDGER_PATH: /var/lib/envhandoff/deletions/ledger
+      PRO_OPERATOR_GITHUB_ID: ${PRO_OPERATOR_GITHUB_ID:-}
       PRO_ACCEPT_NEW_TRANSFERS: ${PRO_ACCEPT_NEW_TRANSFERS:-false}
       CLOUDFLARE_ORIGIN_SECRET: ${CLOUDFLARE_ORIGIN_SECRET:-}
     expose:

@@ -1,6 +1,7 @@
 // Versioned beta operating limits. Adjust with deployment and quota regression checks.
 // File-format limits, cryptographic parameters and security lifetimes live with their protocols.
 export const limits = {
+  ownedOrganizations: 2,
   organizationMembers: 20,
   userDevices: 5,
   organizationStorageBytes: 512 * 1024 * 1024,

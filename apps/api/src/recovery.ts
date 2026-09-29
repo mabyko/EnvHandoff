@@ -1,4 +1,5 @@
 import { limits } from './limits.ts'
+import { Beta } from './beta.ts'
 import { createHash } from 'node:crypto'
 import type { Database } from './database.ts'
 import { githubAccount } from './organizations.ts'
@@ -69,6 +70,7 @@ export async function recoverManagement(db: Database, input: Recovery, now = Dat
     const owners = await db.all<{ id: string; github_id: string }>("SELECT u.id,u.github_id FROM memberships m JOIN users u ON u.id=m.user_id WHERE m.org_id=$1 AND m.role='owner' ORDER BY u.github_id",input.orgId)
     if (JSON.stringify(owners.map(owner=>owner.github_id).sort()) !== JSON.stringify(expected)) throw new Error('owner_list_changed')
     if (!membership && (await db.get<{ n: number }>('SELECT count(*) AS n FROM memberships WHERE org_id=$1',input.orgId))!.n >= limits.organizationMembers) throw new Error('member_limit')
+    if (membership?.role !== 'owner') await new Beta(db, () => now).requireCapacity(target.id)
     const users = [...new Set([...owners.map(owner=>owner.id),target.id])]
     const sessions = (await db.get<{ n: number }>('SELECT count(*) AS n FROM sessions WHERE user_id=ANY($1::text[])',users))!.n
     const invitations = (await db.get<{ n: number }>("SELECT count(*) AS n FROM invitations WHERE org_id=$1 AND status='pending'",input.orgId))!.n

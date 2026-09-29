@@ -141,17 +141,17 @@ export function ProLogin() {
   return (
     <section className="pro-app" aria-busy={busy}>
       <div className="pro-topbar">
-        <div><p className="pro-eyebrow">TEAM WORKSPACE</p><h1>EnvHandoff <span>Pro</span></h1></div>
+        <div><p className="pro-eyebrow">TEAM WORKSPACE</p><h1>EnvHandoff <span>Pro</span> <small className="pro-badge">BETA</small></h1></div>
         {session && <div className="pro-account"><span className="pro-account-name">{session.user.login}</span><a className="text-button" href={proPath(settingsRoute)} aria-current={route?.page === 'settings' ? 'page' : undefined} onClick={event => followProLink(event, settingsRoute, navigate)}><Settings aria-hidden="true" />내 설정</a><button type="button" className="text-button" disabled={busy} onClick={() => { void act('logout') }}><LogOut aria-hidden="true" />로그아웃</button></div>}
       </div>
       {error && <Notice error>{error}</Notice>}
       {sessionUnavailable && <Notice error>서버에 연결하지 못해 작업을 잠시 멈췄어요. 이 탭의 파일과 코드는 유지돼요. <button className="button" type="button" disabled={busy} onClick={() => refreshSession.current()}>연결 다시 확인</button></Notice>}
       {busy && <p className="pro-session-status" role="status">로그인 상태를 확인하고 있어요.</p>}
       {!route ? <div className="pro-entry"><Heading title="페이지를 찾을 수 없어요">링크 주소를 확인하거나 Pro 시작 화면으로 돌아가세요.</Heading><a className="button" href="/pro" onClick={event => followProLink(event, { page: 'start' }, navigate)}>Pro 시작으로</a></div> : session ? (
-        <>{session.acceptNewTransfers === false && <Notice>신규 전달 접수가 종료됐어요. 기존 전달은 원래 기한까지 받을 수 있어요.</Notice>}
+        <>{session.acceptNewTransfers === false && <Notice>새로운 파일 전달이 일시 중지돼 있어요. 기존 전달은 원래 기한까지 받을 수 있어요.</Notice>}
         <ProOrganizations key={'organizations:' + session.user.id + ':' + session.csrf} route={route} onNavigate={navigate} onResolvedOrganization={resolveOrganization} api={api} userId={session.user.id} csrf={session.csrf} initialToken={initialToken} disabled={busy || sessionUnavailable} onAccepted={() => setInitialToken('')} onExpired={expired}
           settings={<ProSecurity key={'security:' + session.user.id + ':' + session.csrf} api={api} userId={session.user.id} csrf={session.csrf} disabled={busy || sessionUnavailable} onExpired={expired} onDeleted={warning => { setError(warning); expired() }} />} /></>
-      ) : !busy && <div className="pro-entry"><Heading title="팀의 설정 파일을 안전하게 주고받으세요">초대받은 GitHub 계정으로 로그인해 워크스페이스에 참여하세요.</Heading><ul className="pro-entry-benefits"><li>필요한 환경 파일을 팀원에게 요청</li><li>승인된 내 브라우저에서 파일 수신</li><li>링크와 별도 코드로 외부에 전달</li></ul><button type="button" className="button primary" disabled={busy} onClick={() => { void act('start') }}>GitHub로 로그인</button><p className="help">첫 베타는 무료 초대제로 운영해요. 초대가 없다면 팀 Owner에게 문의해주세요.</p></div>}
+      ) : !busy && <div className="pro-entry"><Heading title="팀의 설정 파일을 안전하게 주고받으세요">GitHub로 로그인한 뒤 베타 코드 또는 팀 초대로 시작하세요.</Heading><ul className="pro-entry-benefits"><li>필요한 환경 파일을 팀원에게 요청</li><li>승인된 내 브라우저에서 파일 수신</li><li>링크와 별도 코드로 외부에 전달</li></ul><button type="button" className="button primary" disabled={busy} onClick={() => { void act('start') }}>GitHub로 로그인</button><p className="help">무료 초대 베타예요. 운영자의 베타 코드로 워크스페이스를 만들거나, 팀 Owner의 초대로 기존 팀에 참여할 수 있어요.</p></div>}
     </section>
   )
 }

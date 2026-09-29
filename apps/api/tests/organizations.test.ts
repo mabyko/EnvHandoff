@@ -141,7 +141,7 @@ test('HTTP requires live session, Origin, CSRF, bounded JSON and rejects privile
     const api = new AuthApi(db, config, fetch, () => time), store = new Organizations(db, () => time), owner = (await user(db, 1));
     const invite = (await store.issueOwner(owner));
     assert.equal((await api.handle(request('/organizations'))).status, 401);
-    assert.equal((await api.handle(request('/organizations', owner, { name: 'Open signup' }))).status, 404);
+    assert.equal((await api.handle(request('/organizations', owner, { name: 'Open signup' }))).status, 403);
     assert.equal((await api.handle(request('/organizations/invitations/accept', owner, { token: invite.token, name: 'A' }, { origin: 'https://evil.example' }))).status, 403);
     assert.equal((await api.handle(request('/organizations/invitations/accept', owner, { token: invite.token, name: 'A' }, { 'x-csrf-token': '' }))).status, 403);
     assert.equal((await api.handle(request('/organizations/invitations/accept', owner, { token: invite.token, name: 'A', role: 'owner' }))).status, 400);

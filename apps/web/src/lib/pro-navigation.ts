@@ -28,8 +28,8 @@ export function pendingProDestination(): ProDestination | null {
   } catch { return null }
 }
 
-export type ProRoute = { page: 'start' | 'requests' | 'shares' | 'projects' | 'team' | 'settings'; orgId?: string; id?: string; environmentId?: string; create?: boolean }
-const pages = ['requests', 'shares', 'projects', 'team', 'settings'] as const
+export type ProRoute = { page: 'start' | 'requests' | 'shares' | 'projects' | 'team' | 'settings' | 'beta'; orgId?: string; id?: string; environmentId?: string; create?: boolean }
+const pages = ['requests', 'shares', 'projects', 'team', 'settings', 'beta'] as const
 
 export function readProRoute(pathname: string, search = ''): ProRoute | null {
   const params = new URLSearchParams(search)
@@ -39,7 +39,7 @@ export function readProRoute(pathname: string, search = ''): ProRoute | null {
       return legacy ? { page: legacy.requestId ? 'requests' : 'shares', orgId: legacy.orgId, id: legacy.requestId ?? legacy.shareId } : null
     }
   }
-  const match = /^\/pro(?:\/(requests|shares|projects|team|settings)(?:\/([^/]+))?)?\/?$/.exec(pathname)
+  const match = /^\/pro(?:\/(requests|shares|projects|team|settings|beta)(?:\/([^/]+))?)?\/?$/.exec(pathname)
   if (!match || [...params.keys()].some(key => !['org', 'environment', 'create', 'auth'].includes(key))) return null
   for (const key of ['org', 'environment', 'create', 'auth']) if (params.getAll(key).length > 1) return null
   const page = (match[1] ?? 'start') as ProRoute['page'], id = match[2], orgId = params.get('org'), environmentId = params.get('environment')

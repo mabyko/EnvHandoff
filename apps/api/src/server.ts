@@ -28,6 +28,7 @@ if (process.env.PRO_ACCEPT_NEW_TRANSFERS !== undefined && !['true', 'false'].inc
   await db.close(); process.exit(1)
 }
 const auth = new AuthApi(db, {
+  operatorGithubId: process.env.PRO_OPERATOR_GITHUB_ID,
   acceptNewTransfers: process.env.PRO_ACCEPT_NEW_TRANSFERS !== 'false',
   development, apiOrigin, webOrigin: process.env.WEB_ORIGIN ?? '',
   clientId: process.env.GITHUB_CLIENT_ID ?? '', clientSecret: process.env.GITHUB_CLIENT_SECRET ?? '',

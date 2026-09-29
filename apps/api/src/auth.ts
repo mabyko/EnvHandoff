@@ -1,3 +1,4 @@
+import { Beta } from './beta.ts';
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import type { Database } from './database.ts';
 import { fields, HttpError, jsonBody } from './http.ts';
@@ -25,6 +26,7 @@ export type AuthConfig = {
   fileStoragePath?: string;
   deletionLedgerPath?: string;
   acceptNewTransfers?: boolean;
+  operatorGithubId?: string;
 };
 type Session = {
   token_hash: string;
@@ -53,6 +55,7 @@ export class AuthApi {
   private readonly sessionCookie: string;
   private readonly flowCookie: string;
   private readonly organizations: Organizations;
+  private readonly beta: Beta;
   private readonly security: SecurityApi;
   private readonly requests: Requests;
   private readonly transfers: Transfers;
@@ -77,7 +80,8 @@ export class AuthApi {
     this.sessionCookie = this.secure ? '__Host-envhandoff-session' : 'envhandoff-dev-session';
     this.flowCookie = this.secure ? '__Host-envhandoff-oauth' : 'envhandoff-dev-oauth';
     if (config.deletionLedgerPath) this.deletions = new Deletions(config.deletionLedgerPath);
-    this.organizations = new Organizations(db, clock, this.deletions);
+    this.organizations = new Organizations(db, clock, this.deletions, config.operatorGithubId);
+    this.beta = new Beta(db, clock, config.operatorGithubId);
     this.transfers = new Transfers(db, config.fileStoragePath, clock, config.acceptNewTransfers);
     this.shares = new Shares(db, config.fileStoragePath, clock, config.acceptNewTransfers, () => this.deletions?.sync(this.db, this.clock()));
     this.requests = new Requests(db, this.organizations, clock, config.acceptNewTransfers);
@@ -280,6 +284,10 @@ export class AuthApi {
     return this.db.transaction(async () => {
       if ((await this.requireSession(request)).token_hash !== auth.token_hash)
         throw new HttpError(401, 'session_expired');
+      if (path === '/organizations') {
+        fields(body, ['name']);
+        return this.organizations.create(auth.user_id, body.name);
+      }
       const role = /^\/organizations\/([^/]+)\/members\/([^/]+)\/role$/.exec(path);
       if (role) {
         fields(body, ['role']);
@@ -366,6 +374,33 @@ export class AuthApi {
       throw new HttpError(404);
     });
   }
+  private async betaRequest(request: Request) {
+    const path = new URL(request.url).pathname;
+    const auth = await this.requireSession(request);
+    const body = request.method === 'POST' ? await jsonBody(request) : {};
+    if (path === '/beta/redeem' && request.method === 'POST') await this.beta.attempt(auth.user_id);
+    return this.db.transaction(async () => {
+      if ((await this.requireSession(request)).token_hash !== auth.token_hash) throw new HttpError(401, 'session_expired');
+      if (request.method === 'GET' && path === '/beta') return this.beta.status(auth.user_id);
+      if (request.method === 'GET' && path === '/beta/codes') return this.beta.codes(auth.user_id);
+      if (request.method !== 'POST') throw new HttpError(405);
+      if (path === '/beta/redeem') {
+        fields(body, ['code']);
+        return this.beta.redeem(auth.user_id, body.code);
+      }
+      await this.beta.requireOperator(auth.user_id);
+      await this.security.requireRecent(auth);
+      if (path === '/beta/codes') {
+        fields(body, ['label', 'maxUses', 'days']);
+        return this.beta.issue(auth.user_id, body.label, body.maxUses, body.days);
+      }
+      if (path === '/beta/codes/revoke') {
+        fields(body, ['id']);
+        return this.beta.revoke(auth.user_id, body.id);
+      }
+      throw new HttpError(404);
+    });
+  }
   async handle(request: Request): Promise<Response> {
     const headers = new Headers({ 'cache-control': 'no-store', 'referrer-policy': 'no-referrer', 'x-content-type-options': 'nosniff', vary: 'Origin' });
     const origin = request.headers.get('origin');
@@ -408,6 +443,8 @@ export class AuthApi {
       }
       if (/^\/organizations\/[^/]+\/requests(?:\/|$)/.test(url.pathname))
         return Response.json(await this.requests.handle(request, () => this.requireSession(request)), { headers });
+      if (url.pathname === '/beta' || url.pathname.startsWith('/beta/'))
+        return Response.json(await this.betaRequest(request), { headers });
       if (url.pathname === '/organizations' || url.pathname.startsWith('/organizations/'))
         return Response.json(await this.organizationRequest(request), { headers });
       if (url.pathname === '/security' || url.pathname.startsWith('/security/'))

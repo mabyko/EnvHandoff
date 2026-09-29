@@ -1,3 +1,4 @@
+import { Beta } from './beta.ts';
 import { limits } from './limits.ts'
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { Database } from './database.ts';
@@ -56,8 +57,10 @@ export class Organizations {
   private readonly db: Database;
   private readonly clock: () => number;
   private readonly deletions?: Deletions;
-  constructor(db: Database, clock = Date.now, deletions?: Deletions) {
+  private readonly beta: Beta;
+  constructor(db: Database, clock = Date.now, deletions?: Deletions, operatorId = '') {
     this.db = db;
+    this.beta = new Beta(db, clock, operatorId);
     this.clock = clock;
     this.deletions = deletions;
   }
@@ -93,6 +96,18 @@ export class Organizations {
   async list(userId: string) {
     await this.user(userId);
     return (await this.db.all("SELECT o.id,o.name,o.active,m.role FROM organizations o JOIN memberships m ON m.org_id=o.id WHERE m.user_id=$1 ORDER BY o.name,o.id", userId));
+  }
+  async create(userId: string, value: unknown) {
+    return this.db.transaction(async () => {
+      await this.beta.requireCreation(userId);
+      const id = randomUUID(), teamId = randomUUID(), label = name(value);
+      await this.db.run('INSERT INTO organizations(id,name) VALUES($1,$2)', id, label);
+      await this.db.run("INSERT INTO teams(id,org_id,name,is_default) VALUES($1,$2,'기본 팀',1)", teamId, id);
+      await this.db.run("INSERT INTO memberships VALUES($1,$2,'owner')", id, userId);
+      await this.db.run('INSERT INTO team_members VALUES($1,$2)', teamId, userId);
+      await this.event(id, userId, id, 'organization_created');
+      return { id, name: label, role: 'owner' as const };
+    });
   }
   async detail(userId: string, orgId: string) {
     const org = (await this.membership(userId, orgId));
@@ -175,6 +190,8 @@ export class Organizations {
         return (await this.membership(userId, invite.org_id!));
       let orgId = invite.org_id, teamId = invite.team_id;
       if (invite.kind === 'owner') {
+        await this.beta.requireCapacity(userId);
+        await this.db.run('INSERT INTO beta_members(user_id,activated_at) VALUES($1,$2) ON CONFLICT DO NOTHING', userId, this.clock());
         orgId = randomUUID();
         teamId = randomUUID();
         await this.db.run("INSERT INTO organizations (id,name) VALUES ($1,$2)", orgId, name(organizationName));
@@ -233,6 +250,7 @@ export class Organizations {
       const target = await this.db.get("SELECT m.role FROM memberships m JOIN users u ON u.id=m.user_id AND u.disabled=0 WHERE m.org_id=$1 AND m.user_id=$2", orgId, identifier(targetId));
       if (!target) throw new HttpError(404, 'member_not_found');
       if (target.role === role) return;
+      if (role === 'owner') await this.beta.requireCapacity(targetId);
       if (role === 'member' && ((await this.db.get("SELECT count(*) AS n FROM memberships m JOIN users u ON u.id=m.user_id AND u.disabled=0 WHERE m.org_id=$1 AND m.role='owner'", orgId))!.n as number) <= 1)
         throw new HttpError(409, 'last_owner');
       await this.db.run('UPDATE memberships SET role=$1 WHERE org_id=$2 AND user_id=$3', role, orgId, targetId);
