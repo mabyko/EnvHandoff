@@ -262,6 +262,14 @@ CI로 묶을 때의 순서는 **검사 → 호환 가능한 API 배포 → 웹 �
 
 Cloudflare와 Openship의 push 배포는 서로 완료를 기다리지 않는다. 독립 배포 중에도 동작하도록 API 변경은 기존 웹과 호환되게 만든다. API 배포 성공 후 웹 배포가 반드시 필요한 변경은 두 자동 배포를 따로 시작하지 말고 위의 순차 CI 배포를 구성한다. 신규 전달 접수 설정(`PRO_ACCEPT_NEW_TRANSFERS`)과 운영 QA 완료 여부는 PR 병합과 별도로 관리한다.
 
+### 배포 PR 템플릿
+
+`main` → `release` 배포는 [배포 PR 만들기](https://github.com/mabyko/EnvHandoff/compare/release...main?quick_pull=1&template=release.md)로 연다. [release 템플릿](../.github/PULL_REQUEST_TEMPLATE/release.md)은 배포 범위·커밋, 로컬 검증, DB·환경변수 변경, 배포 순서·복구 방법과 배포 후 결과를 기록한다. 제목은 `release: YYYY-MM-DD 배포 요약`으로 작성한다.
+
+템플릿 파일이 기본 브랜치 `main`에 반영된 뒤 위 링크에서 선택할 수 있다. GitHub가 대상 브랜치 이름으로 템플릿을 자동 선택하는 것은 아니므로 `template=release.md`가 포함된 링크를 사용한다. 템플릿은 작성 양식이며 입력 여부를 강제하는 추가 CI는 없다. 배포 후 항목은 병합 후 실제 결과를 확인하며 채운다.
+
+배포 PR은 **Create a merge commit**으로 병합하고 `main`을 삭제하지 않는다. 계속 유지하는 두 브랜치 사이에는 Squash/Rebase merge를 사용하지 않는다. `release`의 최신 베이스 필수 조건 때문에 이후 PR에 브랜치 갱신이 필요하면, `release`의 변경을 `main`으로 먼저 반영하고 검사를 확인한다. 강제 push로 우회하지 않는다.
+
 ## 참고와 문제 해결
 
 ### 응답과 오류 확인
