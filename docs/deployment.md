@@ -246,7 +246,19 @@ Openship의 자동 배포 대상은 API 스택이다. Cloudflare 웹까지 자�
 
 CI로 묶을 때의 순서는 **검사 → 호환 가능한 API 배포 → 웹 배포 → 공개 응답 확인**이다. 중간 단계가 실패하면 배포 완료로 처리하지 않는다. CI에는 개인 노트북의 터널 대신 실행기가 접근할 관리 API 경로와 필요한 리소스 권한의 토큰을 제공한다. [CLI 자동화](https://openship.io/docs/cli/automation)
 
-현재 저장소에는 이 자동화 workflow를 추가하지 않았으며, 토큰·웹훅도 아직 연결하지 않았다.
+### 공식 서비스의 브랜치와 CI
+
+`.github/workflows/ci.yml`은 `main`·`release` 대상 PR과 두 브랜치의 push에서 `pnpm check`를 실행한다. Node.js 24.21.0·pnpm 12.3.4와 임시 PostgreSQL 18의 `envhandoff_test` DB를 사용하며, 운영 DB·OAuth·Cloudflare 비밀키는 필요 없다. 이 workflow는 배포하지 않는다.
+
+2026-09-29 확인한 운영 연결은 다음과 같다.
+
+- **웹·relay:** Cloudflare `envhandoff-relay`에 `mabyko/EnvHandoff` 저장소가 연결되어 있으며, 운영 브랜치는 `release`다. 루트 `apps/server`, 빌드 `pnpm -F @envhandoff/web build`, 배포 `npx wrangler deploy`다. `main` 병합만으로는 배포되지 않는다. 최근 Pro 화면은 feature 브랜치에서 Wrangler로 수동 배포했다.
+- **API:** Openship은 아직 `feature/pro-web-beta`를 사용하고 Auto Deploy·Webhook은 꺼져 있다. API 자동 배포는 연결하지 않았다.
+- **빌드 API 주소:** `VITE_PRO_API_ORIGIN`이 없으면 공식 웹은 `https://api.envhandoff.mabyko.com`을 사용한다. 자체 호스팅은 자신의 API 주소를 빌드할 때 지정한다.
+
+권장 반영 순서는 PR의 `pnpm check`·리뷰 확인 → `main` 병합 → `main`에서 `release`로 PR → 검사 후 운영 반영이다. 두 브랜치에 `pnpm check`를 필수 검사로 지정하고 직접 push를 제한한다. 첫 Pro 릴리스에서는 `release`에 Compose/API 코드가 포함된 것을 확인한 뒤 Openship의 소스를 `release`로 변경하고 웹훅·Auto Deploy를 연결한다. 그 전에는 기존 feature 브랜치를 삭제하지 않는다.
+
+Cloudflare와 Openship의 push 배포는 서로 완료를 기다리지 않는다. 독립 배포 중에도 동작하도록 API 변경은 기존 웹과 호환되게 만든다. API 배포 성공 후 웹 배포가 반드시 필요한 변경은 두 자동 배포를 따로 시작하지 말고 위의 순차 CI 배포를 구성한다. 신규 전달 접수 설정(`PRO_ACCEPT_NEW_TRANSFERS`)과 운영 QA 완료 여부는 PR 병합과 별도로 관리한다.
 
 ## 참고와 문제 해결
 
