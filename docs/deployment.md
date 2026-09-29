@@ -248,7 +248,9 @@ CI로 묶을 때의 순서는 **검사 → 호환 가능한 API 배포 → 웹 �
 
 ### 공식 서비스의 브랜치와 CI
 
-`.github/workflows/ci.yml`은 `main`·`release` 대상 PR과 두 브랜치의 push에서 `pnpm check`를 실행한다. Node.js 24.21.0·pnpm 12.3.4와 임시 PostgreSQL 18의 `envhandoff_test` DB를 사용하며, 운영 DB·OAuth·Cloudflare 비밀키는 필요 없다. 이 workflow는 배포하지 않는다.
+전체 검증은 **로컬에서 `pnpm check`**로 수행한다. 로컬 PostgreSQL의 전용 `envhandoff_test` DB를 준비하고 API·웹·relay 테스트와 lint·타입·빌드를 확인한 뒤 push한다. PR 설명에 검증한 커밋·명령·결과를 기록하고, 실행 코드나 의존성을 수정했다면 해당 검사를 다시 수행한다. DB 준비는 [API 개발 안내](../apps/api/README.md)를 따른다.
+
+`.github/workflows/ci.yml`은 `main`·`release` 대상 PR에서 **lint·타입 검사만** 실행한다. Node.js 24.21.0·pnpm 12.3.4를 사용하며, PostgreSQL 컨테이너·전체 테스트·빌드는 실행하지 않는다. 병합 후 push의 중복 실행도 하지 않는다. 새 커밋이 올라오면 이전 실행을 취소하고 실행 시간은 10분으로 제한한다. 운영 DB·배포 비밀키 없이 실행하며 배포하지 않는다. 이 CI의 성공은 로컬 전체 검증을 대신하지 않는다.
 
 2026-09-29 확인한 운영 연결은 다음과 같다.
 
@@ -256,7 +258,7 @@ CI로 묶을 때의 순서는 **검사 → 호환 가능한 API 배포 → 웹 �
 - **API:** Openship은 아직 `feature/pro-web-beta`를 사용하고 Auto Deploy·Webhook은 꺼져 있다. API 자동 배포는 연결하지 않았다.
 - **빌드 API 주소:** `VITE_PRO_API_ORIGIN`이 없으면 공식 웹은 `https://api.envhandoff.mabyko.com`을 사용한다. 자체 호스팅은 자신의 API 주소를 빌드할 때 지정한다.
 
-권장 반영 순서는 PR의 `pnpm check`·리뷰 확인 → `main` 병합 → `main`에서 `release`로 PR → 검사 후 운영 반영이다. 두 브랜치에 `pnpm check`를 필수 검사로 지정하고 직접 push를 제한한다. 첫 Pro 릴리스에서는 `release`에 Compose/API 코드가 포함된 것을 확인한 뒤 Openship의 소스를 `release`로 변경하고 웹훅·Auto Deploy를 연결한다. 그 전에는 기존 feature 브랜치를 삭제하지 않는다.
+권장 반영 순서는 로컬 `pnpm check` → PR의 `lint and typecheck`·리뷰 확인 → `main` 병합 → `main`에서 `release`로 PR → 검사 후 운영 반영이다. 두 브랜치는 PR과 `lint and typecheck`를 필수로 요구하며 관리자에게도 적용한다. 로컬 테스트 완료 자체는 GitHub가 자동으로 강제하지 않으므로 PR의 검증 기록을 확인한다. 첫 Pro 릴리스에서는 `release`에 Compose/API 코드가 포함된 것을 확인한 뒤 Openship의 소스를 `release`로 변경하고 웹훅·Auto Deploy를 연결한다. 그 전에는 기존 feature 브랜치를 삭제하지 않는다.
 
 Cloudflare와 Openship의 push 배포는 서로 완료를 기다리지 않는다. 독립 배포 중에도 동작하도록 API 변경은 기존 웹과 호환되게 만든다. API 배포 성공 후 웹 배포가 반드시 필요한 변경은 두 자동 배포를 따로 시작하지 말고 위의 순차 CI 배포를 구성한다. 신규 전달 접수 설정(`PRO_ACCEPT_NEW_TRANSFERS`)과 운영 QA 완료 여부는 PR 병합과 별도로 관리한다.
 
