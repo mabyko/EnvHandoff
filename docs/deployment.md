@@ -133,11 +133,13 @@ DNS를 서버로 연결하고 해당 호스트의 HTTPS 인증서를 발급한�
 
 공식 운영 계정에는 `*.envhandoff.mabyko.com` 고급 edge 인증서가 이미 활성화되어 있다. 이 인증서를 유지하며 API DNS 프록시를 켠다. Cloudflare → 원본 연결도 HTTPS 및 유효한 원본 인증서를 사용한다.
 
-`CLOUDFLARE_ORIGIN_SECRET`을 설정하면 Cloudflare 전용 접근을 강제한다. 독립적인 32바이트 난수의 소문자 hex 값을 생성해 API의 **런타임 비밀 환경변수**와 Cloudflare **요청 헤더 변환 규칙**에 같은 값으로 넣는다. 규칙은 `http.host eq "api.envhandoff.mabyko.com"`에만 적용하고 `X-EnvHandoff-Origin`을 **정적 설정(set)**으로 덮어쓴다. 응답 헤더에는 넣지 않는다. Cloudflare → 원본은 해당 호스트의 **Full (strict)** 규칙으로 인증서를 검증한다. 비밀값은 로그·저장소·웹 빌드에 남기지 않는다. [Cloudflare 요청 헤더 변환](https://developers.cloudflare.com/rules/transform/request-header-modification/)
+`CLOUDFLARE_ORIGIN_SECRET`을 설정하면 Cloudflare 전용 접근을 강제한다. 독립적인 32바이트 난수의 소문자 hex 값을 생성해 API의 **런타임 비밀 환경변수**와 Cloudflare **요청 헤더 변환 규칙**에 같은 값으로 넣는다. 규칙은 `http.host eq "api.envhandoff.mabyko.com" and ssl`에만 적용하고 `X-EnvHandoff-Origin`을 **정적 설정(set)**으로 덮어쓴다. HTTP 평문 요청이나 응답 헤더에는 넣지 않는다. Cloudflare → 원본은 해당 호스트의 **Full (strict)** 규칙으로 인증서를 검증한다. 비밀값은 로그·저장소·웹 빌드에 남기지 않는다. [Cloudflare 요청 헤더 변환](https://developers.cloudflare.com/rules/transform/request-header-modification/)
 
 API는 비밀 헤더를 일정 시간 비교로 검증한 후에만 `CF-Connecting-IP`를 접속 제한에 사용한다. 직접 원본 접속·가짜 IP 헤더·다른 Cloudflare zone을 통한 요청은 올바른 비밀값이 없으면 403이다. Openship 0.8.0은 전역 real-IP 설정으로 `X-Real-IP`를 이미 사용자 IP로 바꾸므로, 이 헤더를 Cloudflare 노드 주소로 간주하지 않는다.
 
 컨테이너 내부의 쿠키·인증·Origin 없는 `GET /auth/session`만 기존 healthcheck를 위해 예외로 둔다. 호스트의 다른 서비스와 인증서 검증 경로는 건드리지 않는다. 프록시·헤더 규칙을 끄거나 비밀값을 한쪽에서만 바꾸면 API도 차단된다. 교체할 때 API와 규칙을 함께 갱신하고 정상 경로 401·직접 원본 403을 확인한다. 이 보호는 전용 방화벽의 연결 차단과는 별개인 애플리케이션 접근 차단이다. 전용 비밀값을 없애면 직접 자체 호스팅 모드로 돌아간다.
+
+Cloudflare 보안 규칙은 이 API 호스트에만 적용한다. 자동 탐색 경로(`/.env`, `/.git`, `/wp-*`, `/xmlrpc.php`, `/actuator*`, `/phpmyadmin*`)는 차단하고, 순간 요청은 IP당 10초 동안 120건 초과 시 10초 차단한다. 로그인·전달의 더 낮은 애플리케이션 제한도 그대로 유지한다. 요금제 업그레이드나 전체 `mabyko.com`의 보안 정책 변경은 필요하지 않다.
 
 **확인:** 로그인 쿠키 없이 HTTPS의 `/auth/session`을 호출했을 때 `401`이 반환된다. 이 경로에서는 `401`이 정상 응답이다. 프록시는 공개 API의 `Host`를 그대로 전달해야 한다.
 

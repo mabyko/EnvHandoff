@@ -147,3 +147,12 @@
 - `3a61fe2`에서 패스키·TOTP 삭제에 같은 사전 안내와 비활성화 조건을 적용했다. 서버의 본인 확인·마지막 수단 보호는 변경하지 않았다. [실제 컴포넌트 회귀](../apps/web/tests/pro-security.browser.ts)는 수정 전 실패, 수정 후 마지막 패스키·마지막 TOTP·미인증·삭제 성공·인증 만료의 5묶음 PASS. 기존 API 보안 5개·웹 27개, 웹 lint·타입·운영 빌드 PASS.
 - 운영 Worker 버전 `d0e2e17a-5e24-49cc-9991-4ae31cb3a83c`로 웹을 재배포했다. Aside에서 로그인 유지, 실제 패스키 본인 확인 완료, 마지막 수단 안내와 삭제 버튼 비활성화를 확인했다. 사용자의 인증 수단을 검사 목적으로 삭제하지 않았다. API 코드는 그대로 `8b5fe2d`다.
 - 실제 패스키 등록·본인 확인은 확인 범위에 추가했다. 실제 TOTP·패스키 취소·추가 장치와 위의 나머지 출시 검사는 여전히 남아 있다.
+
+### API 공개 접속 보완
+
+- 최종 API 코드 `4faba82`, Openship 배포 `dep_Hq3-m65axlBi1FGU`는 `ready`. API·PostgreSQL 모두 `healthy`, 재시작 횟수 0. API는 `127.0.0.1:20000`으로만 연결하고 DB 공개 포트는 없다. 신규 전달과 Auto Deploy는 계속 꺼뒀다.
+- API DNS를 Cloudflare 프록시로 전환했다. 기존 `*.envhandoff.mabyko.com` edge 인증서를 확인해 API 주소와 OAuth callback을 유지했다. API 호스트에만 원본 TLS `Full (strict)`, HTTPS 요청 비밀 헤더, 자동 탐색 경로 차단, IP당 120건/10초의 순간 요청 제한을 적용했다. 비밀값은 API 런타임과 Cloudflare 규칙에만 설정하고 저장소·웹에는 넣지 않았다.
+- 인증서 검증을 생략하지 않은 공개 경로의 무쿠키 `/auth/session`, `/organizations`, `/security`는 401, 웹 CORS preflight는 204, 외부 Origin은 403. 원본 IP에 정확한 Host/SNI로 접속하면 403이며, 가짜 Cloudflare·forwarded·비밀 헤더를 넣어도 403이다. 공개 경로의 가짜 비밀 헤더는 Cloudflare가 덮어써 정상 401을 반환한다. `/.env`, `/.git/config` 탐색은 edge에서 403이다.
+- 실제 Aside 로그인 세션으로 새로고침 후 `mabyko` Owner와 워크스페이스 화면을 확인했다. 도메인·쿠키·등록한 패스키는 바꾸지 않았다.
+- 클라이언트 IP/HTTP 경계 테스트 2개, 인증·보안·조직 회귀 21개, API typecheck·lint PASS. 서로 다른 사용자 IP, IPv6 정규화, 잘못된/중복 비밀 헤더, 직접 접속, 로컬 healthcheck 예외를 검사했다. 운영 서비스에 임계치를 넘기는 부하 시험은 하지 않았다.
+- 중간 IP 대역 방식은 Openship의 전역 real-IP 변환으로 정상 요청도 403이 되어 설정을 비활성화하고 복구했다. 최종 구현은 zone 비밀 헤더를 검증한다. 별도 배포 한 건은 이미지 생성 후 진행이 멈춰 취소했고, 재배포 성공 후 위 결과를 확인했다.
