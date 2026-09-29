@@ -55,10 +55,10 @@ export function LandingHome({ onSend, onReceive }: { onSend: () => void; onRecei
           </div>
         </div>
       </section>
-      <ul className="landing-principles" aria-label="파일 공유 원칙">
+      <ul className="landing-principles" aria-label="무료 파일 공유 원칙">
         <li><Monitor aria-hidden="true" />이 브라우저에서 암호화</li>
         <li><KeyRound aria-hidden="true" />공유 코드는 별도로 전달</li>
-        <li><ShieldCheck aria-hidden="true" />서버에 파일 보관 없음</li>
+        <li><ShieldCheck aria-hidden="true" />무료 공유는 서버에 파일 보관 없음</li>
       </ul>
       <section className="landing-how" aria-labelledby="how-it-works">
         <h2 id="how-it-works" tabIndex={-1}>건네는 방법은 간단해요.</h2>
@@ -80,9 +80,18 @@ export function LandingHome({ onSend, onReceive }: { onSend: () => void; onRecei
           </li>
         </ol>
       </section>
+      <section className="landing-pro" aria-labelledby="landing-pro-title">
+        <div>
+          <p className="landing-eyebrow">EnvHandoff Pro · 무료 초대 베타</p>
+          <h2 id="landing-pro-title">팀의 설정 파일, 필요할 때 요청하세요.</h2>
+          <p>GitHub로 로그인해 팀의 프로젝트·환경별로 파일을 요청하고 승인하세요. 암호화된 파일을 서버에 임시 보관해, 보내는 사람이 자리를 비워도 내 브라우저에서 받을 수 있어요.</p>
+          <p className="landing-small">초대받은 계정으로 참여할 수 있어요. 현재 신규 파일 전달은 점검 중이에요.</p>
+        </div>
+        <a className="button" href="/pro">Pro 열기<ArrowUpRight aria-hidden="true" /></a>
+      </section>
       <div className="landing-faq">
         <details>
-          <summary>파일과 공유 코드는 어떻게 다루나요?</summary>
+          <summary>무료 공유에서 파일과 코드는 어떻게 다루나요?</summary>
           <p>
             파일은 브라우저에서 암호화하고, 공유 코드는 서버로 보내지 않아요. 실시간 전달 서버는
             암호문을 중계하며 파일 저장소에 보관하지 않아요. 공유 코드는 파일·연결 링크와 다른 대화

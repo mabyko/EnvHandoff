@@ -1,0 +1,44 @@
+{
+  "note": "Public test-only vector, independently generated with Node crypto by team-reference.mjs. Never use these keys/nonces in production.",
+  "binding": {
+    "organizationId": "00000000-0000-4000-8000-000000000001",
+    "projectId": "00000000-0000-4000-8000-000000000002",
+    "environmentId": "00000000-0000-4000-8000-000000000003",
+    "requestId": "00000000-0000-4000-8000-000000000004",
+    "transferId": "00000000-0000-4000-8000-000000000005",
+    "senderUserId": "00000000-0000-4000-8000-000000000006",
+    "senderDeviceId": "00000000-0000-4000-8000-000000000007",
+    "recipientUserId": "00000000-0000-4000-8000-000000000008",
+    "recipientDeviceId": "00000000-0000-4000-8000-000000000009"
+  },
+  "payload": {
+    "formatVersion": 1,
+    "bundleId": "00000000-0000-4000-8000-000000000001",
+    "projectLabel": "public-example",
+    "environment": "development",
+    "createdAt": "2026-09-11T00:00:00.000Z",
+    "files": [
+      {
+        "path": ".env",
+        "contentBase64": "IyBQdWJsaWMgdGVzdCBmaXh0dXJlIG9ubHkNCkRFTU9fVkFMVUU9aGVsbG8NCg=="
+      },
+      {
+        "path": "config/example.json",
+        "contentBase64": "eyJleGFtcGxlIjp0cnVlfQo="
+      }
+    ]
+  },
+  "senderPublicKey": "046b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5",
+  "recipientPrivateKey": {
+    "kty": "EC",
+    "crv": "P-256",
+    "ext": true,
+    "key_ops": [
+      "deriveBits"
+    ],
+    "x": "fPJ7GI0DT36KUjgDBLUaw8CJaeJ38hs1pgtI_EdmmXg",
+    "y": "B3dVENuO0EApPZrGn3Qw27p9reY86YIpngS3nSJ4c9E",
+    "d": "Ag"
+  },
+  "envelopeBase64": "RU5WSFRFQU0AAQRey+TRpjMKRMj375UdS/Fl5sa3Ie+tqYX7QWYbxuf9bIc0ZAxJmP9+N0sGzhpkouzYKrA2OE+4PZp5sSeifVAyw9hDKrcQsCEIptHcAFlYmEeTsLazM8GzlPS5rAyi9jwbPgWvttSk6Vlm0e8D8L0bAUm9IyCitm4T+vJFTlZIQU5ET0ZGAAEAAAAAAAAAAAAAAACjg0TV23Iuyy6bDkHDyjpDteiTnRoB6rUJsTXat+pTaNwmj3qWA3KULyUViIohasF7i29I60xTEoXvROCdxsCaGssOAvDgAHPPGSmfqtoaR1IFZAELPAhQ9pcGZe/nm7HprZkWmOgi8OtYlmWWpIWFFiivyE+VnmaSIIOkp+BW0RRoRrnZWY3R5ScKQTtdm8fDENxR1eZU/NNbvjrRUaayog7OJIh029w8nn9lG2Hm6qqTaDILRspbbIv70UG3G24/G6b1iPEyXY1WFiGqGvOOhi5hViWD1m6NNc8dtP5RtEAC9sbP/rqUhz9dLfGK86h9UXljPUNu5AK1f9oaoOw92SSLlNEbjBbJLhWIuXm0ELpMO2OqfgnxamoeGYfCIgu/6RmupTHAWZagdPmvdg72LnwobF5Aa2ruIgB6dvm3S70iYvKdfCI+p9p9ISdggH1+QcktsjV7xPYuHrtBB/swKKz/EK5ODnWMQlE5ajLd"
+}

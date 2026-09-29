@@ -1,0 +1,6 @@
+# Add to compose.production.yaml when the HTTPS proxy runs on the Docker host.
+# Keep PostgreSQL private; expose the API only to the host's loopback interface.
+services:
+  api:
+    ports:
+      - "127.0.0.1:${API_BIND_PORT:-3000}:3000"

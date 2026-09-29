@@ -1,5 +1,7 @@
 # Pro 웹·앱 배포 경로 조사
 
+2026-09-28 주소 결정: 사용자가 운영 API 주소를 `https://api.envhandoff.mabyko.com`으로 선택했다. 코드·현재 명세는 이 주소를 사용한다. 아래 `envhandoff-api.mabyko.com` 예시는 2026-09-24 조사 당시 제안이며, 인증서 구성은 실제 배포 경로에 맞춰 확인한다.
+
 조사일: 2026-09-24. 현재 구현은 `envhandoff.mabyko.com`을 Worker Custom Domain으로 쓰고, 정적 SPA를 함께 배포하며, `run_worker_first`는 `/api/*`에만 적용한다. Worker의 실제 동적 경로는 `/api/health`, `/api/relay`다. [현재 배포 설정](../apps/server/wrangler.jsonc), [Worker 구현](../apps/server/src/index.ts). 제품 계획의 Pro Node 서버와 v4.0 네이티브 앱은 아직 구현 전이다. [제품 계획](product-plan.md)
 
 ## 결론

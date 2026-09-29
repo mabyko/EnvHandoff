@@ -1,0 +1,19 @@
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: envhandoff
+      POSTGRES_PASSWORD: local-development-only
+      POSTGRES_DB: envhandoff
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql
+      - ./apps/api/sql/local-init.sql:/docker-entrypoint-initdb.d/local-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U envhandoff -d envhandoff"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+volumes:
+  postgres-data:
