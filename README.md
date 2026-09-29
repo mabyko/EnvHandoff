@@ -53,7 +53,19 @@ The web app lets people exchange files without installation. The planned desktop
 
 The folder selection and application flow is described in the [desktop design](docs/app-design.md).
 
-Continuous file synchronization, team accounts, permissions, and cloud storage are outside the current version. The next steps are testing on separate devices and browsers and exercising public relay failures. The original desktop and team scope is in the [product plan](docs/product-plan.md); a [Pro web design draft](docs/pro-web-design.md) explores delivering Pro in the browser first. The free web app and relay stay on Cloudflare, while the Pro API uses a separate Node server.
+The v3 Pro beta adds GitHub sign-in, team permissions, asynchronous encrypted transfers, temporary storage, and guest sharing. Billing, persistent file versions, and the native desktop app remain v4 work. Production OAuth, HTTPS, recovery drills, and cross-device/browser QA are still release requirements; see the [v3 specification](docs/pro-v3-spec.md) and [QA record](docs/qa.md).
+
+## Self-hosting v3
+
+The public v3 code includes [installation instructions](docs/self-hosting.md) (Korean) for your own infrastructure:
+
+- **Cloudflare only:** account-free file sharing and live relay; Pro routes require an API.
+- **Docker + Cloudflare:** your own Pro API, PostgreSQL, and persistent volumes, with the web app and relay in your Cloudflare account.
+- **Openship + Cloudflare:** the same Pro stack managed through Openship.
+
+Cloudflare Workers/Durable Objects are still required for live relay, and Pro sign-in uses GitHub. This is not an offline or all-in-one Docker distribution. Operators manage their own domains, credentials, updates, backups, and incidents. Installation instructions are available in this draft; the license and redistribution/competing-hosting terms are not yet finalized. No open-source license is claimed.
+
+The official cloud is planned as a free invite-only v3 beta. Additional v4 features and paid cloud subscriptions are planned in a separate private repository. See the [product plan](docs/product-plan.md).
 
 ## Usage
 
@@ -74,7 +86,7 @@ After a live transfer reaches 100%, the sender waits for receipt confirmation. T
 
 Limits are 100 files, 1 MiB per file, 10 MiB of original file data in total, and 16 MiB for an encrypted shared file. Enter a placement path such as `config/.env` relative to the Git repository root to represent a subfolder. Existing `.env` files with ambiguous syntax require replacing the whole file instead of variable editing. Both creation and opening reject duplicate paths, case collisions, parent traversal, reserved names, and other invalid paths.
 
-## File and code handling
+## Account-free file and code handling
 
 - Uses AES-256-GCM through Web Crypto. Each new bundle gets an independent 256-bit shared code and a 96-bit nonce. Metadata and original file bytes are encrypted together.
 - Files, codes, viewed contents, and selections stay in the current tab's memory. They are not restored after a refresh or tab closure. The app uses no analytics SDK, localStorage, IndexedDB, or service worker.
@@ -116,6 +128,7 @@ Local development requires no Cloudflare login or deployment. Encryption on othe
 ```text
 apps/web/               React + TypeScript + Vite; browser file handling and UI
 apps/server/            Cloudflare Worker + Durable Objects relay
+apps/api/               Pro beta Node API, PostgreSQL, and encrypted temporary storage
 packages/protocol/      Shared connection messages, validation, and limits
 fixtures/bundles/       Public bundle format test vectors
 docs/                   Product, web, desktop, bundle format, and relay designs

@@ -1,0 +1,23 @@
+# Allow only the API build inputs. Local credentials, user data and git history never enter the build context.
+# Omit trailing slashes on directory exceptions for Openship's context filter.
+**
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!apps
+!apps/api
+!apps/api/Dockerfile
+!apps/api/package.json
+!apps/api/src
+!apps/api/src/**
+!apps/api/sql
+!apps/api/sql/**
+!packages
+!packages/protocol
+!packages/protocol/package.json
+!packages/protocol/src
+!packages/protocol/src/**
+**/.env*
+**/node_modules
+**/.data
+apps/api/sql/local-init.sql

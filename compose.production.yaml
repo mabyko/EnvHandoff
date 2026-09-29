@@ -1,0 +1,69 @@
+# Separate from compose.yaml (local development). Supply variables through the deployment environment.
+# First deployment only, after building the API image:
+# docker compose --env-file .env.production -f compose.production.yaml run --rm --no-deps api node src/deletions.ts --init
+# Then: docker compose --env-file .env.production -f compose.production.yaml up -d --wait
+# Never reinitialize or roll back the deletion ledger alongside a metadata DB restore.
+name: envhandoff-production
+services:
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: envhandoff
+      POSTGRES_DB: envhandoff
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set a URL-safe PostgreSQL password}
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U envhandoff -d envhandoff"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    init: true
+    user: "1000:1000"
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      DATABASE_URL: postgresql://envhandoff:${POSTGRES_PASSWORD:?Set a URL-safe PostgreSQL password}@postgres:5432/envhandoff
+      WEB_ORIGIN: ${WEB_ORIGIN:?Set the HTTPS web origin}
+      API_ORIGIN: ${API_ORIGIN:?Set the HTTPS API origin}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:?Set the GitHub OAuth client ID}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:?Set the GitHub OAuth client secret}
+      TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:?Set a stable independent 32-byte lowercase hex key}
+      FILE_STORAGE_PATH: /var/lib/envhandoff/objects
+      DELETION_LEDGER_PATH: /var/lib/envhandoff/deletions/ledger
+      PRO_OPERATOR_GITHUB_ID: ${PRO_OPERATOR_GITHUB_ID:-}
+      PRO_ACCEPT_NEW_TRANSFERS: ${PRO_ACCEPT_NEW_TRANSFERS:-false}
+      CLOUDFLARE_ORIGIN_SECRET: ${CLOUDFLARE_ORIGIN_SECRET:-}
+    expose:
+      - "3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - encrypted-objects:/var/lib/envhandoff/objects
+      - deletion-ledger:/var/lib/envhandoff/deletions
+    healthcheck:
+      # 401 traverses DB + deletion-ledger checks. The Host must match API_ORIGIN, even over local HTTP.
+      test:
+        - CMD
+        - node
+        - -e
+        - "const r=require('node:http').get({host:'127.0.0.1',port:3000,path:'/auth/session',headers:{host:new URL(process.env.API_ORIGIN).host}},s=>{s.resume();process.exitCode=s.statusCode===401?0:1});r.setTimeout(4000,()=>r.destroy());r.on('error',()=>{process.exitCode=1})"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    stop_grace_period: 2m
+
+volumes:
+  postgres-data:
+  encrypted-objects:
+  deletion-ledger:

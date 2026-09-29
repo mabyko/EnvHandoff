@@ -5,6 +5,7 @@ dist/
 dist-ssr/
 coverage/
 .wrangler/
+apps/server/wrangler.self-hosted.jsonc
 *.tsbuildinfo
 *.log
 
@@ -16,6 +17,7 @@ coverage/
 .dev.vars.*
 !.dev.vars.example
 !.dev.vars.*.example
+.data/
 *.envhandoff
 !fixtures/bundles/*.envhandoff
 

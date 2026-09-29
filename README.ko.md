@@ -53,7 +53,19 @@ EnvHandoff는 `.env`와 개발 설정 파일을 암호화해서 주고받는 도
 
 데스크톱 앱의 폴더 선택과 적용 흐름은 [데스크톱 설계](docs/app-design.md)에 정리했다.
 
-파일의 지속적인 동기화와 팀 계정·권한·클라우드 보관은 현재 버전에 포함하지 않는다. 다음 단계는 실제 여러 기기·브라우저와 공개 relay 장애 검증이다. 기존 데스크톱·팀 기능 계획은 [제품 계획](docs/product-plan.md)에 있고, Pro를 웹에서 먼저 제공하는 방향은 [Pro 웹 설계 초안](docs/pro-web-design.md)에서 검토한다. 무료 웹과 relay는 Cloudflare에 두고, Pro API는 별도 Node 서버로 둔다.
+v3 Pro 베타에는 GitHub 로그인·팀 권한·비동기 암호화 전달·임시 보관·비회원 공유를 구현했다. 결제·지속 버전 보관·네이티브 앱은 v4 범위다. 운영 OAuth·HTTPS·복원 훈련과 실제 기기·브라우저 QA는 출시 전에 마쳐야 한다. [v3 구현 명세](docs/pro-v3-spec.md)와 [QA 기록](docs/qa.md)에서 범위와 검증 상태를 확인할 수 있다.
+
+## v3 자체 호스팅
+
+공개된 v3 코드와 [설치 가이드](docs/self-hosting.md)로 자신의 인프라에 설치할 수 있다.
+
+- **Cloudflare 단독:** 계정 없는 파일 공유·실시간 relay. Pro 화면에는 별도 API가 필요하다.
+- **Docker + Cloudflare:** Pro API·PostgreSQL·영속 볼륨은 자기 서버, 웹·relay는 자기 Cloudflare 계정에서 운영한다.
+- **Openship + Cloudflare:** 같은 Pro 스택을 Openship으로 관리한다.
+
+실시간 relay에는 Cloudflare Workers·Durable Objects, Pro 로그인에는 GitHub가 필요하다. 오프라인이나 Docker 하나로 전체를 실행하는 배포판은 아니다. 설치자가 도메인·비밀값·업데이트·백업·장애 대응을 관리한다. 현재 Draft에는 설치 문서를 제공하며, LICENSE와 재배포·경쟁 호스팅 허용 범위는 아직 확정하지 않았다. 정식 오픈소스 라이선스를 선언한 상태는 아니다.
+
+공식 클라우드는 v3 무료 초대 베타로 운영하고, v4 추가 기능과 유료 구독은 별도 비공개 저장소에서 개발할 계획이다. 자세한 범위는 [제품 계획](docs/product-plan.md)을 따른다.
 
 ## 사용하기
 
@@ -74,7 +86,7 @@ EnvHandoff는 `.env`와 개발 설정 파일을 암호화해서 주고받는 도
 
 파일은 최대 100개, 파일당 1 MiB, 원본 합계 10 MiB, 암호화 공유 파일 16 MiB까지 지원한다. 하위 폴더는 배치 경로에 `config/.env`처럼 입력한다. 같은 경로·대소문자 충돌·상위 폴더 이동·예약된 이름 등은 생성과 열기 모두에서 거부한다. 변수별 편집을 안전하게 할 수 없는 기존 `.env`는 파일 전체를 다시 올려야 한다.
 
-## 파일과 코드 처리
+## 계정 없는 공유의 파일과 코드 처리
 
 - Web Crypto의 AES-256-GCM을 사용한다. 새 묶음마다 독립적인 256비트 공유 코드와 96비트 nonce를 생성한다. 메타데이터와 원본 파일 바이트를 함께 암호화한다.
 - 파일·공유 코드·열어본 내용·선택 상태는 현재 탭 메모리에만 둔다. 새로고침·탭 종료 후 복원하지 않는다. 분석 SDK, localStorage, IndexedDB, 서비스 워커를 사용하지 않는다.
@@ -116,6 +128,7 @@ mise를 셸에 연동했다면 `pnpm dev`로 실행해도 된다. mise 없이도
 ```text
 apps/web/               React + TypeScript + Vite, 브라우저 파일 처리와 화면
 apps/server/            Cloudflare Worker + Durable Objects relay
+apps/api/               Pro 베타 Node API, PostgreSQL, 암호문 임시 보관
 packages/protocol/      공통 연결 메시지·검증·제한
 fixtures/bundles/       공개 파일 형식 테스트 벡터
 docs/                   제품 계획·웹·데스크톱·파일 규격·relay 설계
