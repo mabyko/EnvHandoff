@@ -43,6 +43,7 @@ export function ProSecurity({ api, userId, csrf, disabled, onExpired, onDeleted 
   const [fingerprint, setFingerprint] = useState('')
   const [deletion, setDeletion] = useState('')
   const lifetime = useRef(new AbortController())
+  const running = useRef(false)
   const expired = useRef(onExpired)
   expired.current = onExpired
   const mine = state?.devices.find(device => device.identity.deviceId === local?.deviceId)
@@ -90,15 +91,18 @@ export function ProSecurity({ api, userId, csrf, disabled, onExpired, onDeleted 
     return () => clearTimeout(timer)
   }, [state?.reauthenticatedUntil])
 
-  async function run(action: () => Promise<void>, success = '') {
+  async function run(action: () => Promise<void>, success = '', confirmation = '', reload = true) {
+    if (running.current || busy || (disabled && reload)) return
+    if (confirmation && !confirm(confirmation)) return
+    running.current = true
     setBusy(true); setError(''); setMessage('')
-    try { await action(); if (!lifetime.current.signal.aborted) { await load(); setMessage(success) } }
+    try { await action(); if (!lifetime.current.signal.aborted) { if (reload) await load(); setMessage(success) } }
     catch (error) {
       if (!lifetime.current.signal.aborted) {
         setError(error instanceof Error && !['TypeError', 'TimeoutError', 'NotAllowedError', 'WebAuthnError'].includes(error.name) ? error.message : '처리가 취소됐거나 연결하지 못했어요. 상태를 조회한 뒤 다시 시도해주세요.')
-        await load().catch(() => {})
+        if (reload) await load().catch(() => {})
       }
-    } finally { if (!lifetime.current.signal.aborted) setBusy(false) }
+    } finally { running.current = false; if (!lifetime.current.signal.aborted) setBusy(false) }
   }
   async function deviceAction(action: DeviceAction, target?: Device) {
     if (!state) return
@@ -117,12 +121,12 @@ export function ProSecurity({ api, userId, csrf, disabled, onExpired, onDeleted 
 
   return <section className="pro-organizations pro-security" aria-labelledby="security-title" aria-busy={locked}>
     <h2 id="security-title">본인 확인과 내 기기</h2>
+    <p className="help">인증 수단을 등록하고, 파일을 받을 브라우저를 확인하세요.</p>
     {error && <Notice error>{error}</Notice>}
-    {message && <p role="status">{message}</p>}
-    {busy && <p role="status">보안 설정을 확인하고 있어요.</p>}
+    <p className="pro-operation-status" role="status">{busy ? '보안 설정을 확인하고 있어요.' : message}</p>
     <button type="button" className="button" disabled={locked} onClick={() => { void run(async () => {}) }}>보안 상태 다시 조회</button>
     {state && <>
-      <fieldset className="plain-fieldset" disabled={locked}>
+      <fieldset className="plain-fieldset pro-panel" disabled={locked}>
         <legend>본인 확인</legend>
         <p>인증 수단 추가·삭제나 기기 승인·회수 전에 등록한 패스키 또는 인증 앱으로 확인해주세요. 확인은 현재 로그인에서 15분간 유효해요.</p>
         {state.reauthenticatedUntil > Date.now() && <p>본인 확인 완료 · {new Date(state.reauthenticatedUntil).toLocaleTimeString()}까지</p>}
@@ -140,12 +144,12 @@ export function ProSecurity({ api, userId, csrf, disabled, onExpired, onDeleted 
         </form>}
         {!state.totp && !state.passkeys.length && <Notice>아래에서 첫 인증 수단을 등록해주세요. 첫 등록은 로그인 후 15분 안에 할 수 있어요.</Notice>}
       </fieldset>
-      <fieldset className="plain-fieldset" disabled={locked}>
+      <fieldset className="plain-fieldset pro-panel" disabled={locked}>
         <legend>인증 수단</legend>
         <p>패스키와 인증 앱을 함께 등록해두면 하나를 잃어도 다른 수단을 쓸 수 있어요. 모든 수단을 잃으면 여기서 직접 복구할 수 없어요.</p>
         {(state.passkeys.length > 0 || state.totp) && removalReason && <p id="factor-removal-reason">{removalReason}</p>}
         <ul className="pro-members">{state.passkeys.map(key => <li key={key.id}><span>패스키 · {key.label}</span><button className="button" type="button" disabled={!!removalReason} aria-describedby={removalReason ? 'factor-removal-reason' : undefined} onClick={() => {
-          if (confirm(`${key.label} 패스키를 삭제할까요?`)) void run(async () => { await call('/security/passkeys/remove', { id: key.id }); setSetup(null) }, '패스키를 삭제했어요.')
+          void run(async () => { await call('/security/passkeys/remove', { id: key.id }); setSetup(null) }, '패스키를 삭제했어요.', `${key.label} 패스키를 삭제할까요?`)
         }}>삭제</button></li>)}</ul>
         <form className="pro-form" onSubmit={event => { event.preventDefault(); void run(async () => {
           const { id, options } = await call('/security/passkeys/options', { label: name })
@@ -153,10 +157,10 @@ export function ProSecurity({ api, userId, csrf, disabled, onExpired, onDeleted 
           await call('/security/passkeys/verify', { id, response })
         }, '패스키를 등록했어요. 위에서 본인 확인을 진행할 수 있어요.') }}>
           <label htmlFor="passkey-name">패스키 이름</label><input id="passkey-name" value={name} maxLength={60} required onChange={event => setName(event.target.value)} />
-          <button className="button" type="submit" disabled={state.passkeys.length >= 5}>패스키 추가</button>
+          <button className={!state.passkeys.length && !state.totp ? 'button primary' : 'button'} type="submit" disabled={state.passkeys.length >= 5}>패스키 추가</button>
         </form>
         {state.totp ? <div className="actions"><span>인증 앱 등록됨</span><button type="button" className="button" disabled={!!removalReason} aria-describedby={removalReason ? 'factor-removal-reason' : undefined} onClick={() => {
-          if (confirm('등록한 인증 앱을 삭제할까요?')) void run(async () => { await call('/security/totp/remove', {}); setCode('') }, '인증 앱을 삭제했어요.')
+          void run(async () => { await call('/security/totp/remove', {}); setCode('') }, '인증 앱을 삭제했어요.', '등록한 인증 앱을 삭제할까요?')
         }}>인증 앱 삭제</button></div> : <>
           <button type="button" className="button" disabled={!state.totpAvailable} onClick={() => { void run(async () => {
             const value = await call('/security/totp/options', {})
@@ -176,7 +180,7 @@ export function ProSecurity({ api, userId, csrf, disabled, onExpired, onDeleted 
           </form>
         </div>}
       </fieldset>
-      <fieldset className="plain-fieldset" disabled={locked}>
+      <fieldset className="plain-fieldset pro-panel" disabled={locked}>
         <legend>파일을 받을 내 기기</legend>
         <p>브라우저마다 별도 기기로 등록해요. 패스키는 파일을 여는 키를 복구하지 않아요. 공용 PC에서는 기기를 등록하지 마세요.</p>
         {localError && <Notice error>{localError}</Notice>}
@@ -184,17 +188,17 @@ export function ProSecurity({ api, userId, csrf, disabled, onExpired, onDeleted 
         {mine && <p>현재 브라우저: {mine.status === 'active' ? '사용 가능' : mine.status === 'pending' ? '기존 기기의 승인 대기' : '회수됨'}</p>}
         {localFingerprint && <CopyField label="이 기기의 지문 · 기존 기기에서 승인할 때 확인" value={localFingerprint} />}
         {!mine && !localError && <div className="actions">
-          <button className="button" type="button" disabled={!state.canRegisterDevice} onClick={() => { void run(() => deviceAction('register'), '기기 등록 상태를 확인해주세요. 추가 기기는 기존 기기에서 승인해야 해요.') }}>이 브라우저 등록</button>
+          <button className={state.passkeys.length || state.totp ? 'button primary' : 'button'} type="button" disabled={!state.canRegisterDevice} onClick={() => { void run(() => deviceAction('register'), '기기 등록 상태를 확인해주세요. 추가 기기는 기존 기기에서 승인해야 해요.') }}>이 브라우저 등록</button>
           {state.devices.length > 0 && <button className="button" type="button" disabled={!state.canRegisterDevice} onClick={() => {
-            if (confirm('이전 기기를 모두 회수하고 이 브라우저를 새 기기로 등록할까요? 과거 파일의 키는 복구되지 않아요.')) void run(() => deviceAction('recover'), '이전 기기를 모두 회수하고 새 기기를 등록했어요. 상대방과 지문을 다시 확인해주세요.')
+            void run(() => deviceAction('recover'), '이전 기기를 모두 회수하고 새 기기를 등록했어요. 상대방과 지문을 다시 확인해주세요.', '이전 기기를 모두 회수하고 이 브라우저를 새 기기로 등록할까요? 과거 파일의 키는 복구되지 않아요.')
           }}>모든 기기를 잃었어요</button>}
         </div>}
         {local && <div className="actions"><button type="button" className="button" onClick={() => {
-          if (confirm('이 브라우저 등록을 해제할까요? 서버의 기기를 회수하고 이 브라우저의 파일 키와 상대 기기 신뢰 기록을 삭제해요. 과거 파일은 다시 열 수 없어요.')) void run(async () => {
+          void run(async () => {
             if (mine && mine.status !== 'revoked') await deviceAction('revoke', mine)
             await deleteLocalDevice(userId, local.deviceId)
             setLocal(undefined); setLocalFingerprint(''); setSelection(null)
-          }, '이 브라우저 등록을 해제하고 파일 키와 신뢰 기록을 삭제했어요.')
+          }, '이 브라우저 등록을 해제하고 파일 키와 신뢰 기록을 삭제했어요.', '이 브라우저 등록을 해제할까요? 서버의 기기를 회수하고 이 브라우저의 파일 키와 상대 기기 신뢰 기록을 삭제해요. 과거 파일은 다시 열 수 없어요.')
         }}>이 브라우저 등록 해제</button></div>}
         {mine?.status === 'pending' && <p>기존 기기가 없다면 본인 확인 후 이 브라우저 키를 삭제하고 ‘모든 기기를 잃었어요’를 선택해주세요.</p>}
         <ul className="pro-members">{state.devices.map(device => <li key={device.identity.deviceId}>
@@ -210,6 +214,7 @@ export function ProSecurity({ api, userId, csrf, disabled, onExpired, onDeleted 
           <div className="actions"><button className="button" type="submit">{selection.action === 'approve' ? '승인 확인' : '회수 확인'}</button><button className="button" type="button" onClick={() => setSelection(null)}>취소</button></div>
         </form>}
       </fieldset>
+      <details className="pro-panel pro-danger-zone"><summary>계정 삭제</summary>
       <fieldset className="plain-fieldset" disabled={locked}>
         <legend>계정 삭제</legend>
         <p>모든 워크스페이스 참여와 인증 수단·기기를 삭제하고 모든 로그인 세션을 종료해요. 마지막 Owner라면 팀 설정에서 Owner 이전 또는 워크스페이스 삭제가 먼저 필요해요. 다른 사람의 계정과 워크스페이스는 유지돼요.</p>
@@ -226,16 +231,16 @@ export function ProSecurity({ api, userId, csrf, disabled, onExpired, onDeleted 
           {state.reauthenticatedUntil <= Date.now() && <p>위에서 본인 확인을 마친 뒤 삭제할 수 있어요.</p>}
         </form>
       </fieldset>
+      </details>
     </>}
     {local && <div className="pro-form">
       <p>연결할 수 없다면 이 브라우저의 키와 신뢰 기록만 삭제할 수 있어요. 서버 회수는 완료되지 않으니 연결 복구 후 다른 등록 기기에서 회수하거나 모든 기기 복구를 진행해주세요.</p>
       <button type="button" className="button" disabled={busy} onClick={() => {
-        if (!confirm('로컬 키만 삭제할까요? 과거 파일을 열 수 없게 돼요. 서버의 기기 회수는 완료되지 않아요.')) return
-        setBusy(true); setError(''); setMessage('')
-        void deleteLocalDevice(userId, local.deviceId).then(() => {
+        void run(async () => {
+          try { await deleteLocalDevice(userId, local.deviceId) }
+          catch { throw new Error('로컬 키를 삭제하지 못했어요. 브라우저의 사이트 저장소 설정을 확인해주세요.') }
           setLocal(undefined); setLocalFingerprint(''); setSelection(null)
-          setMessage('로컬 키와 신뢰 기록을 삭제했어요. 서버의 기기 회수는 완료되지 않았어요.')
-        }).catch(() => setError('로컬 키를 삭제하지 못했어요. 브라우저의 사이트 저장소 설정을 확인해주세요.')).finally(() => setBusy(false))
+        }, '로컬 키와 신뢰 기록을 삭제했어요. 서버의 기기 회수는 완료되지 않았어요.', '로컬 키만 삭제할까요? 과거 파일을 열 수 없게 돼요. 서버의 기기 회수는 완료되지 않아요.', false)
       }}>로컬 키만 삭제</button>
     </div>}
   </section>

@@ -25,9 +25,10 @@ function provider() {
       await state.duringProfile();
       return state.failProfile ? new Response(null, { status: 500 }) : Response.json({ id: state.id, login: state.login });
     }
-    assert.equal(input, 'https://api.github.com/applications/testClient/grant');
+    assert.equal(input, 'https://api.github.com/applications/testClient/token');
     assert.equal(init?.method, 'DELETE');
     assert.equal(new Headers(init?.headers).get('authorization'), 'Basic ' + Buffer.from('testClient:testSecret').toString('base64'));
+    assert.deepEqual(JSON.parse(init!.body as string), { access_token: 'gho_test' });
     state.revoked++;
     return new Response(null, { status: state.failRevoke ? 500 : 204 });
   };
@@ -39,6 +40,7 @@ async function begin(api: AuthApi, upstream: ReturnType<typeof provider>, cookie
   const url = new URL((await response.json()).url);
   assert.equal(url.origin, 'https://github.com');
   assert.equal(url.searchParams.get('scope'), '');
+  assert.equal(url.searchParams.has('prompt'), false);
   assert.equal(url.searchParams.get('code_challenge_method'), 'S256');
   upstream.state.verifier = url.searchParams.get('code_challenge')!;
   return { cookies: [cookies, cookie(response, 'oauth')].filter(Boolean).join('; '), path: '/auth/github/callback?code=test_code&state=' + url.searchParams.get('state') };
@@ -86,6 +88,7 @@ test('login survives restart, rotates sessions, binds immutable GitHub ID and re
     assert.equal((await api.handle(request('/auth/session', 'GET', first.cookies))).status, 200);
     upstream.state.login = 'renamed';
     const second = await login(api, upstream, first.cookies, first.session.csrf);
+    assert.equal(upstream.state.revoked, 2);
     assert.equal(second.session.user.id, first.session.user.id);
     assert.equal(second.session.user.login, 'renamed');
     assert.notEqual(second.cookies, first.cookies);

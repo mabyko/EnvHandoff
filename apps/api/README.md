@@ -3,7 +3,7 @@
 Node 24, `pnpm install`, Docker가 필요하다. API DB는 개발·테스트·운영 모두 PostgreSQL을 사용하며 드라이버는 `pg`다.
 
 1. [GitHub OAuth 앱 등록](https://github.com/settings/applications/new): 이름 `EnvHandoff Local`, Homepage `http://localhost:5173`, callback `http://localhost:3001/auth/github/callback`. Device Flow는 사용하지 않는다. 로그인 전용 앱으로 다른 연동의 앱을 재사용하지 않는다.
-2. `.env.example`을 `apps/api/.env`로 복사하고 `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`을 채운다. 기존 파일은 덮어쓰지 않는다. `.env`와 `.data/`는 Git에서 제외된다. 비밀값은 웹의 `VITE_*` 변수에 넣지 않는다.
+2. `.env.example`을 `apps/api/.env.local`로 복사하고 `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`을 채운다. 기존 파일은 덮어쓰지 않는다. `.env`·`.env.local`과 `.data/`는 Git에서 제외된다. 비밀값은 웹의 `VITE_*` 변수에 넣지 않는다.
 3. 저장소 루트에서 로컬 PostgreSQL을 실행한다. Compose는 `127.0.0.1:55432`에만 포트를 열고 개발 DB `envhandoff`와 테스트 DB `envhandoff_test`를 만든다. 예제의 계정·암호는 이 로컬 컨테이너 전용이다.
 
    ```sh
@@ -11,7 +11,7 @@ Node 24, `pnpm install`, Docker가 필요하다. API DB는 개발·테스트·�
    pnpm --filter @envhandoff/api db:migrate
    ```
 
-   `apps/api/.env`의 `DATABASE_URL`과 `TEST_DATABASE_URL`을 `.env.example`과 맞춘다. API 시작 시에도 버전별 SQL 마이그레이션을 확인한다. `docker compose stop postgres`로 중지해도 named volume의 데이터는 유지된다. `down -v`는 개발·테스트 DB를 삭제하므로 초기화하려는 경우에만 사용한다.
+   `apps/api/.env.local`의 `DATABASE_URL`과 `TEST_DATABASE_URL`을 `.env.example`과 맞춘다. API 시작 시에도 버전별 SQL 마이그레이션을 확인한다. `docker compose stop postgres`로 중지해도 named volume의 데이터는 유지된다. `down -v`는 개발·테스트 DB를 삭제하므로 초기화하려는 경우에만 사용한다.
 
 4. 저장소 루트에서 터미널 두 개로 각각 실행한다.
 
@@ -24,6 +24,13 @@ Node 24, `pnpm install`, Docker가 필요하다. API DB는 개발·테스트·�
    ```
 
 5. `http://localhost:5173/pro`에서 GitHub 로그인 → 계정 이름 표시 → 새로고침 후 유지 → 로그아웃을 확인한다. 두 탭을 열고 한쪽에서 로그아웃했을 때 다른 탭도 로그아웃되는지 확인한다. 이 검사에서는 `127.0.0.1`과 `localhost`를 섞지 않는다. 서버 재시작 후에도 세션이 유지되어야 한다.
+
+### 개발·운영 설정 분리
+
+- `dev`, 테스트, DB 마이그레이션과 관리 명령은 `apps/api/.env.local`만 읽는다.
+- `start`는 `apps/api/.env`를 읽는다. 이 파일은 운영 컨테이너의 설정 사본이며, 내부 DB 호스트·볼륨 경로를 그대로 포함하므로 로컬 개발에 사용하지 않는다. Docker 배포는 파일 대신 컨테이너 환경변수를 전달한다.
+- 웹의 `apps/web/.env`에는 공개 운영 API 주소만 둔다. `apps/web/.env.local`은 개발 API 주소를 지정하고, `.env.production`을 `.env`에 연결하면 운영 빌드가 로컬 주소로 바뀌지 않는다.
+- 폐기할 수 있는 작업 폴더 밖에 API 설정과 로컬 객체·삭제대장을 보관하고, `.env`와 `.env.local`을 해당 설정 파일에 연결하면 작업 폴더를 지워도 설정과 데이터가 남는다. 설정 파일은 소유자만 읽고 쓸 수 있도록 보관한다.
 
 GitHub callback은 위 주소와 정확히 맞춘다. 무료 relay 서버는 이 로그인 검사에 필요하지 않다. 설정을 바꾼 뒤 API를 재시작한다. 자동 검사:
 
@@ -49,7 +56,7 @@ pnpm check
 
 아래 CLI는 자체 호스팅 호환 경로다. 클라우드 신규 온보딩은 위 베타 코드 화면을 사용한다. 기존 운영자 개설 초대 수락자는 베타 자격을 보존한다.
 
-API와 웹 개발 서버를 켜둔 상태에서, 같은 워크트리 루트의 별도 터미널에서 운영자 명령을 실행한다. `YOUR_GITHUB_LOGIN`을 최초 Owner의 GitHub 계정 이름으로 바꾼다. CLI와 API는 같은 `apps/api/.env`와 `DATABASE_URL`를 사용해야 한다.
+API와 웹 개발 서버를 켜둔 상태에서, 같은 워크트리 루트의 별도 터미널에서 운영자 명령을 실행한다. `YOUR_GITHUB_LOGIN`을 최초 Owner의 GitHub 계정 이름으로 바꾼다. CLI와 API는 같은 `apps/api/.env.local`와 `DATABASE_URL`를 사용해야 한다.
 
 ```sh
 pnpm --filter @envhandoff/api invite-owner YOUR_GITHUB_LOGIN
@@ -77,7 +84,7 @@ Member는 소속 팀에 연결된 프로젝트만 조회한다. 파일 권한은
 
 - `POST /auth/github/start`: 정확한 웹 Origin 검사, 로그인 거래에 묶인 HttpOnly 쿠키, 10분 일회성 state와 S256 PKCE. 기존 세션이 있으면 CSRF도 검사한다. 웹은 응답 URL로 직접 이동한다.
 - `GET /auth/github/callback`: state·브라우저 쿠키·기존 세션 결합 검사 후 원자적으로 거래를 소비한다. `/user`의 숫자 ID를 내부 UUID에 연결한다. login 이름은 표시용이며 바뀌어도 계정이 유지된다. 성공/실패 복귀 주소는 `/pro` 또는 `/pro?auth=failed`로 고정한다.
-- 공급자 access/refresh token은 DB·로그·웹에 저장하지 않는다. 빈 scope만 허용하며 계정 조회 후 앱 authorization grant를 삭제한다. scope/프로필 검증 실패 시에도 삭제를 시도하고, 공급자 삭제 실패 시 서비스 세션을 발급하지 않는다. 실패한 외부 요청의 실제 삭제까지 보장하는 것은 아니다. 로그인마다 동의 화면이 다시 나올 수 있고, 같은 GitHub 계정의 동시 로그인은 grant 삭제 경쟁으로 재시도가 필요할 수 있다.
+- 공급자 access/refresh token은 DB·로그·웹에 저장하지 않는다. 빈 scope만 허용하며 계정 조회 후 이번 로그인에 사용한 access token만 삭제하고 앱 authorization grant는 유지한다. scope/프로필 검증 실패 시에도 토큰 삭제를 시도하고, 공급자 삭제 실패 시 서비스 세션을 발급하지 않는다. 실패한 외부 요청의 실제 삭제까지 보장하는 것은 아니다. 계정 선택을 강제하지 않으며, GitHub 로그인과 기존 앱 승인이 유효하면 반복 승인 화면을 생략할 수 있다. 여러 GitHub 계정이 로그인돼 있으면 계정 선택 화면이 나올 수 있다.
 - `GET /auth/session`: 현재 계정 활성 상태와 세션 만료를 확인한다. 비활성 12시간·절대 7일. DB에는 세션 토큰의 SHA-256만 저장하고 CSRF 토큰은 세션에 묶는다. 로그인 성공 시 이전 세션을 교체한다.
 - `POST /auth/logout`: 정확한 Origin + 세션 CSRF 검사, 서버 세션과 연관 로그인 거래 폐기, 쿠키 삭제. 진행 중인 OAuth 교환도 폐기된 세션을 되살리지 못한다. 운영자용 `disable-account` CLI와 내부 `disableUser`는 계정과 모든 세션을 비활성화한다. 공개 운영자 HTTP 경로는 제공하지 않는다.
 - 운영 쿠키는 `__Host-` 접두어, `Secure; HttpOnly; SameSite=Lax; Path=/`, Domain 속성 없음. 웹과 API는 HTTPS의 같은 site 하위 도메인으로 운영해야 한다. 정확한 `WEB_ORIGIN`, `API_ORIGIN`을 명시한다. HTTP 예외는 `NODE_ENV=development`의 `localhost`에만 허용한다. 개발 쿠키는 운영 쿠키와 이름도 다르다.
@@ -90,7 +97,7 @@ Member는 소속 팀에 연결된 프로젝트만 조회한다. 파일 권한은
 - 조직 가입은 환경 파일 권한이나 기기 신뢰를 부여하지 않는다. 팀·프로젝트·환경 관리, 환경별 파일 권한·기기 관리와 팀원 파일 전달 API·화면을 구현했다. 요청 취소와 전달 회수는 멤버 제외·유효 권한 상실·프로젝트/환경 삭제·기기 회수와 같은 거래에 연결했다. 권한을 다시 부여해도 회수된 전달은 부활하지 않는다. 운영 저장소와 출시 검증 전에는 베타를 공개하지 않는다.
 - **최근 재인증은 패스키와 선택형 인증 앱으로 구현했다.** GitHub OAuth callback 시각을 최근 재인증으로 인정하지 않는다. 성공한 재인증은 현재 세션에서 15분간 유효하며 기기 승인/회수/분실 복구에 연결했다. Owner 변경·이전·Owner 탈퇴·조직 삭제에도 같은 최근 재인증을 적용한다.
 
-근거: [OAuth 앱 등록](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/creating-an-oauth-app), [OAuth state·PKCE·계정 조회·prompt](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps), [최소 scope](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/scopes-for-oauth-apps), [authorization grant 삭제](https://docs.github.com/en/rest/apps/oauth-applications#delete-an-app-authorization). Context7 CLI는 실행 환경의 DNS 제한으로 사용할 수 없어 GitHub 공식 문서를 직접 확인했다.
+근거: [OAuth 앱 등록](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/creating-an-oauth-app), [OAuth state·PKCE·계정 조회·prompt](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps), [최소 scope](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/scopes-for-oauth-apps), [사용한 OAuth 토큰 삭제](https://docs.github.com/en/rest/apps/oauth-applications#delete-an-app-token).
 
 전환 전 검증 기록: 실제 SQLite 재열기와 모의 GitHub 응답으로 OAuth/세션 테스트 5개, 기존 기기 테스트 4개가 통과했다. 외부 GitHub 로그인 성공이나 브라우저 쿠키 동작은 이 테스트의 범위가 아니다. 현재 에이전트 환경은 포트 listen이 EPERM으로 거부되고 브라우저 새 페이지도 승인 정책상 차단되어 실제 로그인은 위 수동 절차로 확인해야 한다.
 
