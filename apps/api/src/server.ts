@@ -56,7 +56,7 @@ const server = createServer({ maxHeaderSize: 8192, requestTimeout: 120_000, head
       outgoing.setHeader('access-control-expose-headers', 'Retry-After')
       outgoing.setHeader('vary', 'Origin')
     }
-    const jsonRequest = path === '/auth/account/remove' || ['/organizations', '/security', '/shares'].some(prefix => path === prefix || path.startsWith(prefix + '/'))
+    const jsonRequest = path === '/auth/account/remove' || ['/organizations', '/security', '/shares', '/beta'].some(prefix => path === prefix || path.startsWith(prefix + '/'))
     if (!jsonRequest && (incoming.headers['transfer-encoding'] || (incoming.headers['content-length'] && incoming.headers['content-length'] !== '0'))) {
       outgoing.writeHead(413, { connection: 'close' }).end(); return
     }
