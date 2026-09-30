@@ -46,11 +46,13 @@ export function ProOrganizations({ api, userId, csrf, initialToken, route, onNav
   const loadedOrganization = useRef('')
   const [beta, setBeta] = useState<BetaStatus | null>(null)
   const [newName, setNewName] = useState('')
+  const [creating, setCreating] = useState(false)
   const memberInvite = useRef<HTMLDetailsElement>(null)
   const createDialog = useRef<HTMLDialogElement>(null), switcher = useRef<HTMLDetailsElement>(null)
   function openCreate() {
+    if (busy || locked || !beta?.active || beta.owned >= beta.workspaceLimit) return
     if (switcher.current) switcher.current.open = false
-    setNewName(''); setError(''); createDialog.current?.showModal()
+    setNewName(''); setError(''); setCreating(true); createDialog.current?.showModal()
   }
   useEffect(() => {
     const close = (event: PointerEvent) => { if (switcher.current && !switcher.current.contains(event.target as Node)) switcher.current.open = false }
@@ -71,6 +73,7 @@ export function ProOrganizations({ api, userId, csrf, initialToken, route, onNav
   const [message, setMessage] = useState('')
   const [removing, setRemoving] = useState<{ id: string; login: string } | null>(null)
   const [change, setChange] = useState<{ question: string; path: string; body: Record<string, unknown> } | null>(null)
+  const createFirst = !detail && !preview && !inviteInput.trim() && beta?.active && beta.owned < beta.workspaceLimit
   function onNavigate(next: ProRoute) { setError(''); setMessage(''); navigate(next) }
   const inviteTeamId = detail?.teams.find((team) => team.id === teamId)?.id ?? detail?.teams[0]?.id ?? ''
   const nav = (page: ProRoute['page']): ProRoute => ({ page, ...(selected ? { orgId: selected } : {}) })
@@ -163,7 +166,7 @@ export function ProOrganizations({ api, userId, csrf, initialToken, route, onNav
   return (
     <div className="pro-layout" aria-busy={busy || locked}>
       <aside className="pro-sidebar">
-        <div className="pro-workspace"><span className="pro-nav-label">워크스페이스</span>
+        <div className="pro-workspace"><div className="pro-workspace-label"><span className="pro-nav-label">워크스페이스</span><span className="pro-workspace-status" role="status">{busy ? '확인 중…' : ''}</span></div>
           <details className="pro-switcher" ref={switcher} onKeyDown={event => { if (event.key === 'Escape') { event.currentTarget.open = false; event.currentTarget.querySelector('summary')?.focus() } }}>
             <summary><span className="pro-workspace-icon"><Building2 aria-hidden="true" /></span><span>{detail?.name ?? '워크스페이스 선택'}<small>{detail ? (detail.role === 'owner' ? 'Owner' : 'Member') : '팀과 함께 시작하세요'}</small></span><ChevronDown aria-hidden="true" /></summary>
             <div className="pro-switcher-options"><p>내 워크스페이스</p>
@@ -180,44 +183,43 @@ export function ProOrganizations({ api, userId, csrf, initialToken, route, onNav
         <a href={proPath(nav('beta'))} aria-current={route.page === 'beta' ? 'page' : undefined} onClick={event => followProLink(event,nav('beta'),onNavigate)}>{beta?.operator ? '베타 참여 관리' : beta?.active ? '내 베타 이용 현황' : 'Pro Beta 참여하기'}</a></div>
       </aside>
       <div className="pro-content" tabIndex={-1} aria-label="워크스페이스 내용">
-      {error && <Notice error={error !== errors.reauthentication_required}><span role={error === errors.reauthentication_required ? 'status' : undefined}>{error}</span>{error === errors.reauthentication_required && <button type="button" className="button" onClick={() => onNavigate(nav('settings'))}>내 설정에서 본인 확인</button>}</Notice>}
+      {error && !creating && <Notice error={error !== errors.reauthentication_required}><span role={error === errors.reauthentication_required ? 'status' : undefined}>{error}</span>{error === errors.reauthentication_required && <button type="button" className="button" onClick={() => onNavigate(nav('settings'))}>내 설정에서 본인 확인</button>}</Notice>}
       {accessUnavailable && <button type="button" className="button" disabled={busy || disabled} onClick={() => refresh.current()}>워크스페이스 상태 다시 확인</button>}
       {message && <p role="status">{message}</p>}
-      {busy && <p role="status">워크스페이스를 확인하고 있어요.</p>}
-      {route.page === 'start' && <section className="pro-page"><header className="pro-page-header"><div><h2>워크스페이스 참여</h2><p>초대받은 워크스페이스에 참여하거나, 베타 코드로 내 워크스페이스를 만들 수 있어요.</p></div></header>
-        {detail && <div className="pro-current-workspace"><div><span className="pro-badge">현재 워크스페이스 · {detail.role === 'owner' ? 'Owner' : 'Member'}</span><h3>{detail.name}</h3><p>이미 참여 중이에요. 아래에서 다른 워크스페이스의 초대도 수락할 수 있어요.</p></div><div className="actions"><a className="button primary" href={proPath(nav('requests'))} onClick={event => followProLink(event, nav('requests'), onNavigate)}>요청함 열기</a>{detail.role === 'owner' && <a className="button" href={proPath(nav('team'))} onClick={event => followProLink(event, nav('team'), onNavigate)}>멤버 초대·관리</a>}<a className="text-button" href={proPath(nav('settings'))} onClick={event => followProLink(event, nav('settings'), onNavigate)}>기기·보안 설정</a></div></div>}
+      {route.page === 'start' && <section className="pro-page"><header className="pro-page-header"><div><h2>워크스페이스 참여</h2><p>{detail ? '참여 중인 팀을 열거나 새로운 워크스페이스에 참여하세요.' : '팀의 초대 링크로 참여하세요. 직접 팀을 시작하려면 베타 참여 코드가 필요해요.'}</p></div></header>
+        {detail && <div className="pro-current-workspace"><div><span className="pro-badge">현재 워크스페이스 · {detail.role === 'owner' ? 'Owner' : 'Member'}</span><h3>{detail.name}</h3><p>요청함에서 팀의 파일 전달 요청을 확인할 수 있어요.</p></div><div className="actions"><a className={'button' + (preview ? '' : ' primary')} href={proPath(nav('requests'))} onClick={event => followProLink(event, nav('requests'), onNavigate)}>요청함 열기</a>{detail.role === 'owner' && <a className="text-button" href={proPath(nav('team'))} onClick={event => followProLink(event, nav('team'), onNavigate)}>멤버 초대·관리</a>}</div></div>}
       <div className="pro-join-grid">
       <section className="pro-join-card" aria-labelledby="workspace-invite-title"><div className="pro-join-icon"><Users aria-hidden="true" /></div><span className="pro-badge">워크스페이스 초대 링크</span><h3 id="workspace-invite-title">초대받은 워크스페이스에 참여</h3><p id="workspace-invite-help">워크스페이스 Owner에게 받은 링크를 붙여넣으세요. 베타 코드 없이도 해당 워크스페이스의 멤버로 참여할 수 있어요.</p>
       <fieldset className="plain-fieldset" disabled={busy || locked}>
         <legend className="sr-only">워크스페이스 초대 수락</legend>
         <form className="pro-form" onSubmit={(event) => { event.preventDefault(); void run(checkInvite) }}>
-          <label htmlFor="invitation-link">워크스페이스 초대 링크</label>
-          <input id="invitation-link" value={inviteInput} aria-describedby="workspace-invite-help" placeholder="https://…/pro#invite=…" autoComplete="off" spellCheck={false} maxLength={1024} required onChange={(event) => { setInviteInput(event.target.value); setPreview(null) }} />
-          <button className="button primary" type="submit">{busy ? '확인 중…' : '워크스페이스 초대 확인'}</button>
+          <div className="pro-field"><label htmlFor="invitation-link">워크스페이스 초대 링크</label>
+          <input id="invitation-link" value={inviteInput} aria-describedby="workspace-invite-help" placeholder="https://…/pro#invite=…" autoComplete="off" autoCapitalize="none" spellCheck={false} maxLength={1024} required onChange={(event) => { setInviteInput(event.target.value); setPreview(null) }} /></div>
+          <button className={'button' + (!detail && !preview && !createFirst ? ' primary' : '')} type="submit" disabled={!inviteInput.trim()}>{busy ? '확인 중…' : preview ? '초대 다시 확인' : '워크스페이스 초대 확인'}</button>
         </form>
         {preview && <form className="pro-form" onSubmit={(event) => { event.preventDefault(); void run(async () => {
           const result = await call('/organizations/invitations/accept', { token: invitationToken(inviteInput, location.origin), ...(preview.kind === 'owner' ? { name: workspaceName } : {}) })
           try { sessionStorage.removeItem('envhandoff-invitation') } catch { /* No persistent auth state is stored here. */ }
           onAccepted(); setPreview(null); setInviteInput(''); onNavigate({page:'requests',orgId:result.id})
         }) }}>
-          <p>{preview.kind === 'owner' ? '새 워크스페이스를 개설하는 초대예요.' : `${preview.organization}에 참여하는 초대예요.`}</p>
-          {preview.kind === 'owner' && !preview.accepted && <><label htmlFor="workspace-name">워크스페이스 이름</label><input id="workspace-name" value={workspaceName} required maxLength={80} onChange={(event) => setWorkspaceName(event.target.value)} /></>}
-          <button type="submit" className="button primary">{preview.accepted ? '워크스페이스 열기' : '초대 수락'}</button>
+          <div className="pro-confirm"><h4>초대 내용을 확인해주세요</h4><p>{preview.kind === 'owner' ? '새 워크스페이스를 개설하는 초대예요.' : `${preview.organization}에 참여하는 초대예요.`}</p><p className="help">초대받은 GitHub 계정: {preview.login}{preview.team ? ` · 팀: ${preview.team}` : ''}</p></div>
+          {preview.kind === 'owner' && !preview.accepted && <div className="pro-field"><label htmlFor="workspace-name">워크스페이스 이름</label><input id="workspace-name" value={workspaceName} required maxLength={80} onChange={(event) => setWorkspaceName(event.target.value)} /></div>}
+          <button type="submit" className="button primary" disabled={preview.kind === 'owner' && !preview.accepted && !workspaceName.trim()}>{busy ? '참여하는 중…' : preview.accepted ? '워크스페이스 열기' : '초대 수락'}</button>
         </form>}
       </fieldset></section>
       {beta && <section className="pro-join-card pro-beta-card" aria-labelledby="beta-join-title"><div className="pro-join-icon"><KeyRound aria-hidden="true" /></div><span className="pro-badge">베타 참여 코드</span><h3 id="beta-join-title">내 워크스페이스 만들기</h3><p>서비스 운영자가 발급한 코드로 개설 권한을 활성화해요. 워크스페이스 초대 링크와는 달라요.</p>
-        {beta.active ? <><p className="pro-join-status">개설 권한 활성화됨 · 소유 {beta.owned} / {beta.workspaceLimit}개</p><button className="button" disabled={busy || locked || beta.owned >= beta.workspaceLimit} onClick={openCreate}>{beta.owned >= beta.workspaceLimit ? '소유 한도에 도달했어요' : '워크스페이스 만들기'}</button></> : <><p className="pro-join-status">활성화하면 최대 2개 개설 가능</p><a className="button" href={proPath(nav('beta'))} onClick={event => followProLink(event,nav('beta'),onNavigate)}>베타 코드 입력하기</a></>}
+        {beta.active ? <><p className="pro-join-status">개설 권한 활성화됨 · 소유 {beta.owned} / {beta.workspaceLimit}개</p><button className={'button' + (createFirst ? ' primary' : '')} disabled={busy || locked || beta.owned >= beta.workspaceLimit} onClick={openCreate}>{beta.owned >= beta.workspaceLimit ? '소유 한도에 도달했어요' : '워크스페이스 만들기'}</button></> : <><p className="pro-join-status">활성화하면 최대 {beta.workspaceLimit}개 개설 가능</p><a className="button" href={proPath(nav('beta'))} onClick={event => followProLink(event,nav('beta'),onNavigate)}>베타 코드 입력하기</a></>}
       </section>}
       </div></section>}
-      {!busy && !detail && !['settings','start','beta'].includes(route.page) && <div className="pro-empty"><h3>{route.orgId ? '워크스페이스에 접근할 수 없어요' : '참여 중인 워크스페이스가 없어요'}</h3><p>{route.orgId ? '현재 계정과 참여 권한을 확인하거나 다른 워크스페이스를 선택해주세요.' : '팀 Owner에게 초대를 요청하거나 Pro Beta를 활성화해 내 워크스페이스를 만들어보세요.'}</p>{route.page !== 'start' && <a className="button" href={proPath({page:'start'})} onClick={event => followProLink(event, {page:'start'}, onNavigate)}>초대 링크로 참여</a>}</div>}
+      {!busy && !detail && !['settings','start','beta'].includes(route.page) && <div className="pro-empty"><h3>{route.orgId ? '워크스페이스에 접근할 수 없어요' : '참여 중인 워크스페이스가 없어요'}</h3><p>{route.orgId ? '현재 계정과 참여 권한을 확인하거나 다른 워크스페이스를 선택해주세요.' : '팀 Owner에게 초대를 요청하거나 Pro Beta를 활성화해 내 워크스페이스를 만들어보세요.'}</p>{route.page !== 'start' && <a className="button primary" href={proPath({page:'start'})} onClick={event => followProLink(event, {page:'start'}, onNavigate)}>초대 링크로 참여</a>}</div>}
       {organizations.some((org) => !org.active) && <Notice>참여가 중지된 워크스페이스가 있어요. 운영자에게 문의해주세요.</Notice>}
       {route.page === 'settings' && settings}
       {route.page === 'beta' && beta && <ProBeta status={beta} busy={busy || locked} call={call} run={run} onActivated={setBeta} onCreate={openCreate} onSettings={() => onNavigate(nav('settings'))} />}
         {detail && (!route.orgId || detail.id === route.orgId) && <>
           {route.page === 'team' && <section className="pro-page"><header className="pro-page-header"><div><h2>멤버 · 팀</h2><p>{detail.name} · {detail.members.length}명의 멤버</p></div>{detail.role === 'owner' && <button className="button primary" disabled={busy || locked} onClick={() => { if(memberInvite.current) { memberInvite.current.open = true; memberInvite.current.querySelector('input')?.focus() } }}>워크스페이스에 멤버 초대</button>}</header><fieldset className="plain-fieldset pro-panel" disabled={busy || locked}><legend>멤버</legend>
           <ul className="pro-members">{detail.members.map((member) => <li key={member.id}><span>{member.login}{member.id === userId ? ' · 나' : ''}<small>{member.role === 'owner' ? 'Owner' : 'Member'}</small></span><div className="actions">
-            {detail.role === 'owner' && <details className="pro-member-menu"><summary>역할 관리</summary><div className="actions"><button type="button" className="button" onClick={() => { setRemoving(null); setChange({question:`${member.login} 계정을 ${member.role === 'owner' ? 'Member' : 'Owner'}로 변경할까요? 파일 권한은 유지돼요.`,path:`/members/${member.id}/role`,body:{role:member.role === 'owner' ? 'member' : 'owner'}}) }}>{member.role === 'owner' ? 'Member로 변경' : 'Owner로 지정'}</button>{member.id !== userId && <button type="button" className="button" onClick={() => { setRemoving(null); setChange({question:`${member.login} 계정으로 Owner를 이전할까요? 내 역할은 Member로 바뀌어요.`,path:'/owner-transfer',body:{userId:member.id}}) }}>Owner 이전</button>}</div></details>}
-            {(detail.role === 'owner' || member.id === userId) && <button type="button" className="button" onClick={() => { setChange(null); setRemoving(member) }}>{member.id === userId ? '탈퇴' : '제외'}</button>}
+            {detail.role === 'owner' && <details className="pro-member-menu" onKeyDown={event => { if (event.key === 'Escape') { event.currentTarget.open = false; event.currentTarget.querySelector('summary')?.focus() } }}><summary aria-label={`${member.login} 멤버 관리`}>멤버 관리</summary><div className="actions"><button type="button" className="button" onClick={() => { setRemoving(null); setChange({question:`${member.login} 계정을 ${member.role === 'owner' ? 'Member' : 'Owner'}로 변경할까요? 파일 권한은 유지돼요.`,path:`/members/${member.id}/role`,body:{role:member.role === 'owner' ? 'member' : 'owner'}}) }}>{member.role === 'owner' ? 'Member로 변경' : 'Owner로 지정'}</button>{member.id !== userId && <button type="button" className="button" onClick={() => { setRemoving(null); setChange({question:`${member.login} 계정으로 Owner를 이전할까요? 내 역할은 Member로 바뀌어요.`,path:'/owner-transfer',body:{userId:member.id}}) }}>Owner 이전</button>}<button type="button" className="button pro-danger-action" onClick={() => { setChange(null); setRemoving(member) }}>{member.id === userId ? '탈퇴' : '제외'}</button></div></details>}
+            {detail.role !== 'owner' && member.id === userId && <button type="button" className="button pro-danger-action" onClick={() => { setChange(null); setRemoving(member) }}>탈퇴</button>}
           </div></li>)}</ul>
           {removing && <div className="pro-confirm" role="group" aria-label="멤버 제외 확인"><p>{removing.login} 계정을 이 워크스페이스에서 제외할까요? 이 조직의 파일 접근도 종료돼요.</p><div className="actions"><button type="button" className="button" onClick={() => { void run(async () => { await call(`/organizations/${detail.id}/members/${removing.id}/remove`, {}); setRemoving(null); if(removing.id === userId){setDetail(null);await load('');onNavigate({page:'start'})}else{await load();setMessage('워크스페이스에서 제외했어요.')} }) }}>제외 확인</button><button type="button" className="button" onClick={() => setRemoving(null)}>취소</button></div></div>}
           {change && <div className="pro-confirm" role="group" aria-label="워크스페이스 변경 확인"><p>{change.question}</p><div className="actions"><button type="button" className="button" onClick={() => { void run(async () => { await call('/organizations/'+detail.id+change.path,change.body);setChange(null);if(change.path==='/remove'){setDetail(null);await load('');onNavigate({page:'start'})}else{await load();setMessage('변경 사항을 저장했어요.')} }) }}>변경 확인</button><button type="button" className="button" onClick={() => setChange(null)}>취소</button></div></div>}
@@ -226,15 +228,15 @@ export function ProOrganizations({ api, userId, csrf, initialToken, route, onNav
               const invite = await call(`/organizations/${detail.id}/invitations`, { login: login.trim(), teamId: inviteTeamId })
               setCreatedLink(invite.url); setLogin(''); await load(); setMessage(`${invite.login} 계정용 초대를 만들었어요. 7일 안에 수락할 수 있어요.`)
             }) }}>
-              <label htmlFor="github-invite-login">초대할 GitHub 계정 이름</label><input id="github-invite-login" value={login} required maxLength={39} autoComplete="off" spellCheck={false} onChange={(event) => setLogin(event.target.value)} />
+              <div className="pro-field"><label htmlFor="github-invite-login">초대할 GitHub 계정 이름</label><input id="github-invite-login" value={login} required maxLength={39} autoComplete="off" autoCapitalize="none" spellCheck={false} aria-describedby="github-invite-help" placeholder="예: octocat" onChange={(event) => setLogin(event.target.value)} /><small id="github-invite-help">@ 없이 개인 계정 이름을 입력하세요. 해당 계정만 초대를 수락할 수 있어요.</small></div>
               {detail.teams.length > 1 && <><label htmlFor="invite-team">가입할 팀</label><select id="invite-team" value={inviteTeamId} onChange={(event) => setTeamId(event.target.value)}>{detail.teams.map((team) => <option value={team.id} key={team.id}>{team.name}</option>)}</select></>}
-              <button type="submit" className="button">워크스페이스 초대 링크 만들기</button>
+              <button type="submit" className="button" disabled={!login.trim()}>{busy ? '초대 만드는 중…' : '워크스페이스 초대 링크 만들기'}</button>
             </form>
             {createdLink && <CopyField label="상대에게 전달할 워크스페이스 초대 링크" value={createdLink} />}
             </details>
             {detail.invitations.length > 0 && <><h3>수락 대기 중</h3><ul className="pro-members">{detail.invitations.map((invite) => <li key={invite.id}><span>{invite.login} · {new Date(invite.expiresAt).toLocaleDateString()}까지</span><button type="button" className="button" onClick={() => { void run(async () => { await call(`/organizations/${detail.id}/invitations/${invite.id}/cancel`, {}); setCreatedLink(''); await load(); setMessage('초대를 취소했어요.') }) }}>초대 취소</button></li>)}</ul></>}
-            <p>Owner 변경·이전·조직 삭제는 최근 15분 이내 본인 확인이 필요해요.</p><a className="button" href={proPath(nav('settings'))} onClick={event => followProLink(event,nav('settings'),onNavigate)}>설정에서 본인 확인</a>
-            <details className="pro-danger"><summary>워크스페이스 삭제</summary><p>이 조직의 멤버 관계와 파일 접근을 종료해요. 계정·기기·다른 워크스페이스는 유지돼요.</p><button className="button" type="button" onClick={() => {setRemoving(null);setChange({question:`${detail.name} 워크스페이스를 삭제할까요? 되돌릴 수 없어요.`,path:'/remove',body:{}})}}>워크스페이스 삭제</button></details>
+            <p className="pro-onboarding-note">Owner 변경·이전·조직 삭제는 최근 15분 이내 본인 확인이 필요해요. <a href={proPath(nav('settings'))} onClick={event => followProLink(event,nav('settings'),onNavigate)}>설정에서 본인 확인</a></p>
+            <details className="pro-danger"><summary>워크스페이스 삭제</summary><p>이 조직의 멤버 관계와 파일 접근을 종료해요. 계정·기기·다른 워크스페이스는 유지돼요.</p><button className="button pro-danger-action" type="button" onClick={() => {setRemoving(null);setChange({question:`${detail.name} 워크스페이스를 삭제할까요? 되돌릴 수 없어요.`,path:'/remove',body:{}})}}>워크스페이스 삭제</button></details>
           </>}
           </fieldset></section>}
           {route.page === 'requests' && <ProRequests key={'requests:' + detail.id + userId + csrf} route={route} onNavigate={onNavigate} api={api} orgId={detail.id} userId={userId} csrf={csrf} disabled={busy || locked} onExpired={onExpired} />}
@@ -245,15 +247,15 @@ export function ProOrganizations({ api, userId, csrf, initialToken, route, onNav
           }} />}
         </>}
       </div>
-      <dialog ref={createDialog} className="pro-dialog" aria-labelledby="create-workspace-title" onCancel={event => { if(busy) event.preventDefault() }}>
+      <dialog ref={createDialog} className="pro-dialog" aria-labelledby="create-workspace-title" aria-describedby="create-workspace-help" onClose={() => { setCreating(false); setError('') }} onCancel={event => { if(busy) event.preventDefault() }}>
         <form className="pro-form" onSubmit={event => { event.preventDefault(); void run(async () => {
           const result = await call('/organizations', { name: newName })
           setOrganizations(items => [...items, { ...result, active: 1 }]); setBeta(value => value ? {...value, owned: value.owned + 1} : value)
           createDialog.current?.close(); setMessage('워크스페이스를 만들었어요.')
           onNavigate({page:'projects',orgId:result.id})
         }) }}>
-          <h2 id="create-workspace-title">새 워크스페이스 만들기</h2><p>함께 일할 팀의 이름을 입력해주세요. 소유 {beta?.owned ?? 0} / {beta?.workspaceLimit ?? 2}개</p>
-          <label htmlFor="new-workspace-name">워크스페이스 이름</label><input id="new-workspace-name" value={newName} onChange={event => setNewName(event.target.value)} required maxLength={80} autoFocus disabled={busy || locked} />
+          <h2 id="create-workspace-title">새 워크스페이스 만들기</h2><p id="create-workspace-help">함께 일할 팀의 이름을 입력해주세요. 만든 다음 프로젝트와 환경을 등록할 수 있어요.</p><p className="help">소유 {beta?.owned ?? 0} / {beta?.workspaceLimit ?? 2}개</p>
+          <div className="pro-field"><label htmlFor="new-workspace-name">워크스페이스 이름</label><input id="new-workspace-name" value={newName} onChange={event => setNewName(event.target.value)} required maxLength={80} autoFocus disabled={busy || locked} /></div>
           {error && <Notice error>{error}</Notice>}
           <div className="actions"><button type="button" className="button" disabled={busy} onClick={() => createDialog.current?.close()}>취소</button><button type="submit" className="button primary" disabled={busy || locked || !newName.trim() || !beta?.active || beta.owned >= beta.workspaceLimit}>{busy ? '만드는 중…' : '워크스페이스 만들기'}</button></div>
         </form>

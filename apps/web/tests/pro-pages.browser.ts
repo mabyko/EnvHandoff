@@ -4,6 +4,7 @@ import { createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { ProRequests } from '../src/components/ProRequests.tsx'
 import { ProShares } from '../src/components/ProShares.tsx'
+import { ProCatalog } from '../src/components/ProCatalog.tsx'
 import type { ProRoute } from '../src/lib/pro-navigation.ts'
 
 const orgId = '10000000-0000-4000-8000-000000000001', userId = '20000000-0000-4000-8000-000000000001'
@@ -19,6 +20,42 @@ async function until(condition: () => boolean) {
   }
 }
 
+export async function verifyProCatalog() {
+  const container = document.createElement('div'); document.body.append(container)
+  const root = createRoot(container), originalFetch = window.fetch
+  const catalog = { role: 'owner', teams: [{id:firstId,name:'모두',isDefault:1,members:[userId]}], projects: [] as {id:string;name:string;teamIds:string[];environments:[] }[] }
+  let route: ProRoute = {page:'projects',orgId}, creations = 0, hold = false
+  const render = () => root.render(createElement(ProCatalog, {api,orgId,csrf:'test-only',members:[{id:userId,login:'qa-member'}],route,onNavigate:next=>{route=next;render()},disabled:false,onExpired:()=>{throw new Error('Unexpected expiry')},onTeamsChanged:async()=>{}}))
+  window.fetch = async (input,init) => {
+    const url = String(input)
+    if (!url.startsWith(api)) return originalFetch(input,init)
+    if (url.endsWith('/catalog')) return Response.json(catalog)
+    if (url.endsWith('/projects') && init?.method === 'POST') {
+      creations++; await until(()=>!hold)
+      catalog.projects.push({id:firstId,name:JSON.parse(init.body as string).name,teamIds:[firstId],environments:[]})
+      return Response.json({id:firstId})
+    }
+    throw new Error('Unexpected catalog QA request')
+  }
+  try {
+    render(); await until(()=>!!container.querySelector('#new-project-name') && !container.querySelector('[aria-busy="true"]'))
+    check(container.querySelector('details')?.open,'First-project form must be visible in an empty workspace')
+    const input = container.querySelector<HTMLInputElement>('#new-project-name')!
+    input.value = 'QA 프로젝트'; hold = true
+    input.form!.requestSubmit(); input.form!.requestSubmit()
+    await until(()=>creations>0)
+    check(creations===1,'Rapid submissions must create a single project')
+    await until(()=>!!container.querySelector('fieldset:disabled'))
+    hold = false; await until(()=>!!container.querySelector('.pro-project-card') && !container.querySelector('[aria-busy="true"]'))
+    check(container.querySelector('.pro-project-card')?.textContent?.includes('QA 프로젝트'),'Created project must be listed')
+    container.querySelector<HTMLAnchorElement>('.pro-project-card')!.click()
+    await until(()=>!!container.querySelector('.pro-empty-state') && !!route.id)
+    check(container.querySelector('h2')?.textContent==='QA 프로젝트','Project detail must identify the selected project')
+    check(container.querySelector('summary')?.textContent==='프로젝트 설정','Advanced settings remain available on demand')
+    return {passed:true,checks:['empty workspace next action','rapid project submission prevention','create to detail navigation','advanced settings disclosure']}
+  } finally {hold=false;root.unmount();window.fetch=originalFetch;container.remove()}
+}
+
 export async function verifyProPages() {
   const container = document.createElement('div'); document.body.append(container)
   const root = createRoot(container), originalFetch = window.fetch, originalUpload = window.XMLHttpRequest
@@ -26,7 +63,7 @@ export async function verifyProPages() {
   const share = (id: string, status = 'available') => ({ id, status, createdAt: 1, expiresAt: Date.now() + 86400000, acknowledgedAt: null, project: 'QA project', environment: 'Share environment', canReissue: true, canRevoke: true })
   const shares = new Map([[firstId, share(firstId)], [secondId, share(secondId)]])
   const catalog = { projects: [{ name: 'QA project', environments: [firstId, environmentId].map((id, index) => ({ id, name: 'Environment ' + index, permissions: { receive: true, externalShare: true } })) }] }
-  let route: ProRoute = { page: 'requests', orgId }, createdId = ''
+  let route: ProRoute = { page: 'requests', orgId }, createdId = '', creations = 0
   function render() {
     const props = { api, orgId, userId, csrf: 'test-only', disabled: false, route, onNavigate: (next: ProRoute) => { route = next; render() }, onExpired: () => { throw new Error('Unexpected session expiry') } }
     root.render(route.page === 'requests' ? createElement(ProRequests, props) : createElement(ProShares, props))
@@ -49,6 +86,7 @@ export async function verifyProPages() {
     if (path.endsWith('/requests')) return Response.json({ requests: [request(firstId), request(secondId)] })
     if (path.includes('/requests/')) return Response.json(request(path.split('/').at(-1)!))
     if (path.endsWith('/shares') && method === 'POST') {
+      creations++
       const body = JSON.parse(init?.body as string); createdId = body.operationId
       shares.set(createdId, share(createdId, 'reserved')); return Response.json(shares.get(createdId))
     }
@@ -87,9 +125,10 @@ export async function verifyProPages() {
     const files = new DataTransfer(); files.items.add(new File(['DEMO=1\r\n'], '.env'))
     const input = container.querySelector<HTMLInputElement>('input[type="file"]')!; input.files = files.files; input.dispatchEvent(new Event('change', { bubbles: true }))
     await until(() => [...container.querySelectorAll<HTMLButtonElement>('button')].some(button => button.textContent === '암호화해서 외부 공유' && !button.disabled))
-    click('암호화해서 외부 공유')
+    click('암호화해서 외부 공유'); click('암호화해서 외부 공유')
     await until(() => ready() && route.id === createdId && !!field('다른 경로로 전달할 공유 코드'))
     const code = field('다른 경로로 전달할 공유 코드')!.value
+    check(creations === 1, 'Rapid repeated clicks must create only one encrypted share')
     check(code.length === 43 && container.querySelectorAll('article').length === 1, 'Creation must navigate to only the new detail without losing its code')
     click('공유 목록')
     await until(() => ready() && !!container.querySelector('.pro-list'))
@@ -100,6 +139,6 @@ export async function verifyProPages() {
     route = { page: 'shares', orgId, id: '30000000-0000-4000-8000-000000000099' }; render()
     await until(() => ready() && !!container.querySelector('[role="alert"]'))
     check(!container.querySelector('article') && !field('다른 경로로 전달할 공유 코드'), 'Unavailable detail must not expose another share')
-    return { passed: true, checks: ['request list/detail/create', 'project environment selection', 'share list/detail/create', 'code retained after creation and navigation', 'unavailable detail isolation'] }
+    return { passed: true, checks: ['request list/detail/create', 'project environment selection', 'share list/detail/create', 'rapid share click prevention', 'code retained after creation and navigation', 'unavailable detail isolation'] }
   } finally { root.unmount(); window.fetch = originalFetch; window.XMLHttpRequest = originalUpload; container.remove() }
 }
