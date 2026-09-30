@@ -264,7 +264,14 @@ Cloudflare와 Openship의 push 배포는 서로 완료를 기다리지 않는다
 
 ### 배포 PR 템플릿
 
-`main` → `release` 배포는 [배포 PR 만들기](https://github.com/mabyko/EnvHandoff/compare/release...main?quick_pull=1&template=release.md)로 연다. [release 템플릿](../.github/PULL_REQUEST_TEMPLATE/release.md)은 배포 범위·커밋, 로컬 검증, DB·환경변수 변경, 배포 순서·복구 방법과 배포 후 결과를 기록한다. 제목은 `release: YYYY-MM-DD 배포 요약`으로 작성한다.
+2026-09-30의 #6 배포 다음부터는 운영 배포마다 제품 버전을 올린다. 현재 버전은 `0.0.1`이며, 다음 배포가 수정만 포함하면 `0.0.2`, 기능을 추가하면 `0.1.0`으로 올린다. 초기 `0.x`에서 호환성을 깨는 변경은 minor를 올리고 사용자에게 필요한 조치를 명시한다.
+
+1. 배포에 포함할 변경을 모은 뒤, `main` 대상 PR에서 루트와 `apps/web`, `apps/api`, `apps/server`, `packages/protocol`의 `package.json` 버전을 같은 값으로 올린다. 제품 버전은 파일 형식·통신 프로토콜 버전과 별개다. 웹 하단 표시는 `apps/web/package.json`을 사용하므로 함께 확인한다.
+2. 버전 변경을 포함한 커밋으로 `pnpm check`를 실행하고 `main`에 병합한다. `release` PR을 연 뒤 배포 범위가 달라지면 버전과 변경 요약도 다시 확인한다.
+3. `main` → `release` PR 제목은 `release: v0.0.2 — 베타 코드 본인 확인 안내 개선`처럼 버전과 배포 요약으로 작성한다. 본문에는 이전 운영 버전부터 추가된 기능·수정, 호환성 변경·필요한 조치와 포함 PR을 정리한다. 첫 버전 배포의 비교 기준은 #6의 운영 커밋 `34816a707ff3273d1f3155912333a8237c85e28b`다.
+4. 배포 성공과 공개 사이트의 버전 표시를 확인한 뒤, 실제 배포한 `release` 커밋에 같은 이름의 Git 태그(`v0.0.2`)를 만들고 push한다. 태그는 서명하고 PR에 커밋·태그·Cloudflare 배포 ID를 기록한다. 기존 태그를 옮기거나 실패한 배포를 새 버전 태그로 기록하지 않는다.
+
+`main` → `release` 배포는 [배포 PR 만들기](https://github.com/mabyko/EnvHandoff/compare/release...main?quick_pull=1&template=release.md)로 연다. [release 템플릿](../.github/PULL_REQUEST_TEMPLATE/release.md)은 버전·변경 요약, 배포 범위·커밋, 로컬 검증, DB·환경변수 변경, 배포 순서·복구 방법과 배포 후 결과를 기록한다. 버전 갱신과 태그는 이 절차에 따라 수행하며 자동화는 아직 없다.
 
 템플릿 파일이 기본 브랜치 `main`에 반영된 뒤 위 링크에서 선택할 수 있다. GitHub가 대상 브랜치 이름으로 템플릿을 자동 선택하는 것은 아니므로 `template=release.md`가 포함된 링크를 사용한다. 템플릿은 작성 양식이며 입력 여부를 강제하는 추가 CI는 없다. 배포 후 항목은 병합 후 실제 결과를 확인하며 채운다.
 
