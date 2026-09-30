@@ -146,7 +146,7 @@ export class AuthApi {
       });
       const url = new URL('https://github.com/login/oauth/authorize');
       url.search = new URLSearchParams({ client_id: this.config.clientId, redirect_uri: this.config.apiOrigin + '/auth/github/callback', scope: '', state,
-        code_challenge: hash(verifier), code_challenge_method: 'S256', prompt: 'select_account' }).toString();
+        code_challenge: hash(verifier), code_challenge_method: 'S256' }).toString();
       this.setCookie(headers, this.flowCookie, browser, 600);
       return Response.json({ url: url.href }, { headers });
     });
@@ -188,10 +188,10 @@ export class AuthApi {
         throw new HttpError(502);
       identity = { id: String(user.id), login: user.login };
     }
-    catch { /* Still revoke the provider grant when profile validation fails. */ }
-    // Dedicated identity-only OAuth app: revoke the grant, including all provider tokens.
+    catch { /* Still revoke the provider token when profile validation fails. */ }
+    // Revoke this login's token while preserving the user's app authorization.
     // Never persist access/refresh tokens or return them to the browser.
-    const revoked = await this.fetcher(`https://api.github.com/applications/${this.config.clientId}/grant`, {
+    const revoked = await this.fetcher(`https://api.github.com/applications/${this.config.clientId}/token`, {
       method: 'DELETE', headers: { ...githubHeaders, authorization: 'Basic ' + Buffer.from(this.config.clientId + ':' + this.config.clientSecret).toString('base64'), 'content-type': 'application/json' },
       body: JSON.stringify({ access_token: token.access_token }), redirect: 'error', signal: AbortSignal.timeout(10000),
     });

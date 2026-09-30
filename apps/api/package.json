@@ -4,18 +4,18 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node --watch --env-file-if-exists=.env src/server.ts",
+    "dev": "node --watch --env-file-if-exists=.env.local src/server.ts",
     "start": "node --env-file-if-exists=.env src/server.ts",
-    "invite-owner": "node --env-file-if-exists=.env src/invite-owner.ts",
-    "management-recovery": "node --env-file-if-exists=.env src/management-recovery.ts",
-    "test": "node --test tests/*.test.ts",
+    "invite-owner": "node --env-file-if-exists=.env.local src/invite-owner.ts",
+    "management-recovery": "node --env-file-if-exists=.env.local src/management-recovery.ts",
+    "test": "node --env-file-if-exists=.env.local --test tests/*.test.ts",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint --deny-warnings src tests",
-    "db:migrate": "node --env-file-if-exists=.env src/migrate.ts",
-    "restore-safe": "node --env-file-if-exists=.env src/restore-safe.ts",
-    "deletion-ledger": "node --env-file-if-exists=.env src/deletions.ts",
-    "disable-account": "node --env-file-if-exists=.env src/disable-account.ts",
-    "deletion-health": "node --env-file-if-exists=.env src/deletion-health.ts"
+    "db:migrate": "node --env-file-if-exists=.env.local src/migrate.ts",
+    "restore-safe": "node --env-file-if-exists=.env.local src/restore-safe.ts",
+    "deletion-ledger": "node --env-file-if-exists=.env.local src/deletions.ts",
+    "disable-account": "node --env-file-if-exists=.env.local src/disable-account.ts",
+    "deletion-health": "node --env-file-if-exists=.env.local src/deletion-health.ts"
   },
   "dependencies": {
     "@envhandoff/protocol": "workspace:*",
