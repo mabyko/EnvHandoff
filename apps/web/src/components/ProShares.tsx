@@ -28,7 +28,7 @@ export function ProShares({ api, orgId, userId, csrf, targetId, route, onNavigat
   const [editing, setEditing] = useState<{ index: number; source: ReturnType<typeof parseEditableEnv>; values: string[] } | null>(null)
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [message, setMessage] = useState('')
   const work = useRef<AbortController | null>(null)
-  const [progress, setProgress] = useState(0)
+  const [progress, setProgress] = useState(0), [uploading, setUploading] = useState(false)
   const lifetime = useRef<AbortController | null>(null), running = useRef<AbortController | null>(null), expired = useRef(onExpired)
   const [reissues, setReissues] = useState(new Map<string, { operationId: string; token: string; tokenHash: string }>())
   const revocations = useRef(new Map<string, string>())
@@ -77,15 +77,15 @@ export function ProShares({ api, orgId, userId, csrf, targetId, route, onNavigat
       throw e
     }
   }
-  async function run(action: (signal: AbortSignal) => Promise<void>) {
+  async function run(action: (signal: AbortSignal) => Promise<void>, isUpload = false) {
     const controller = lifetime.current!
     if (running.current === controller || controller.signal.aborted) return
     const task = new AbortController(); work.current = task
     const signal = AbortSignal.any([controller.signal, task.signal])
-    running.current = controller; setBusy(true); setError(''); setMessage('')
+    running.current = controller; setBusy(true); setUploading(isUpload); if (isUpload) setProgress(0); setError(''); setMessage('')
     try { await action(signal) }
     catch (e) { if (!signal.aborted) setError(e instanceof Error && e.name === 'Error' ? e.message : explainError(e)) }
-    finally { if (work.current === task) work.current = null; if (running.current === controller) running.current = null; if (!controller.signal.aborted) setBusy(false) }
+    finally { if (work.current === task) work.current = null; if (running.current === controller) running.current = null; if (!controller.signal.aborted) { setBusy(false); setUploading(false) } }
   }
   const refresh = useRef(() => {})
   useLayoutEffect(() => { refresh.current = () => { if (running.current === lifetime.current) return; loadedView.current = currentView.current.key; void run(load) } })
@@ -151,7 +151,7 @@ export function ProShares({ api, orgId, userId, csrf, targetId, route, onNavigat
       <div className="actions">{(detailId || route.create) ? <a className="button" href={proPath(listRoute)} onClick={event => followProLink(event, listRoute, onNavigate)}>공유 목록</a> : <a className="button primary" href={proPath(createRoute)} onClick={event => followProLink(event, createRoute, onNavigate)}>새 외부 공유</a>}
         <button className="button" type="button" disabled={busy || disabled} onClick={() => refresh.current()}>새로고침</button></div>
     </header>
-    {error && <Notice error>{error}</Notice>}<p className="pro-status-line" role="status">{busy ? pending ? `암호문을 업로드하고 있어요. ${progress}%` : '공유 정보를 확인하거나 처리하고 있어요.' : message}</p>
+    {error && <Notice error>{error}</Notice>}<p className="pro-status-line" role="status">{busy ? uploading && pending ? `암호문을 업로드하고 있어요. ${progress}%` : '공유 정보를 확인하거나 처리하고 있어요.' : message}</p>
     {route.create ? <>
       <p>기기 등록 없이 비회원에게 보낼 수 있어요. 환경별 외부 공유 권한이 필요해요.</p>
       <fieldset className="plain-fieldset pro-form-panel" disabled={busy || disabled}>
@@ -170,7 +170,7 @@ export function ProShares({ api, orgId, userId, csrf, targetId, route, onNavigat
           <label className="pro-form">보관 기간<select value={days} disabled={!!pending} onChange={e => setDays(Number(e.target.value))}><option value={1}>24시간</option><option value={3}>3일</option><option value={7}>7일</option></select></label>
           <p>조직·프로젝트·환경 이름은 서버에 저장돼요. 파일 이름·배치 경로·내용은 암호화된 묶음 안에만 담겨요.</p>
           <p>업로드 확정부터 이용할 수 있어요. 만료·회수 뒤 저장소 삭제까지 최대 24시간이 더 걸릴 수 있어요.</p>
-          <button type="button" className="button primary" disabled={!files.length || !!draft || !environmentId} onClick={() => { void run(send) }}>{pending ? '같은 업로드 재시도' : '암호화해서 외부 공유'}</button>
+          <button type="button" className="button primary" disabled={!files.length || !!draft || !environmentId} onClick={() => { void run(send, true) }}>{pending ? '같은 업로드 재시도' : '암호화해서 외부 공유'}</button>
         </>}
         {uploadRecovery}
         <p>공유 코드는 이 탭에서만 다시 볼 수 있어요. 만든 뒤 링크와 코드를 서로 다른 대화 경로로 전달해주세요.</p>
@@ -202,6 +202,6 @@ export function ProShares({ api, orgId, userId, csrf, targetId, route, onNavigat
         </article>
       })}</div>
     </>}
-    {busy && pending && <><p>업로드 중에는 페이지를 닫지 말아주세요.</p><progress max={100} value={progress} aria-label="암호문 업로드 진행률" /><button type="button" className="button" onClick={() => { work.current?.abort(); setMessage('전송을 중단했어요. 업로드 상태를 확인한 뒤 완료 여부를 확인하거나 시도를 취소해주세요.') }}>전송 중단</button></>}
+    {busy && uploading && pending && <><p>업로드 중에는 페이지를 닫지 말아주세요.</p><progress max={100} value={progress} aria-label="암호문 업로드 진행률" /><button type="button" className="button" onClick={() => { work.current?.abort(); setMessage('전송을 중단했어요. 업로드 상태를 확인한 뒤 완료 여부를 확인하거나 시도를 취소해주세요.') }}>전송 중단</button></>}
   </section>
 }

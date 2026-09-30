@@ -58,12 +58,12 @@ export async function verifyProCatalog() {
 
 export async function verifyProPages() {
   const container = document.createElement('div'); document.body.append(container)
-  const root = createRoot(container), originalFetch = window.fetch, originalUpload = window.XMLHttpRequest
+  const root = createRoot(container), originalFetch = window.fetch, originalUpload = window.XMLHttpRequest, originalConfirm = window.confirm
   const request = (id: string) => ({ id, status: 'pending', direction: 'outgoing', createdAt: 1, expiresAt: Date.now() + 86400000, project: 'QA project', environment: id === firstId ? 'First environment' : 'Second environment', sender: 'sender', receiver: 'receiver' })
   const share = (id: string, status = 'available') => ({ id, status, createdAt: 1, expiresAt: Date.now() + 86400000, acknowledgedAt: null, project: 'QA project', environment: 'Share environment', canReissue: true, canRevoke: true })
   const shares = new Map([[firstId, share(firstId)], [secondId, share(secondId)]])
   const catalog = { projects: [{ name: 'QA project', environments: [firstId, environmentId].map((id, index) => ({ id, name: 'Environment ' + index, permissions: { receive: true, externalShare: true } })) }] }
-  let route: ProRoute = { page: 'requests', orgId }, createdId = '', creations = 0
+  let route: ProRoute = { page: 'requests', orgId }, createdId = '', creations = 0, holdUpload = false, holdRecovery = false, revocations = 0
   function render() {
     const props = { api, orgId, userId, csrf: 'test-only', disabled: false, route, onNavigate: (next: ProRoute) => { route = next; render() }, onExpired: () => { throw new Error('Unexpected session expiry') } }
     root.render(route.page === 'requests' ? createElement(ProRequests, props) : createElement(ProShares, props))
@@ -93,6 +93,8 @@ export async function verifyProPages() {
     if (path.endsWith('/shares')) return Response.json({ shares: [...shares.values()] })
     const id = path.split('/')[4]
     if (!shares.has(id)) return Response.json({ error: 'share_unavailable' }, { status: 404 })
+    if (path.endsWith('/revoke')) { revocations++; await until(() => !holdRecovery); shares.set(id, share(id, 'cancelled')) }
+    else if (holdRecovery) await until(() => !holdRecovery)
     if (path.endsWith('/content')) shares.set(id, share(id))
     return Response.json(shares.get(id))
   }
@@ -101,7 +103,7 @@ export async function verifyProPages() {
     status = 200; responseText = ''; withCredentials = false; timeout = 0
     onload = () => {}; onloadend = () => {}; onabort = () => {}; onerror = () => {}; ontimeout = () => {}
     open() {} setRequestHeader() {} getResponseHeader() { return null }
-    send(bytes: ArrayBuffer) { queueMicrotask(() => { shares.set(createdId, share(createdId)); this.upload.onprogress({lengthComputable:true,loaded:bytes.byteLength,total:bytes.byteLength}); this.onload(); this.onloadend() }) }
+    send(bytes: ArrayBuffer) { if (holdUpload) return; queueMicrotask(() => { shares.set(createdId, share(createdId)); this.upload.onprogress({lengthComputable:true,loaded:bytes.byteLength,total:bytes.byteLength}); this.onload(); this.onloadend() }) }
     abort() { this.onabort(); this.onloadend() }
   }
   window.XMLHttpRequest = MockUpload as unknown as typeof XMLHttpRequest
@@ -139,6 +141,26 @@ export async function verifyProPages() {
     route = { page: 'shares', orgId, id: '30000000-0000-4000-8000-000000000099' }; render()
     await until(() => ready() && !!container.querySelector('[role="alert"]'))
     check(!container.querySelector('article') && !field('다른 경로로 전달할 공유 코드'), 'Unavailable detail must not expose another share')
-    return { passed: true, checks: ['request list/detail/create', 'project environment selection', 'share list/detail/create', 'rapid share click prevention', 'code retained after creation and navigation', 'unavailable detail isolation'] }
-  } finally { root.unmount(); window.fetch = originalFetch; window.XMLHttpRequest = originalUpload; container.remove() }
+    route = { page: 'shares', orgId, create: true, environmentId }; render()
+    await until(() => ready() && !!container.querySelector('input[type="file"]'))
+    const recoveryInput = container.querySelector<HTMLInputElement>('input[type="file"]')!
+    const recoveryFiles = new DataTransfer(); recoveryFiles.items.add(new File(['DEMO=2\r\n'], '.env'))
+    recoveryInput.files = recoveryFiles.files; recoveryInput.dispatchEvent(new Event('change', { bubbles: true }))
+    await until(() => [...container.querySelectorAll<HTMLButtonElement>('button')].some(button => button.textContent === '암호화해서 외부 공유' && !button.disabled))
+    holdUpload = true; click('암호화해서 외부 공유')
+    await until(() => !!container.querySelector('progress'))
+    check(container.textContent?.includes('암호문을 업로드하고 있어요.'), 'Active upload must report upload progress')
+    click('전송 중단'); await until(ready)
+    holdRecovery = true; click('업로드 상태 확인')
+    await until(() => !!container.querySelector('[aria-busy="true"]'))
+    check(!container.querySelector('progress') && !container.textContent?.includes('전송 중단') && !container.textContent?.includes('암호문을 업로드하고 있어요.'), 'Status check must not show upload progress or an upload stop action')
+    holdRecovery = false; await until(ready)
+    window.confirm = () => true
+    holdRecovery = true; click('업로드 시도 취소')
+    await until(() => revocations === 1 && !!container.querySelector('[aria-busy="true"]'))
+    check(!container.querySelector('progress') && !container.textContent?.includes('전송 중단'), 'Revocation must not expose a control that can abort the request')
+    holdRecovery = false; await until(ready)
+    check(!container.textContent?.includes('같은 업로드 재시도'), 'Confirmed revocation must clear the pending upload')
+    return { passed: true, checks: ['upload-only controls during recovery', 'request list/detail/create', 'project environment selection', 'share list/detail/create', 'rapid share click prevention', 'code retained after creation and navigation', 'unavailable detail isolation'] }
+  } finally { holdRecovery = false; root.unmount(); window.fetch = originalFetch; window.XMLHttpRequest = originalUpload; window.confirm = originalConfirm; container.remove() }
 }
