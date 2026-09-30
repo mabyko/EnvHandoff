@@ -9,6 +9,8 @@ export async function mountBetaQA(operator = false, withWorkspaces = false) {
   const host = document.createElement('div'); host.className = 'page-wrap pro-page'; document.body.append(host)
   const root = createRoot(host), originalFetch = window.fetch
   const state = { active: operator, operator, owned: 0, workspaceLimit: 2 }
+  const security = { reauthenticatedUntil: Date.now() + 900_000 }
+  const failure = { code: '', status: 500 }
   const organizations: {id: string; name: string; role: string; active: number}[] = []
   if (withWorkspaces) { organizations.push(...['첫 번째 팀','두 번째 팀'].map(name => ({id:crypto.randomUUID(),name,role:'owner',active:1}))); state.owned = 2 }
   const codes: Record<string, unknown>[] = []
@@ -19,8 +21,10 @@ export async function mountBetaQA(operator = false, withWorkspaces = false) {
     requests.push(path)
     const body = init?.body ? JSON.parse(init.body as string) : null
     if (path === '/beta') return Response.json(state)
+    if (path === '/security') return Response.json(security)
     if (path === '/beta/redeem') { state.active = true; return Response.json(state) }
     if (path === '/beta/codes') {
+      if (body && failure.code) return Response.json({error:failure.code}, {status:failure.status})
       if (body) { const id = crypto.randomUUID(); codes.unshift({id,label:body.label,maxUses:body.maxUses,used:0,expiresAt:Date.now()+86400000,revoked:0}); return Response.json({id,code:'0123-4567-89AB-CDEF-0123-4567-89AB-CDEF'}) }
       return Response.json(codes)
     }
@@ -45,7 +49,7 @@ export async function mountBetaQA(operator = false, withWorkspaces = false) {
   }
   root.render(createElement(Screen))
   await until(() => !!host.querySelector('.pro-join-card') && !host.querySelector('[aria-busy="true"]'))
-  return {host,state,requests,cleanup:() => {root.unmount();host.remove();window.fetch=originalFetch;document.querySelector<HTMLElement>('#root')!.hidden=false}}
+  return {host,state,security,failure,requests,cleanup:() => {root.unmount();host.remove();window.fetch=originalFetch;document.querySelector<HTMLElement>('#root')!.hidden=false}}
 }
 const check = (value: unknown, message: string) => { if (!value) throw new Error(message) }
 async function until(condition: () => boolean) {
@@ -100,6 +104,37 @@ export async function verifyBetaOperator() {
     click('취소 확인'); await until(() => host.textContent!.includes('취소됨'))
     check(qa.requests.includes('/beta/codes/revoke'),'Cancel should reach API')
     return {passed:true,checks:['operator issuance form','usage count','one-time code display','revocation confirmation']}
+  } finally { qa.cleanup() }
+}
+
+export async function verifyBetaVerificationGuidance() {
+  const qa = await mountBetaQA(true), {host} = qa
+  const button = (text: string) => [...host.querySelectorAll<HTMLButtonElement>('button')].find(el => el.textContent === text)!
+  const click = (text: string) => [...host.querySelectorAll<HTMLElement>('button,a')].find(el => el.textContent === text)!.click()
+  const ready = () => !!host.querySelector('#beta-label') && !host.querySelector('[aria-busy="true"]')
+  try {
+    qa.security.reauthenticatedUntil = 0
+    click('베타 참여 관리'); await until(ready)
+    check(button('코드 발급').disabled, 'Unverified operator must get guidance before issuance')
+    check(!host.querySelector('.pro-content [role="alert"]'), 'Verification prerequisite should be guidance, not an error')
+    click('내 설정에서 본인 확인'); await until(() => host.textContent!.includes('내 설정') && !host.querySelector('#beta-label'))
+    qa.security.reauthenticatedUntil = Date.now() + 900_000
+    click('베타 참여 관리'); await until(ready)
+    check(!button('코드 발급').disabled, 'Returning after verification must enable issuance')
+    input(host,'beta-label','QA 안내'); await new Promise(resolve => setTimeout(resolve,20))
+    qa.failure.code = 'reauthentication_required'; qa.failure.status = 403
+    click('코드 발급'); await until(() => host.textContent!.includes('설정에서 패스키 또는 인증 앱으로'))
+    check(!host.querySelector('.pro-content [role="alert"]'), 'Server verification rejection should also give guidance')
+    check(button('내 설정에서 본인 확인'), 'Server rejection must offer a settings action')
+    qa.failure.code = 'internal_error'; qa.failure.status = 500
+    click('코드 발급'); await until(() => !!host.querySelector('.pro-content [role="alert"]'))
+    check(host.querySelector('.pro-content [role="alert"]')!.textContent!.includes('발급 내역을 확인'), 'Unknown result must explain what to check')
+    check(host.querySelector<HTMLInputElement>('#beta-label')!.value === 'QA 안내', 'Failure must preserve form input')
+    qa.security.reauthenticatedUntil = Date.now() + 300
+    click('새로고침'); await until(() => ready() && host.textContent!.includes('본인 확인 완료') && !host.querySelector('.pro-content [role="alert"]'))
+    await until(() => button('코드 발급').disabled)
+    check(host.textContent!.includes('내 설정에서 본인 확인'), 'Expiry must restore verification guidance')
+    return {passed:true,checks:['verification prerequisite','settings navigation','verified return','server rejection guidance','unknown result guidance','input retained','verification expiry']}
   } finally { qa.cleanup() }
 }
 
