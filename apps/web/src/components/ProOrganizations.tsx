@@ -88,7 +88,10 @@ export function ProOrganizations({ api, userId, csrf, initialToken, route, onNav
     const data = await response.json().catch(() => ({}))
     if (!response.ok) {
       if (!controller.signal.aborted && ['organization_not_found','organization_inactive'].includes(data.error)) setDetail(null)
-      throw new Error(response.status === 429 ? limitMessage(data.error as string,response.headers.get('retry-after')) : errors[data.error as string] ?? '요청을 완료하지 못했어요. 새로고침 후 다시 시도해주세요.')
+      const fallback = path.startsWith('/beta/codes')
+        ? body ? '코드 처리 결과를 확인하지 못했어요. 아래 발급 내역을 확인한 뒤 다시 시도해주세요.' : '발급 내역을 불러오지 못했어요. 아래 새로고침 버튼으로 다시 확인해주세요.'
+        : path === '/security' ? '본인 확인 상태를 불러오지 못했어요. 발급 내역의 새로고침으로 다시 확인해주세요.' : '요청을 완료하지 못했어요. 새로고침 후 다시 시도해주세요.'
+      throw new Error(response.status === 429 ? limitMessage(data.error as string,response.headers.get('retry-after')) : errors[data.error as string] ?? fallback)
     }
     controller.signal.throwIfAborted()
     return data
@@ -177,7 +180,7 @@ export function ProOrganizations({ api, userId, csrf, initialToken, route, onNav
         <a href={proPath(nav('beta'))} aria-current={route.page === 'beta' ? 'page' : undefined} onClick={event => followProLink(event,nav('beta'),onNavigate)}>{beta?.operator ? '베타 참여 관리' : beta?.active ? '내 베타 이용 현황' : 'Pro Beta 참여하기'}</a></div>
       </aside>
       <div className="pro-content" tabIndex={-1} aria-label="워크스페이스 내용">
-      {error && <Notice error>{error}</Notice>}
+      {error && <Notice error={error !== errors.reauthentication_required}><span role={error === errors.reauthentication_required ? 'status' : undefined}>{error}</span>{error === errors.reauthentication_required && <button type="button" className="button" onClick={() => onNavigate(nav('settings'))}>내 설정에서 본인 확인</button>}</Notice>}
       {accessUnavailable && <button type="button" className="button" disabled={busy || disabled} onClick={() => refresh.current()}>워크스페이스 상태 다시 확인</button>}
       {message && <p role="status">{message}</p>}
       {busy && <p role="status">워크스페이스를 확인하고 있어요.</p>}

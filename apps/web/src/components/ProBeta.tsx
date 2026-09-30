@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { KeyRound, ShieldCheck } from 'lucide-react'
-import { CopyField } from './ui.tsx'
+import { CopyField, Notice } from './ui.tsx'
 
 export type BetaStatus = { active: boolean; operator: boolean; owned: number; workspaceLimit: number }
 type Code = { id: string; label: string; maxUses: number; used: number; expiresAt: number; revoked: number }
@@ -14,7 +14,19 @@ export function ProBeta({ status, busy, call, run, onActivated, onCreate, onSett
   const [codes, setCodes] = useState<Code[]>([]), [issued, setIssued] = useState(''), [revoke, setRevoke] = useState<Code | null>(null)
   const loaded = useRef(false)
   const [now, setNow] = useState(() => Date.now())
-  const refresh = useCallback(async () => { setCodes(await call('/beta/codes') as Code[]); setNow(Date.now()) }, [call])
+  const [verifiedUntil, setVerifiedUntil] = useState<number | null>(null)
+  const canManage = verifiedUntil !== null && verifiedUntil > now
+  const refresh = useCallback(async () => {
+    setVerifiedUntil(null)
+    const security = await call('/security') as { reauthenticatedUntil: number }
+    setVerifiedUntil(security.reauthenticatedUntil); setNow(Date.now())
+    setCodes(await call('/beta/codes') as Code[])
+  }, [call])
+  useEffect(() => {
+    if (!verifiedUntil) return
+    const timer = setTimeout(() => setNow(Date.now()), Math.max(0, verifiedUntil - Date.now()))
+    return () => clearTimeout(timer)
+  }, [verifiedUntil])
   // The parent owns request cancellation and session/error handling.
   useEffect(() => {
     if (status.operator && !busy && !loaded.current) {
@@ -32,15 +44,18 @@ export function ProBeta({ status, busy, call, run, onActivated, onCreate, onSett
       </form>}
     {status.operator && <>
       <section className="pro-panel pro-code-panel"><h3>참여 코드 발급</h3><p className="help">코드는 지정한 인원만 사용할 수 있어요. 유효 기간이 끝나도 이미 참여한 계정의 자격은 유지돼요.</p>
-        <p className="help">발급·취소 전 최근 15분 이내 본인 확인이 필요해요. <button type="button" className="text-button" onClick={onSettings}>내 설정에서 확인</button></p>
+        {canManage ? <p className="help">본인 확인 완료 · {new Date(verifiedUntil!).toLocaleTimeString()}까지 코드를 발급·취소할 수 있어요.</p> :
+          <Notice><p role="status">{verifiedUntil === null ? busy ? '본인 확인 상태를 확인하고 있어요.' : '본인 확인 상태를 확인하지 못했어요. 발급 내역의 새로고침으로 다시 확인해주세요.' : '코드를 발급·취소하려면 먼저 본인 확인을 해주세요. 패스키 또는 인증 앱으로 확인하면 15분 동안 이용할 수 있어요.'}</p>
+            {verifiedUntil !== null && <button type="button" className="button" onClick={onSettings}>내 설정에서 본인 확인</button>}</Notice>}
         <form className="pro-form" onSubmit={event => { event.preventDefault(); void run(async () => {
+          if (!verifiedUntil || verifiedUntil <= Date.now()) { setNow(Date.now()); return }
           const result = await call('/beta/codes', { label, maxUses: Number(maxUses), days: Number(days) }) as { code: string }
           setIssued(result.code); setLabel(''); await refresh()
         }) }}><fieldset className="plain-fieldset" disabled={busy}>
           <label htmlFor="beta-label">관리용 이름</label><input id="beta-label" value={label} onChange={event => setLabel(event.target.value)} required maxLength={80} placeholder="예: 첫 번째 테스트 그룹" />
           <div className="pro-form-columns"><div><label htmlFor="beta-uses">참여 가능 인원</label><input id="beta-uses" type="number" min={1} max={1000} required value={maxUses} onChange={event => setMaxUses(event.target.value)} /><small>1~1,000명 · 계정당 한 번</small></div>
           <div><label htmlFor="beta-days">발급 시점부터 유효 일수</label><input id="beta-days" type="number" min={1} max={365} required value={days} onChange={event => setDays(event.target.value)} /><small>1~365일 · 참여 신청 기한</small></div></div>
-          <button className="button primary" type="submit">코드 발급</button>
+          <button className="button primary" type="submit" disabled={!canManage}>코드 발급</button>
         </fieldset></form>
         {issued && <div className="pro-confirm" role="status"><p>코드 원문은 지금만 볼 수 있어요. 복사해서 보관해주세요.</p><CopyField label="발급된 베타 코드" value={issued} /><button type="button" className="text-button" onClick={() => setIssued('')}>코드 숨기기</button></div>}
       </section>
@@ -49,9 +64,12 @@ export function ProBeta({ status, busy, call, run, onActivated, onCreate, onSett
         <ul className="pro-list">{codes.map(item => {
           const state = item.revoked ? '취소됨' : item.expiresAt <= now ? '만료됨' : item.used >= item.maxUses ? '인원 마감' : '참여 가능'
           return <li key={item.id}><div className="pro-page-heading"><h4>{item.label}</h4><span className="pro-badge">{state}</span></div><p>{item.used} / {item.maxUses}명 참여 · {new Date(item.expiresAt).toLocaleString()}까지</p>
-            {state === '참여 가능' && <button className="text-button" disabled={busy} onClick={() => setRevoke(item)}>코드 취소</button>}</li>
+            {state === '참여 가능' && <button className="text-button" disabled={busy || !canManage} onClick={() => setRevoke(item)}>코드 취소</button>}</li>
         })}</ul>
-        {revoke && <div className="pro-confirm" role="group" aria-label="코드 취소 확인"><p>‘{revoke.label}’ 코드를 취소할까요? 새로운 참여만 막고, 기존 참여자의 자격은 유지해요.</p><div className="actions"><button className="button" disabled={busy} onClick={() => { void run(async () => { await call('/beta/codes/revoke', { id: revoke.id }); setRevoke(null); await refresh() }) }}>취소 확인</button><button className="button" disabled={busy} onClick={() => setRevoke(null)}>돌아가기</button></div></div>}
+        {revoke && <div className="pro-confirm" role="group" aria-label="코드 취소 확인"><p>‘{revoke.label}’ 코드를 취소할까요? 새로운 참여만 막고, 기존 참여자의 자격은 유지해요.</p><div className="actions"><button className="button" disabled={busy || !canManage} onClick={() => { void run(async () => {
+          if (!verifiedUntil || verifiedUntil <= Date.now()) { setNow(Date.now()); return }
+          await call('/beta/codes/revoke', { id: revoke.id }); setRevoke(null); await refresh()
+        }) }}>취소 확인</button><button className="button" disabled={busy} onClick={() => setRevoke(null)}>돌아가기</button></div></div>}
       </section>
     </>}
   </section>
