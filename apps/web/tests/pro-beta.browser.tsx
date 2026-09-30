@@ -11,6 +11,7 @@ export async function mountBetaQA(operator = false, withWorkspaces = false) {
   const state = { active: operator, operator, owned: 0, workspaceLimit: 2 }
   const security = { reauthenticatedUntil: Date.now() + 900_000 }
   const failure = { code: '', status: 500 }
+  const gate = { path: '', hold: false }
   const organizations: {id: string; name: string; role: string; active: number}[] = []
   if (withWorkspaces) { organizations.push(...['첫 번째 팀','두 번째 팀'].map(name => ({id:crypto.randomUUID(),name,role:'owner',active:1}))); state.owned = 2 }
   const codes: Record<string, unknown>[] = []
@@ -19,6 +20,7 @@ export async function mountBetaQA(operator = false, withWorkspaces = false) {
     const path = String(input).replace('/__beta-qa', '')
     if (!String(input).startsWith('/__beta-qa')) return originalFetch(input, init)
     requests.push(path)
+    if (gate.path === path) await until(() => !gate.hold)
     const body = init?.body ? JSON.parse(init.body as string) : null
     if (path === '/beta') return Response.json(state)
     if (path === '/security') return Response.json(security)
@@ -49,7 +51,7 @@ export async function mountBetaQA(operator = false, withWorkspaces = false) {
   }
   root.render(createElement(Screen))
   await until(() => !!host.querySelector('.pro-join-card') && !host.querySelector('[aria-busy="true"]'))
-  return {host,state,security,failure,requests,cleanup:() => {root.unmount();host.remove();window.fetch=originalFetch;document.querySelector<HTMLElement>('#root')!.hidden=false}}
+  return {host,state,security,failure,gate,requests,cleanup:() => {gate.hold=false;root.unmount();host.remove();window.fetch=originalFetch;document.querySelector<HTMLElement>('#root')!.hidden=false}}
 }
 const check = (value: unknown, message: string) => { if (!value) throw new Error(message) }
 async function until(condition: () => boolean) {
@@ -67,7 +69,7 @@ export async function verifyBetaFlow() {
   try {
     check(!host.querySelector('nav[aria-label="워크스페이스 메뉴"]'), 'Empty account must not show workspace navigation')
     click('Pro Beta 참여하기'); await until(() => !!host.querySelector('#beta-code'))
-    input(host,'beta-code','0123-4567-89AB-CDEF-0123-4567-89AB-CDEF'); click('Pro Beta 활성화')
+    input(host,'beta-code','0123-4567-89AB-CDEF-0123-4567-89AB-CDEF'); await new Promise(resolve => setTimeout(resolve,20)); click('Pro Beta 활성화')
     await until(() => host.textContent!.includes('Pro Beta가 활성화됐어요'))
     check(!host.textContent!.includes('참여 코드 발급'), 'Participant must not see operator issuance')
     click('워크스페이스 만들기'); await until(() => !!host.querySelector('dialog[open]'))
@@ -94,6 +96,7 @@ export async function verifyBetaOperator() {
   const qa = await mountBetaQA(true), {host} = qa
   const click = (text: string) => [...host.querySelectorAll<HTMLElement>('button,a')].find(el => el.textContent === text)!.click()
   try {
+    check(host.querySelector('.pro-content .button.primary')?.textContent === '워크스페이스 만들기', 'Active beta account without workspace should highlight creation')
     click('베타 참여 관리'); await until(() => !!host.querySelector('#beta-label') && !host.querySelector('[aria-busy="true"]'))
     input(host,'beta-label','QA 그룹'); input(host,'beta-uses','3'); input(host,'beta-days','2')
     await new Promise(resolve => setTimeout(resolve,20)); click('코드 발급')
@@ -159,6 +162,7 @@ export async function verifyWorkspaceNavigation() {
     await new Promise(resolve => setTimeout(resolve,20))
     check(!!host.querySelector('#invitation-link'), 'Selecting current workspace must not reset the page')
     input(host,'invitation-link','0123-4567-89AB-CDEF-0123-4567-89AB-CDEF')
+    await new Promise(resolve => setTimeout(resolve,20))
     click('워크스페이스 초대 확인'); await until(() => !!host.querySelector('[role="alert"]'))
     check(!qa.requests.includes('/organizations/invitations/preview'), 'Wrong code type should not be sent as a workspace invitation')
     click('멤버 · 팀'); await until(() => !!host.querySelector('.pro-member-invitation') && ready())
@@ -177,10 +181,46 @@ export async function verifyMemberInvitation() {
   const click = (text: string) => [...host.querySelectorAll<HTMLElement>('button,a')].find(el => el.textContent === text)!.click()
   try {
     input(host,'invitation-link', location.origin + '/pro#invite=' + 'a'.repeat(43))
+    await new Promise(resolve => setTimeout(resolve,20))
     click('워크스페이스 초대 확인'); await until(() => host.textContent!.includes('초대된 워크스페이스에 참여하는 초대예요.'))
+    check(host.querySelectorAll('.pro-content .button.primary').length === 1, 'Invitation preview should have one main action')
+    check(host.textContent!.includes('초대받은 GitHub 계정: qa'), 'Preview should identify the invited account')
     click('초대 수락'); await until(() => host.querySelector('.pro-switcher summary')?.textContent?.includes('Member') === true && !host.querySelector('[aria-busy="true"]'))
     check(!qa.state.active && qa.state.owned === 0, 'Member invitation must not activate beta or consume ownership')
     check(!host.querySelector('#new-workspace-name')?.closest('dialog')?.open, 'Joining must not open creation')
     return {passed:true,checks:['workspace link preview','member acceptance without beta','ownership unchanged']}
+  } finally { qa.cleanup() }
+}
+
+export async function verifyWorkspacePending() {
+  const qa = await mountBetaQA(), {host} = qa
+  const click = (text: string) => [...host.querySelectorAll<HTMLElement>('button,a')].find(el => el.textContent === text)!.click()
+  try {
+    check(host.querySelectorAll('.pro-content .button.primary').length === 1, 'Onboarding should have one main action')
+    check(host.querySelector<HTMLInputElement>('#invitation-link')?.closest('form')?.querySelector<HTMLButtonElement>('button')?.disabled, 'Empty invitation must not submit')
+    click('Pro Beta 참여하기'); await until(() => !!host.querySelector('#beta-code'))
+    input(host,'beta-code','0123-4567-89AB-CDEF-0123-4567-89AB-CDEF'); await new Promise(resolve => setTimeout(resolve,20))
+    qa.gate.path = '/beta/redeem'; qa.gate.hold = true
+    const activate = host.querySelector<HTMLFormElement>('#beta-code')!.closest('form')!
+    activate.requestSubmit(); activate.requestSubmit(); activate.requestSubmit()
+    await until(() => qa.requests.includes('/beta/redeem') && !!host.querySelector('[aria-busy="true"]'))
+    check(qa.requests.filter(path => path === '/beta/redeem').length === 1, 'Rapid activation must send one request')
+    check(host.querySelector<HTMLInputElement>('#beta-code')!.disabled, 'Activation must lock its field')
+    qa.gate.hold = false
+    await until(() => host.textContent!.includes('Pro Beta가 활성화됐어요') && !host.querySelector('[aria-busy="true"]'))
+    click('워크스페이스 만들기'); await until(() => !!host.querySelector('dialog[open]'))
+    input(host,'new-workspace-name','중복 없는 팀'); await new Promise(resolve => setTimeout(resolve,20))
+    const previous = qa.requests.filter(path => path === '/organizations').length
+    qa.gate.path = '/organizations'; qa.gate.hold = true
+    const create = host.querySelector<HTMLFormElement>('dialog form')!
+    create.requestSubmit(); create.requestSubmit(); create.requestSubmit()
+    await until(() => qa.requests.filter(path => path === '/organizations').length > previous && !!host.querySelector('[aria-busy="true"]'))
+    check(qa.requests.filter(path => path === '/organizations').length === previous + 1, 'Rapid creation must send one request')
+    check(host.querySelector<HTMLInputElement>('#new-workspace-name')!.disabled, 'Creation must lock its field')
+    check(!host.querySelector('dialog')!.dispatchEvent(new Event('cancel',{cancelable:true})), 'Pending creation should prevent dialog cancellation')
+    qa.gate.hold = false
+    await until(() => qa.state.owned === 1 && !host.querySelector('dialog[open]') && !host.querySelector('[aria-busy="true"]'))
+    check(qa.state.owned === 1, 'One workspace should consume one ownership slot')
+    return {passed:true,checks:['one primary action','empty-input guard','rapid activation','rapid creation','pending controls','pending dialog cancellation','one ownership slot']}
   } finally { qa.cleanup() }
 }

@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { LogOut, Settings } from 'lucide-react'
-import { Heading, Notice } from './ui.tsx'
+import { ArrowRight, Info, LogOut, Settings, ShieldCheck } from 'lucide-react'
+import { Notice } from './ui.tsx'
 import { ProOrganizations } from './ProOrganizations.tsx'
 import { ProSecurity } from './ProSecurity.tsx'
 import { followProLink, pendingProRoute, proPath, proReturnKey, readProRoute } from '../lib/pro-navigation.ts'
@@ -14,12 +14,15 @@ type Session = { user: { id: string; login: string }; csrf: string; expiresAt: n
 export function ProLogin() {
   const [route, setRoute] = useState(pendingProRoute)
   const [initialToken, setInitialToken] = useState(pendingInvitation)
-  const [session, setSession] = useState<Session | null>(null)
+  const [session, setSession] = useState<Session | null>()
   const [busy, setBusy] = useState(true)
+  const [authAction, setAuthAction] = useState<'start' | 'logout' | null>(null)
   const [sessionUnavailable, setSessionUnavailable] = useState(false)
   const [error, setError] = useState(() => new URLSearchParams(location.search).has('auth') ? 'GitHub 로그인을 완료하지 못했어요. 다시 시도해주세요.' : '')
   const channel = useRef<BroadcastChannel | null>(null)
   const generation = useRef(0)
+  const authentication = useRef<AbortController | null>(null)
+  const lifetime = useRef<AbortController | null>(null)
   const currentRoute = useRef(route)
   const historyIndex = useRef(0)
   const restoring = useRef(false)
@@ -46,6 +49,7 @@ export function ProLogin() {
     history.replaceState({ ...history.state, envhandoffProIndex: historyIndex.current }, '', proPath(next))
     setRoute(next)
   }
+  function expired() { generation.current++; authentication.current?.abort(); authentication.current = null; setSession(null); setBusy(false); setAuthAction(null); channel.current?.postMessage('signed-out') }
 
   useEffect(() => {
     historyIndex.current = Number.isSafeInteger(history.state?.envhandoffProIndex) ? history.state.envhandoffProIndex : 0
@@ -78,7 +82,9 @@ export function ProLogin() {
 
   useEffect(() => {
     const controller = new AbortController()
+    lifetime.current = controller
     const refresh = async () => {
+      if (authentication.current) return
       const current = ++generation.current
       setBusy(true)
       try {
@@ -100,58 +106,82 @@ export function ProLogin() {
     broadcast.postMessage('changed')
     void refresh()
     const openInvitation = () => { if (location.hash.startsWith('#invite=')) location.reload() }
+    const restore = (event: PageTransitionEvent) => {
+      if (!event.persisted) return
+      authentication.current?.abort(); authentication.current = null; setAuthAction(null)
+      void refresh()
+    }
     window.addEventListener('hashchange', openInvitation)
     window.addEventListener('focus', refresh)
-    return () => { controller.abort(); broadcast.close(); channel.current = null; window.removeEventListener('focus', refresh); window.removeEventListener('hashchange', openInvitation) }
+    window.addEventListener('pageshow', restore)
+    return () => { controller.abort(); broadcast.close(); channel.current = null; window.removeEventListener('focus', refresh); window.removeEventListener('hashchange', openInvitation); window.removeEventListener('pageshow', restore) }
   }, [])
 
   useEffect(() => {
     if (!session) return
-    const expiry = setTimeout(() => { generation.current++; setSession(null); setBusy(false); channel.current?.postMessage('signed-out') }, Math.max(0, session.expiresAt - Date.now()))
+    const expiry = setTimeout(() => { expired() }, Math.max(0, session.expiresAt - Date.now()))
     return () => clearTimeout(expiry)
   }, [session])
 
   async function act(action: 'start' | 'logout') {
+    if (busy || authentication.current) return
     if (action === 'logout' && !confirmWorkLoss()) return
+    const controller = new AbortController()
+    authentication.current = controller
     const current = ++generation.current
-    setBusy(true); setError('')
+    const signal = AbortSignal.any([controller.signal, lifetime.current!.signal, AbortSignal.timeout(15_000)])
+    let redirecting = false
+    setBusy(true); setAuthAction(action); setError('')
     try {
       const response = await fetch(api + (action === 'start' ? '/auth/github/start' : '/auth/logout'), {
-        method: 'POST', credentials: 'include', headers: session ? { 'x-csrf-token': session.csrf } : {}, signal: AbortSignal.timeout(15_000),
+        method: 'POST', credentials: 'include', headers: session ? { 'x-csrf-token': session.csrf } : {}, signal,
       })
+      signal.throwIfAborted()
       if (response.status === 401) { setSession(null); channel.current?.postMessage('signed-out'); throw new Error('Expired session') }
       if (!response.ok) throw new Error('Authentication request failed')
       if (action === 'start') {
         const { url } = await response.json() as { url: string }
+        signal.throwIfAborted()
         const destination = new URL(url)
         if (destination.origin !== 'https://github.com' || destination.pathname !== '/login/oauth/authorize') throw new Error('Invalid login URL')
         if (current === generation.current) {
           try { if (route) sessionStorage.setItem(proReturnKey, proPath(route)); else sessionStorage.removeItem(proReturnKey) } catch { /* The user can reopen the detail link after login. */ }
           location.assign(destination.href)
+          redirecting = true
         }
       } else {
         setSession(null); channel.current?.postMessage('signed-out')
       }
     } catch {
-      if (current === generation.current) setError(action === 'start' ? '로그인을 시작하지 못했어요. 잠시 후 다시 시도해주세요.' : '로그아웃을 확인하지 못했어요. 새로고침 후 다시 시도해주세요.')
-    } finally { if (current === generation.current) setBusy(false) }
+      if (!controller.signal.aborted && !lifetime.current?.signal.aborted && current === generation.current) setError(action === 'start' ? '로그인을 시작하지 못했어요. 잠시 후 다시 시도해주세요.' : '로그아웃을 확인하지 못했어요. 새로고침 후 다시 시도해주세요.')
+    } finally {
+      if (!redirecting && authentication.current === controller) authentication.current = null
+      if (!redirecting && !controller.signal.aborted && !lifetime.current?.signal.aborted && current === generation.current) { setBusy(false); setAuthAction(null) }
+    }
   }
   const settingsRoute: ProRoute = { page: 'settings', ...(route?.orgId ? { orgId: route.orgId } : {}) }
-  const expired = () => { generation.current++; setSession(null); setBusy(false); channel.current?.postMessage('signed-out') }
   return (
     <section className="pro-app" aria-busy={busy}>
       <div className="pro-topbar">
-        <div><p className="pro-eyebrow">TEAM WORKSPACE</p><h1>EnvHandoff <span>Pro</span> <small className="pro-badge">BETA</small></h1></div>
+        <div><p className="pro-eyebrow">TEAM WORKSPACE</p><h1>EnvHandoff <span>Pro</span> <small className="pro-badge">BETA</small></h1>
+          <div className="pro-header-status">
+            {session?.acceptNewTransfers === false && <details className="pro-service-status"
+              onBlur={event => { if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false }}
+              onKeyDown={event => { if (event.key === 'Escape') { event.currentTarget.open = false; event.currentTarget.querySelector('summary')?.focus() } }}>
+              <summary><Info aria-hidden="true" />전달 일시 중지</summary>
+              <p>새로운 파일 전달이 일시 중지돼 있어요. 기존 전달은 원래 기한까지 받을 수 있어요.</p>
+            </details>}
+            <span className="pro-session-status" role="status">{busy ? authAction === 'start' ? 'GitHub로 이동 중…' : authAction === 'logout' ? '로그아웃 중…' : '로그인 확인 중…' : ''}</span>
+          </div>
+        </div>
         {session && <div className="pro-account"><span className="pro-account-name">{session.user.login}</span><a className="text-button" href={proPath(settingsRoute)} aria-current={route?.page === 'settings' ? 'page' : undefined} onClick={event => followProLink(event, settingsRoute, navigate)}><Settings aria-hidden="true" />내 설정</a><button type="button" className="text-button" disabled={busy} onClick={() => { void act('logout') }}><LogOut aria-hidden="true" />로그아웃</button></div>}
       </div>
       {error && <Notice error>{error}</Notice>}
       {sessionUnavailable && <Notice error>서버에 연결하지 못해 작업을 잠시 멈췄어요. 이 탭의 파일과 코드는 유지돼요. <button className="button" type="button" disabled={busy} onClick={() => refreshSession.current()}>연결 다시 확인</button></Notice>}
-      {busy && <p className="pro-session-status" role="status">로그인 상태를 확인하고 있어요.</p>}
-      {!route ? <div className="pro-entry"><Heading title="페이지를 찾을 수 없어요">링크 주소를 확인하거나 Pro 시작 화면으로 돌아가세요.</Heading><a className="button" href="/pro" onClick={event => followProLink(event, { page: 'start' }, navigate)}>Pro 시작으로</a></div> : session ? (
-        <>{session.acceptNewTransfers === false && <Notice>새로운 파일 전달이 일시 중지돼 있어요. 기존 전달은 원래 기한까지 받을 수 있어요.</Notice>}
+      {!route ? <div className="pro-entry"><div className="pro-entry-intro"><h2>페이지를 찾을 수 없어요</h2><p className="lead">링크 주소를 확인하거나 Pro 시작 화면으로 돌아가세요.</p></div><a className="button" href="/pro" onClick={event => followProLink(event, { page: 'start' }, navigate)}>Pro 시작으로</a></div> : session ? (
         <ProOrganizations key={'organizations:' + session.user.id + ':' + session.csrf} route={route} onNavigate={navigate} onResolvedOrganization={resolveOrganization} api={api} userId={session.user.id} csrf={session.csrf} initialToken={initialToken} disabled={busy || sessionUnavailable} onAccepted={() => setInitialToken('')} onExpired={expired}
-          settings={<ProSecurity key={'security:' + session.user.id + ':' + session.csrf} api={api} userId={session.user.id} csrf={session.csrf} disabled={busy || sessionUnavailable} onExpired={expired} onDeleted={warning => { setError(warning); expired() }} />} /></>
-      ) : !busy && <div className="pro-entry"><Heading title="팀의 설정 파일을 안전하게 주고받으세요">GitHub로 로그인한 뒤 베타 참여 코드 또는 워크스페이스 초대로 시작하세요.</Heading><ul className="pro-entry-benefits"><li>필요한 환경 파일을 팀원에게 요청</li><li>승인된 내 브라우저에서 파일 수신</li><li>링크와 별도 코드로 외부에 전달</li></ul><button type="button" className="button primary" disabled={busy} onClick={() => { void act('start') }}>GitHub로 로그인</button><p className="help">무료 초대 베타예요. 운영자의 베타 코드로 워크스페이스를 만들거나, 워크스페이스 Owner의 초대 링크로 참여할 수 있어요.</p></div>}
+          settings={<ProSecurity key={'security:' + session.user.id + ':' + session.csrf} api={api} userId={session.user.id} csrf={session.csrf} disabled={busy || sessionUnavailable} onExpired={expired} onDeleted={warning => { setError(warning); expired() }} />} />
+      ) : (session !== undefined || sessionUnavailable) && <div className="pro-entry"><p className="pro-entry-kicker"><ShieldCheck aria-hidden="true" />팀을 위한 안전한 파일 전달</p><div className="pro-entry-intro"><h2>필요한 설정 파일을,<br/>필요한 팀원에게.</h2><p className="lead">GitHub로 로그인하고 팀의 워크스페이스에서 시작하세요.</p></div><ul className="pro-entry-benefits"><li>팀원에게 필요한 환경 파일 요청</li><li>승인된 내 브라우저에서 안전하게 열기</li><li>외부에는 링크와 별도 코드로 전달</li></ul><button type="button" className="button primary" disabled={busy} onClick={() => { void act('start') }}>{authAction === 'start' ? 'GitHub로 이동 중…' : 'GitHub로 로그인'}<ArrowRight aria-hidden="true" /></button><p className="help pro-entry-footer">무료 초대 베타예요. 로그인 후 베타 참여 코드를 입력하거나 워크스페이스 초대를 수락할 수 있어요.</p></div>}
     </section>
   )
 }

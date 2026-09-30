@@ -105,7 +105,7 @@ export function CopyField({
             aria-pressed={shown}
             onClick={() => setShown(!shown)}
           >
-            {shown ? <EyeOff /> : <Eye />}
+            {shown ? <EyeOff aria-hidden="true" /> : <Eye aria-hidden="true" />}
           </button>
         )}
         <button type="button" className="button" onClick={copy}>
@@ -148,7 +148,7 @@ export function CodeInput({ value, onChange }: { value: string; onChange: (value
           aria-label={shown ? '입력한 코드 숨기기' : '입력한 코드 표시'}
           aria-pressed={shown}
         >
-          {shown ? <EyeOff /> : <Eye />}
+          {shown ? <EyeOff aria-hidden="true" /> : <Eye aria-hidden="true" />}
         </button>
       </div>
       <p className="help">파일이나 연결 링크를 받은 곳과 다른 대화 경로로 받아주세요.</p>

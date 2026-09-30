@@ -23,11 +23,11 @@ function NameForm({ label, initial = '', save }: { label: string; initial?: stri
   return <form className="pro-form" onSubmit={(event) => {
     event.preventDefault(); const form = event.currentTarget
     void save(String(new FormData(form).get('name'))).then((ok) => { if (ok && !initial) form.reset() })
-  }}><label htmlFor={id}>{label}</label><input id={id} name="name" defaultValue={initial} required maxLength={80} /><button type="submit" className="button">{initial ? '이름 저장' : '추가'}</button></form>
+  }}><div className="pro-field"><label htmlFor={id}>{label}</label><input id={id} name="name" defaultValue={initial} required maxLength={80} /></div><button type="submit" className="button">{initial ? '이름 저장' : '추가'}</button></form>
 }
 function DeleteButton({ label, remove }: { label: string; remove: () => Promise<boolean> }) {
   const [confirming, setConfirming] = useState(false)
-  return confirming ? <div className="pro-form"><p>{label} 삭제를 진행할까요?</p><div className="actions"><button type="button" className="button" onClick={() => { void remove() }}>삭제 확인</button><button type="button" className="button" onClick={() => setConfirming(false)}>취소</button></div></div> : <button type="button" className="button" onClick={() => setConfirming(true)}>삭제</button>
+  return confirming ? <div className="pro-form"><p>{label} 삭제를 진행할까요? 삭제한 설정은 복구할 수 없어요.</p><div className="actions"><button type="button" className="button pro-danger" onClick={() => { void remove() }}>삭제 확인</button><button type="button" className="button" onClick={() => setConfirming(false)}>취소</button></div></div> : <button type="button" className="button pro-danger" onClick={() => setConfirming(true)}>삭제</button>
 }
 
 export function ProCatalog({ api, orgId, csrf, members, route, onNavigate, disabled, onExpired, onTeamsChanged }: {
@@ -93,13 +93,12 @@ export function ProCatalog({ api, orgId, csrf, members, route, onNavigate, disab
   const projectsRoute: ProRoute = {page:'projects',orgId}
   return <section className="pro-catalog pro-page" aria-busy={busy || disabled} aria-label={route.page === 'team' ? '팀 구성' : '프로젝트와 환경'}>
     {error && <Notice error>{error}</Notice>}
-    <button type="button" className="button" disabled={busy || disabled} onClick={() => { void refresh.current() }}>설정 새로고침</button>
-    <p role="status">{busy ? '설정을 확인하고 있어요.' : message}</p>
+    <header className="pro-page-header"><div>{route.id && <a className="pro-back" href={proPath(projectsRoute)} onClick={event => followProLink(event,projectsRoute,onNavigate)}>프로젝트 목록</a>}<h2>{route.page === 'team' ? '팀 구성' : project?.name ?? (route.id ? '프로젝트 상세' : '프로젝트')}</h2><p>{route.page === 'team' ? '멤버를 팀으로 묶고 프로젝트 참여 범위를 정하세요.' : route.id ? '환경별 권한을 확인하고 필요한 파일을 요청하세요.' : '팀에서 공유하는 개발 환경을 한곳에서 확인하세요.'}</p></div><button type="button" className="button" disabled={busy || disabled} onClick={() => { void refresh.current() }}>설정 새로고침</button></header>
+    <p className="pro-status-line" role="status">{busy ? '설정을 확인하고 있어요.' : message}</p>
     {route.page === 'projects' && <>
-    <header className="pro-page-header"><div>{route.id && <a className="pro-back" href={proPath(projectsRoute)} onClick={event => followProLink(event,projectsRoute,onNavigate)}>프로젝트 목록</a>}<h2>{project?.name ?? (route.id ? '프로젝트 상세' : '프로젝트')}</h2><p>{route.id ? '환경별 권한을 확인하고 필요한 파일을 요청하세요.' : '팀에서 공유하는 개발 환경을 한곳에서 확인하세요.'}</p></div></header>
     <fieldset className="plain-fieldset" disabled={busy || disabled}>
       <legend className="sr-only">프로젝트와 환경</legend>
-      {data?.projects.length === 0 && <p>{owner ? '프로젝트를 추가한 뒤 환경과 멤버별 권한을 설정해주세요.' : '소속 팀에 연결된 프로젝트가 없어요. Owner에게 팀 연결을 요청해주세요.'}</p>}
+      {data?.projects.length === 0 && <div className="pro-empty-state"><h3>{owner ? '첫 프로젝트를 등록해보세요' : '아직 연결된 프로젝트가 없어요'}</h3><p>{owner ? '아래에서 프로젝트를 만든 뒤 개발·운영 환경과 파일 권한을 설정하세요.' : 'Owner에게 팀 연결을 요청해주세요.'}</p></div>}
       {!route.id && <div className="pro-project-grid">{data?.projects.map(item => <a className="pro-project-card" key={item.id} href={proPath({...projectsRoute,id:item.id})} onClick={event => followProLink(event,{...projectsRoute,id:item.id},onNavigate)}><h3>{item.name}</h3><p>환경 {item.environments.length}개</p><span>프로젝트 열기</span></a>)}</div>}
       {route.id && data && !project && <Notice error>프로젝트를 찾을 수 없거나 접근 권한이 없어요. 목록에서 다시 선택해주세요.</Notice>}
       {project && <article className="pro-project" key={project.id}>
@@ -111,7 +110,7 @@ export function ProCatalog({ api, orgId, csrf, members, route, onNavigate, disab
           </form>}
           <DeleteButton label={`${project.name} 프로젝트와 하위 환경·권한 설정`} remove={async () => {const ok=await mutate(`/projects/${project.id}/remove`, {});if(ok)onNavigate(projectsRoute);return ok}} />
         </details>}
-        {project.environments.length === 0 && <p>등록된 환경이 없어요.</p>}
+        {project.environments.length === 0 && <div className="pro-empty-state"><h3>아직 등록된 환경이 없어요</h3><p>{owner ? '아래에서 development, staging처럼 팀에서 쓰는 환경을 추가하세요.' : 'Owner에게 환경 등록과 파일 권한을 요청해주세요.'}</p></div>}
         {project.environments.map((env) => <div className="pro-environment" key={env.id}>
           <h3>{env.name}</h3><p>내 파일 권한: {Object.entries(permissionLabels).filter(([key]) => env.permissions[key as keyof Flags]).map(([, label]) => label).join(' · ') || '모두 꺼짐'}</p>
           <div className="actions">{env.permissions.receive && <button className="button primary" type="button" onClick={() => onNavigate({page:'requests',orgId,create:true,environmentId:env.id})}>파일 요청</button>}{env.permissions.externalShare && <button className="button" type="button" onClick={() => onNavigate({page:'shares',orgId,create:true,environmentId:env.id})}>외부 공유 만들기</button>}</div>
@@ -130,12 +129,12 @@ export function ProCatalog({ api, orgId, csrf, members, route, onNavigate, disab
         </div>)}
         {owner && <NameForm label="새 환경 이름" save={(name) => mutate(`/projects/${project.id}/environments`, { name })} />}
       </article>}
-      {!route.id && owner && data && <details className="pro-panel"><summary>프로젝트 추가</summary><form className="pro-form" onSubmit={(event) => {
+      {!route.id && owner && data && <details className="pro-panel" open={data.projects.length === 0}><summary>프로젝트 추가</summary><form className="pro-form" onSubmit={(event) => {
         event.preventDefault(); const form = event.currentTarget, values = new FormData(form)
         void mutate('/projects', { name: values.get('name'), ...(data.teams.length > 1 ? { teamIds: values.getAll('team') } : {}) }).then((ok) => { if (ok) form.reset() })
-      }}><label htmlFor="new-project-name">프로젝트 이름</label><input id="new-project-name" name="name" required maxLength={80} />
+      }}><div className="pro-field"><label htmlFor="new-project-name">프로젝트 이름</label><input id="new-project-name" name="name" required maxLength={80} placeholder="예: 팀 웹 서비스" /></div>
         {data.teams.length > 1 && <fieldset className="plain-fieldset"><legend>연결할 팀</legend>{data.teams.map((team) => <label className="pro-check" key={team.id}><input type="checkbox" name="team" value={team.id} defaultChecked={!!team.isDefault} />{team.name}</label>)}</fieldset>}
-        <button type="submit" className="button">프로젝트 추가</button>
+        <button type="submit" className="button primary">프로젝트 추가</button>
       </form></details>}
     </fieldset>
     <Notice>받기·보내기·외부 공유 권한은 각각 독립적이에요. Owner도 파일 작업에는 해당 권한이 필요해요.</Notice>

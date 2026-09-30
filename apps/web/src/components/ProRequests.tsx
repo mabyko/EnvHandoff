@@ -116,13 +116,13 @@ export function ProRequests({ api, orgId, userId, csrf, targetId, route, onNavig
   }
   const shown = detailId ? items.filter(item => item.id === detailId) : items
   return <section className="pro-requests" aria-label="요청함" aria-busy={busy || disabled}>
-    <div className="pro-page-heading"><h2>{route.create ? '파일 요청 만들기' : detailId ? '요청 상세' : '요청함'}</h2>
+    <header className="pro-page-header"><div><h2>{route.create ? '파일 요청 만들기' : detailId ? '요청 상세' : '요청함'}</h2><p>{route.create ? '필요한 환경과 파일을 가진 팀원을 선택하세요.' : detailId ? '승인 상태를 확인하고 이 요청의 파일을 주고받으세요.' : '팀원에게 받은 요청과 내가 보낸 요청을 확인하세요.'}</p></div>
       <div className="actions">{(detailId || route.create) ? <a className="button" href={proPath(listRoute)} onClick={event => followProLink(event, listRoute, onNavigate)}>요청 목록</a> : <a className="button primary" href={proPath(createRoute)} onClick={event => followProLink(event, createRoute, onNavigate)}>새 파일 요청</a>}
         <button className="button" type="button" disabled={busy || disabled} onClick={() => refresh.current()}>새로고침</button></div>
-    </div>
+    </header>
     {error && <Notice error>{error}</Notice>}
-    <p role="status">{busy ? '요청을 확인하고 있어요.' : choosing ? '요청 가능한 멤버를 확인하고 있어요.' : message}</p>
-    {route.create ? <fieldset className="plain-fieldset" disabled={busy || disabled}>
+    <p className="pro-status-line" role="status">{busy ? '요청을 확인하고 있어요.' : choosing ? '요청 가능한 멤버를 확인하고 있어요.' : message}</p>
+    {route.create ? <fieldset className="plain-fieldset pro-form-panel" disabled={busy || disabled}>
       <legend>팀원에게 파일 요청</legend>
       <p>처음 받는 브라우저라면 <a href={proPath({page:'settings',orgId})} onClick={event => followProLink(event,{page:'settings',orgId},onNavigate)}>내 기기 등록·승인</a>을 먼저 완료해주세요.</p>
       {environments.length > 0 ? <form className="pro-form" onSubmit={event => { event.preventDefault(); void run(async () => {
@@ -132,30 +132,30 @@ export function ProRequests({ api, orgId, userId, csrf, targetId, route, onNavig
         const result = await mutate(base + '/requests', { environmentId, senderId, deviceId: device.deviceId })
         if (!lifetime.current?.signal.aborted) onNavigate({ page: 'requests', orgId, id: result.id })
       }) }}>
-        <label htmlFor="request-environment">요청할 환경</label><select id="request-environment" value={environmentId} required onChange={e => { setEnvironmentId(e.target.value); setSenders([]); setSenderId('') }}>
+        <div className="pro-field"><label htmlFor="request-environment">요청할 환경</label><select id="request-environment" value={environmentId} required onChange={e => { setEnvironmentId(e.target.value); setSenders([]); setSenderId('') }}>
           {!environmentId && <option value="" disabled>환경을 선택해주세요</option>}{environments.map(env => <option value={env.id} key={env.id}>{env.label}</option>)}
-        </select>
-        <label htmlFor="request-sender">요청할 멤버</label><select id="request-sender" value={senderId} onChange={e => setSenderId(e.target.value)} disabled={choosing || !senders.length} required>{senders.map(sender => <option value={sender.id} key={sender.id}>{sender.login}</option>)}</select>
+        </select></div>
+        <div className="pro-field"><label htmlFor="request-sender">요청할 멤버</label><select id="request-sender" value={senderId} onChange={e => setSenderId(e.target.value)} disabled={choosing || !senders.length} required>{senders.map(sender => <option value={sender.id} key={sender.id}>{sender.login}</option>)}</select></div>
         {!choosing && !senders.length && <p>이 환경에서 보내기 권한이 있는 다른 멤버가 없어요.</p>}
         <p>파일 보유 여부는 상대에게 확인해주세요. 요청은 7일 동안 유효하며, 이 브라우저의 기기로 고정돼요.</p>
         <button className="button primary" disabled={choosing || !senderId || !environmentId} type="submit">파일 요청</button>
       </form> : !busy && <Notice>받기 권한이 있는 환경이 없어요. Owner에게 권한을 요청해주세요.</Notice>}
     </fieldset> : <>
       {!detailId && <p>진행 중인 요청부터 최근 100개까지 표시해요. 요청을 열어 승인하거나 파일을 주고받을 수 있어요.</p>}
-      {!busy && !shown.length && !error && <Notice>{detailId ? '이 요청을 확인할 수 없어요. 원래 링크와 현재 계정을 확인해주세요.' : '아직 요청이 없어요. 필요한 파일이 있다면 팀원에게 요청해보세요.'}</Notice>}
+      {!busy && !shown.length && !error && <div className="pro-empty-state"><h3>{detailId ? '요청을 찾을 수 없어요' : '아직 주고받은 요청이 없어요'}</h3><p>{detailId ? '원래 링크와 현재 계정을 확인해주세요.' : '새 파일 요청을 눌러 필요한 환경과 팀원을 선택하세요.'}</p></div>}
       <div className={detailId ? 'pro-detail' : 'pro-list'}>{shown.map(item => {
         const destination: ProRoute = { page: 'requests', orgId, id: item.id }
         return <article className="pro-project" key={item.id}>
           <h3>{detailId ? (item.project ? item.project + ' / ' + item.environment : '종료된 요청') : <a href={proPath(destination)} onClick={event => followProLink(event, destination, onNavigate)}>{item.project ? item.project + ' / ' + item.environment : item.status === 'fulfilled' ? '전달된 요청' : '종료된 요청'}</a>}</h3>
-          <p>{item.direction === 'incoming' ? '받은 요청' : item.direction === 'outgoing' ? '내가 보낸 요청' : '관리 중인 요청'} · <strong>{statuses[item.status] ?? '상태 확인 필요'}</strong></p>
-          {item.sender && <p>{item.receiver} → {item.sender}</p>}
-          <p>요청일 {new Date(item.createdAt).toLocaleString()} · 요청 기한 {new Date(item.expiresAt).toLocaleString()}</p>
+          <p className="pro-item-meta">{item.direction === 'incoming' ? '받은 요청' : item.direction === 'outgoing' ? '내가 보낸 요청' : '관리 중인 요청'} <strong className="pro-badge" data-status={item.status}>{statuses[item.status] ?? '상태 확인 필요'}</strong></p>
+          {item.sender && <p>요청한 사람 {item.receiver} · 파일 보낼 사람 {item.sender}</p>}
+          <p className="pro-item-meta">요청일 {new Date(item.createdAt).toLocaleString('ko-KR')} · 요청 기한 {new Date(item.expiresAt).toLocaleString('ko-KR')}</p>
           {item.transfer && <p>전달: {item.transfer.status === 'available' ? '다운로드 가능' : item.transfer.status === 'revoked' ? '회수됨' : '만료됨'} · {new Date(item.transfer.expiresAt).toLocaleString()}까지 · {item.transfer.acknowledgedAt ? '수신 확인됨' : '수신 확인 전'}</p>}
           {detailId ? <>
             <details><summary>요청 식별 정보</summary><CopyField label="요청 상세 링크 (로그인 필요)" value={location.origin + proPath(destination)} /><p className="device-id">{item.id}</p>{item.receiverDeviceId && <p className="device-id">수신 기기: {item.receiverDeviceId}</p>}</details>
             <fieldset className="plain-fieldset" disabled={busy || disabled}><legend>요청 처리</legend><div className="actions">
               {item.status === 'pending' && item.direction === 'incoming' && <><button className="button primary" type="button" onClick={() => { void run(async () => { await mutate(base + '/requests/' + item.id + '/approve', {}) }) }}>승인</button><button className="button" type="button" onClick={() => { if (window.confirm('이 파일 요청을 거절할까요?')) void run(async () => { await mutate(base + '/requests/' + item.id + '/reject', {}) }) }}>거절</button></>}
-              {['pending', 'approved'].includes(item.status) && <button className="button" type="button" onClick={() => { if (window.confirm('이 요청을 취소할까요? 다시 받으려면 새 요청이 필요해요.')) void run(async () => { await mutate(base + '/requests/' + item.id + '/cancel', {}) }) }}>요청 취소</button>}
+              {['pending', 'approved'].includes(item.status) && <button className="button pro-danger" type="button" onClick={() => { if (window.confirm('이 요청을 취소할까요? 다시 받으려면 새 요청이 필요해요.')) void run(async () => { await mutate(base + '/requests/' + item.id + '/cancel', {}) }) }}>요청 취소</button>}
             </div>
             {((item.status === 'approved' && item.direction === 'incoming') || (item.transfer?.status === 'available' && item.direction === 'outgoing')) && <ProTransfer key={item.id + (item.transfer?.status ?? item.status)} api={api} orgId={orgId} requestId={item.id} userId={userId} csrf={csrf} sending={item.status === 'approved'} project={item.project ?? ''} environment={item.environment ?? ''} onDone={load} onExpired={onExpired} onNavigate={onNavigate} />}
             {item.transfer?.status === 'available' && <button className="button" type="button" onClick={() => { if (window.confirm('전달을 회수할까요? 이후 다운로드를 차단하며 이미 받은 사본은 지워지지 않아요.')) void run(async () => { await mutate(base + '/requests/' + item.id + '/transfer/revoke', {}) }) }}>전달 회수</button>}

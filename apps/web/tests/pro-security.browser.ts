@@ -22,8 +22,10 @@ export async function verifyFactorRemoval() {
   const buttons = () => [...container.querySelectorAll<HTMLButtonElement>('button')].filter(button => ['삭제', '인증 앱 삭제'].includes(button.textContent!))
   const refresh = async () => {
     const previous = requests
-    ;[...container.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === '보안 상태 다시 조회')!.click()
+    const button = [...container.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === '보안 상태 다시 조회')!
+    button.click(); button.click(); button.click()
     await until(() => requests > previous && ready())
+    check(requests === previous + 1, 'Rapid refresh clicks must share one security request')
   }
   const blocked = (reason: string) => {
     check(buttons().length > 0, 'Missing removal buttons')
@@ -56,7 +58,8 @@ export async function verifyFactorRemoval() {
     state.passkeys = [{ id: 'test-key', label: '내 패스키' }]; state.reauthenticatedUntil = 0; await refresh(); blocked('먼저 본인 확인')
     state.reauthenticatedUntil = Date.now() + 60_000; await refresh()
     check(buttons().every(button => !button.disabled), 'Verified redundant factors should be removable')
-    buttons()[0]!.click(); await until(() => !state.passkeys.length && ready() && buttons().length === 1 && buttons()[0]!.textContent === '인증 앱 삭제')
+    const removal = buttons()[0]!
+    removal.click(); removal.click(); removal.click(); await until(() => !state.passkeys.length && ready() && buttons().length === 1 && buttons()[0]!.textContent === '인증 앱 삭제')
     blocked('마지막 인증 수단')
     state.passkeys = [{ id: 'test-key', label: '내 패스키' }]; state.reauthenticatedUntil = Date.now() + 60_000; await refresh()
     buttons().find(button => button.textContent === '인증 앱 삭제')!.click(); await until(() => !state.totp && ready() && buttons().length === 1 && buttons()[0]!.textContent === '삭제')
@@ -64,6 +67,6 @@ export async function verifyFactorRemoval() {
     state.totp = true; state.reauthenticatedUntil = Date.now() + 200; await refresh()
     await until(() => buttons().every(button => button.disabled)); blocked('먼저 본인 확인')
     check(confirmations === 2, 'Only the two eligible removals should need confirmation')
-    return { passed: true, checks: ['last passkey', 'last TOTP', 'reauthentication required', 'eligible passkey and TOTP removal', 'reauthentication expiry'] }
+    return { passed: true, checks: ['last passkey', 'last TOTP', 'reauthentication required', 'eligible passkey and TOTP removal', 'reauthentication expiry', 'rapid refresh and removal click prevention'] }
   } finally { root.unmount(); window.fetch = originalFetch; window.confirm = originalConfirm; container.remove() }
 }
