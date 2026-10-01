@@ -124,9 +124,9 @@ jobs:
           done
           [[ "$ready" == true ]] || { echo '::error::Management API did not become ready'; exit 1; }
           export OPENSHIP_HOME="$temporary/context"
-          openship login --token "$OPENSHIP_TOKEN" --api-url http://127.0.0.1:14000 \
-            --dashboard-url http://127.0.0.1:3001 --context ci > "$temporary/login.log" 2>&1 \
-            || { echo '::error::Openship authentication failed'; exit 1; }
+          openship context add ci --token "$OPENSHIP_TOKEN" --api-url http://127.0.0.1:14000 \
+            --dashboard-url http://127.0.0.1:3001 --use > "$temporary/context.log" 2>&1 \
+            || { echo '::error::Openship context setup failed'; exit 1; }
           openship project get "$OPENSHIP_PROJECT_ID" --json > "$temporary/project.json" 2> "$temporary/project.log"
           openship service list --project "$OPENSHIP_PROJECT_ID" --json > "$temporary/services.json" 2> "$temporary/services.log"
           jq -e --arg id "$OPENSHIP_API_SERVICE_ID" \
