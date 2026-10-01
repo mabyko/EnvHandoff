@@ -64,7 +64,7 @@ export default function App() {
 
   return (
     <div className={`page-wrap${route.view === 'pro' ? ' pro-page' : ''}`}>
-      {route.view === 'pro' && <a className="pro-skip-link" href="#main-content">본문으로 건너뛰기</a>}
+      <a className="pro-skip-link" href="#main-content">본문으로 건너뛰기</a>
       <div className="app-window">
         <header className="appbar">
           <button type="button" className="brand" onClick={home} aria-label="EnvHandoff 소개 홈">
@@ -74,7 +74,6 @@ export default function App() {
             EnvHandoff
           </button>
           <div className="header-actions">
-            {route.view === 'home' && <a className="text-button" href="/pro">Pro</a>}
             {route.view === 'home' ? (
               <button
                 type="button"
@@ -90,9 +89,10 @@ export default function App() {
             ) : (
               <button type="button" className="text-button" onClick={home}>
                 <Home aria-hidden="true" />
-                <span>소개로 돌아가기</span>
+                <span>홈으로</span>
               </button>
             )}
+            {route.view === 'home' && <a className="text-button" href="/pro">Pro</a>}
             <button
               type="button"
               className="icon-button"
@@ -120,6 +120,7 @@ export default function App() {
         <footer className="app-footer">
           <span>아는 사람끼리, 필요한 파일만.</span>
           <div className="footer-links">
+            {route.view === 'home' && <a className="text-button" href="/pro">Pro</a>}
             <span>v{version}</span>
             <a
               className="text-button repository-link"

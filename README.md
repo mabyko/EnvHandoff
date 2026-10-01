@@ -6,17 +6,17 @@
 
 EnvHandoff encrypts `.env` and other development configuration files for sharing. It bundles the settings a teammate still needs after cloning a repository, preserving each file as it is. The recipient opens the bundle with a separately shared code, extracts the original files, and uses them in their own project.
 
-The web app starts with file sharing and downloads. A planned native desktop app in v4.0 will add comparison, application, and recovery within a project folder. The current version is **0.0.3**, with file sharing and live transfer available in local development. The app interface and design documents are currently in Korean.
+The web app starts with file sharing and downloads. A planned native desktop app in v4.0 will add comparison, application, and recovery within a project folder. The current version is **0.0.4**, with file sharing and live transfer available in local development. The app interface and design documents are currently in Korean.
 
 ## Screenshots
 
-Explore the home page, file sharing flow, and desktop project view. Click an image to view it at full size.
+Explore the web home page and file sharing flow. Click an image to view it at full size.
 
 | Home | Send |
 | :---: | :---: |
-| [![Home — product introduction with send and open actions](docs/images/landing-home.png)](docs/images/landing-home.png) | [![Send — project label, environment name, and file selection](docs/images/landing-send.png)](docs/images/landing-send.png) |
+| [![Home — product introduction with send and open actions](docs/images/landing-home.png)](docs/images/landing-home.png) | [![Send — file selection with optional settings collapsed](docs/images/landing-send.png)](docs/images/landing-send.png) |
 | **Send (file selection)** | **Receive** |
-| [![Send (file selection) — selecting configuration files in a project](docs/images/desktop-d-files.png)](docs/images/desktop-d-files.png) | [![Receive — selecting a shared file and entering its code](docs/images/landing-receive.png)](docs/images/landing-receive.png) |
+| [![Send (file selection) — reviewing selected files and placement paths](docs/images/landing-files.png)](docs/images/landing-files.png) | [![Receive — selecting a shared file and entering its code](docs/images/landing-receive.png)](docs/images/landing-receive.png) |
 
 ## When to use it
 
@@ -71,14 +71,14 @@ The official cloud is planned as a free invite-only v3 beta. Additional v4 featu
 
 **Send files**
 
-1. In `파일 보내기` (Send files), select or drag and drop files. Use `환경변수 직접 입력` (Enter environment variables) to create a new `.env` file. For an uploaded `.env`, use `기존 .env 변수 편집` (Edit existing .env variables), review the changed lines and resulting file, then apply the edit. Check each placement path relative to the Git repository root, and enter a project label and environment name.
-2. Choose a shared file or live transfer.
-3. For a shared file, download it and send it to the recipient. Share the code through a different conversation channel.
-4. For live transfer, send the connection link, compare the confirmation numbers on both screens in a private conversation, and approve the transfer. Share the code separately.
+1. In `설정 파일 보내기` (Send config files), select or drag and drop files and check their placement paths.
+2. Expand `공유 설정` (Share settings) to edit the project label or environment, or choose live transfer. The defaults are `설정 공유` (Config share), `development`, and file sharing. Use `환경변수 직접 입력` (Enter environment variables) to create a new `.env`, or `기존 .env 변수 편집` (Edit existing .env variables) in the file list to edit safe values in an uploaded file. Review the changed lines and resulting file before applying the edit.
+3. Select `공유 파일 만들기` (Create a shared file), download the encrypted bundle, and send it to the recipient. Share the code through a different conversation channel.
+4. If you chose live transfer, select `실시간 전달 준비` (Prepare live transfer), send the connection link, compare the confirmation numbers on both screens in a private conversation, and approve the transfer. Share the code separately.
 
 **Receive files**
 
-1. Select `공유 파일 열기` (Open a shared file) on the home page and choose an `.envhandoff` file, or open a connection link you received.
+1. Select `받은 공유 파일 열기` (Open a received shared file) on the home page and choose an `.envhandoff` file, or open a connection link you received.
 2. Enter the shared code. Once authentication succeeds, review the file list and shared paths.
 3. Download the original files you need and place them in your project using the placement paths relative to the Git repository root. File contents appear only when you select `내용 보기` (View contents).
 
