@@ -1,16 +1,18 @@
 # EnvHandoff Pro 배포 가이드
 
-API는 mabyko 서버의 Openship에, 웹과 무료 relay는 기존 Cloudflare에 배포한다. **첫 배포와 QA를 마친 뒤 반복 배포를 자동화**하는 순서로 진행한다.
+API는 mabyko 서버의 Openship에, 웹과 무료 relay는 기존 Cloudflare에 배포한다. 현재 운영은 고정 `release`에 연결되어 있다. 다음 방식으로는 `release/vX.Y.Z` 스냅샷과 GitHub의 production 승인형 배포를 선택했고 전환을 준비 중이다.
 
 이 문서는 공식 클라우드의 서버·도메인을 기준으로 한다. 자신의 서버와 계정에 설치하려면 [자체 호스팅 가이드](self-hosting.md)의 Cloudflare 단독·Docker·Openship 경로를 따른다.
 
-기준일: 2026-09-29 · Openship 0.8.0. 개인 워크스페이스의 기존 EnvHandoff 프로젝트에 API·PostgreSQL을, Cloudflare `mabyko` 계정에 웹·relay를 배포했다. HTTPS·CORS·영속 볼륨·공개 relay 검사를 통과했다. 신규 Pro 전달과 자동 배포는 QA가 끝날 때까지 꺼둔다. 상세 결과와 남은 범위는 [QA 기록](qa.md#2026-09-29-운영-배포-검사)에 둔다.
+기준일: 2026-10-01 · Openship 0.8.0 · 운영 제품 버전 `0.0.4`. 기존 EnvHandoff 프로젝트의 API·PostgreSQL과 Cloudflare 웹·relay가 운영 중이며, Openship의 release 소스·Auto Deploy·webhook 활성화와 API·DB 정상 상태를 확인했다. 신규 Pro 전달 접수 설정과 남은 기능·기기 QA는 자동 배포 연결과 별도로 관리한다. 최초 배포 검사와 남은 범위는 [QA 기록](qa.md#2026-09-29-운영-배포-검사)에 둔다.
 
 | 지금 하려는 일 | 읽을 부분 |
 | --- | --- |
 | 처음 서버에 올리기 | [처음 배포하기](#처음-배포하기) |
 | 배포된 서비스를 업데이트하기 | [이후 업데이트하기](#이후-업데이트하기) |
-| 코드 push만으로 배포하기 | [자동 배포 연결하기](#자동-배포-연결하기) |
+| 버전별 브랜치 전환·승인·복구 흐름 확인하기 | [버전별 배포 브랜치와 운영 배포 흐름](release-workflow.md) |
+| GitHub에서 배포를 실행하고 승인하기 | [배포 흐름과 실행 절차](release-workflow.md#실제-배포할-때) |
+| 기존 push 자동 배포 연결 확인하기 | [자동 배포 연결하기](#자동-배포-연결하기) |
 | 초기화 명령이나 다른 방식 확인하기 | [참고와 문제 해결](#참고와-문제-해결) |
 
 ## 배포 구성
@@ -183,7 +185,9 @@ CLOUDFLARE_ACCOUNT_ID=5a6f1112ebbc56a66a3de83bdb52ae3f \
 
 OAuth·도메인·볼륨·삭제대장은 기존 설정을 유지한다. 업데이트마다 새로 만들거나 초기화하지 않는다.
 
-1. 변경한 코드의 검사를 통과시킨 뒤 배포 브랜치에 push한다.
+GitHub 승인형 전환 후의 정상 업데이트는 **main 대상 버전 준비 PR → 실제 main SHA의 전체 CI 성공 → 변경 불가 버전 브랜치 → Actions 수동 실행 → production 승인 → API 정상 확인 → 웹 배포**다. 자세한 화면 순서와 보호 조건은 [배포 흐름 문서](release-workflow.md)를 따른다. 아래 직접 배포 방법은 최초 설치와 장애 대응에 필요한 참고 절차이며, 승인형 운영의 자동 경로를 대신하지 않는다.
+
+1. 배포할 정확한 커밋의 검증을 확인하고 원격 소스를 준비한다. 버전 스냅샷에 추가 커밋을 push하지 않는다.
 2. Openship 대시보드에서 배포하거나 아래 CLI 명령으로 API를 배포한다.
 3. API 배포 성공을 확인하고, 같은 릴리스의 웹을 [웹 배포 단계](#5-cloudflare에-웹-배포하기)에 따라 배포한다.
 4. 공개 주소에서 로그인과 주요 전달 흐름을 확인하고 API·웹의 배포 결과를 기록한다.
@@ -192,7 +196,7 @@ DB 구조를 바꾸는 업데이트는 기존 데이터와 이전 코드의 호�
 
 ### CLI 연결 — 처음 한 번
 
-CLI를 연결하면 운영자나 코딩 에이전트가 터미널에서 같은 프로젝트를 배포할 수 있다. 공식 Openship CLI를 설치하고 `openship login --help`, `openship deploy --help`로 지원 옵션을 확인한다. 아래 명령은 공식 문서 기준이며 이 서버에서 CLI 인증·배포를 실행해 검증한 상태는 아니다. [CLI 설치](https://openship.io/docs/cli), [연결과 인증](https://openship.io/docs/cli/access)
+CLI를 연결하면 운영자나 코딩 에이전트가 터미널에서 같은 프로젝트를 배포할 수 있다. 고정 버전 CLI의 `openship context add --help`, `openship deploy --help`로 지원 옵션을 확인한다. 0.8.0의 login은 프로젝트 한정 토큰에 허용되지 않는 토큰 관리 조회의 `404`를 인증 실패로 처리한다. context를 설정한 뒤 대상 프로젝트 조회로 인증을 검증한다. 전용 SSH·프로젝트 한정 토큰의 로컬 읽기 조회는 통과했으며 GitHub runner의 실제 배포는 최초 실행에서 확인한다. [CLI 설치](https://openship.io/docs/cli), [연결과 인증](https://openship.io/docs/cli/access)
 
 현재 대시보드의 `localhost:3001` 터널은 유지한다. CLI는 서버의 관리 API 포트 `4000`에 연결하므로, 별도 터미널에서 다음 터널을 연다. 로컬 `14000`은 비어 있어야 한다.
 
@@ -201,28 +205,37 @@ ssh -N -o ExitOnForwardFailure=yes \
   -L 127.0.0.1:14000:127.0.0.1:4000 mabyko-oci
 ```
 
-Openship `Settings → API tokens`에서 배포 대상 리소스에 필요한 권한을 가진 토큰을 준비한다. 다른 터미널에서 아래 명령을 실행하고 토큰은 CLI의 대화형 입력에 넣는다. 문서나 채팅에는 남기지 않는다.
+배포 대상 프로젝트에 한정된 토큰과 확인한 프로젝트 ID를 준비한다. 프로젝트 ID는 `ENVHANDOFF_PROJECT_ID`에 지정하고 다른 터미널에서 아래 명령을 실행한다. `read` 단계에서 토큰을 입력하며 입력값은 표시하지 않는다. context 설정 자체는 서버 인증을 검증하지 않으므로 마지막 프로젝트 조회까지 성공해야 한다. 토큰은 문서나 채팅에 남기지 않는다.
 
 ```sh
-openship login \
+read -r -s ENVHANDOFF_OPENSHIP_TOKEN
+openship context add envhandoff-production \
+  --token "${ENVHANDOFF_OPENSHIP_TOKEN:?Enter the project-scoped token}" \
   --api-url http://127.0.0.1:14000 \
   --dashboard-url http://localhost:3001 \
-  --context envhandoff-production
-openship context use envhandoff-production
-openship project list
+  --use
+unset ENVHANDOFF_OPENSHIP_TOKEN
+openship project get "${ENVHANDOFF_PROJECT_ID:?Set the verified project ID}" --json
 ```
 
 ### CLI 배포 — 업데이트할 때마다
 
-SSH 터널이 연결되어 있어야 한다. 프로젝트 목록에서 확인한 실제 ID를 `ENVHANDOFF_PROJECT_ID`에 지정하고, 대상 서버·브랜치·Compose 경로가 맞는지 확인한다.
+SSH 터널이 연결되어 있어야 한다. 프로젝트·API 서비스의 확인한 ID와 검증한 버전 브랜치·SHA를 아래 변수에 지정한다. 기존 DB와 영속 스택을 유지하고 API 서비스만 배포한다. Compose·DB 변경이 있으면 별도로 검토한 절차를 따른다.
 
 ```sh
-openship deploy --project "${ENVHANDOFF_PROJECT_ID:?Set the verified project ID}" --watch
+openship deploy \
+  --project "${ENVHANDOFF_PROJECT_ID:?Set the verified project ID}" \
+  --service-ids "${ENVHANDOFF_API_SERVICE_ID:?Set the verified API service ID}" \
+  --branch "${ENVHANDOFF_DEPLOY_REF:?Set the verified release branch}" \
+  --commit "${ENVHANDOFF_DEPLOY_SHA:?Set the verified deployment SHA}" \
+  --watch
 ```
 
 Git 프로젝트는 원격 코드를 사용한다. 로컬 커밋만 만들고 push하지 않은 변경은 배포되지 않는다. `--watch`로 최종 상태까지 확인한 뒤 API 응답을 점검한다. [CLI 배포 동작](https://openship.io/docs/cli/deploy)
 
 ## 자동 배포 연결하기
+
+이 절은 기존 서비스의 push 자동 배포 연결을 설명한다. 현재 운영에는 연결되어 있지만 GitHub 승인형으로 전환할 때는 **Openship Auto Deploy와 Cloudflare Workers Builds의 독립 브랜치 자동 배포를 중지**해야 한다. 기존 경로가 남으면 production 승인을 기다리지 않거나 같은 배포가 중복 실행될 수 있다. API·DB·Worker의 실행 상태와 저장소 연결 자체를 삭제하는 작업은 아니다.
 
 최초 QA를 마친 뒤 다음 세 가지를 설정한다.
 
@@ -248,34 +261,36 @@ CI로 묶을 때의 순서는 **검사 → 호환 가능한 API 배포 → 웹 �
 
 ### 공식 서비스의 브랜치와 CI
 
-전체 검증은 **로컬에서 `pnpm check`**로 수행한다. 로컬 PostgreSQL의 전용 `envhandoff_test` DB를 준비하고 API·웹·relay 테스트와 lint·타입·빌드를 확인한 뒤 push한다. PR 설명에 검증한 커밋·명령·결과를 기록하고, 실행 코드나 의존성을 수정했다면 해당 검사를 다시 수행한다. DB 준비는 [API 개발 안내](../apps/api/README.md)를 따른다.
+로컬에서도 **`pnpm check`**로 전체 검증을 수행한다. 로컬 PostgreSQL의 전용 `envhandoff_test` DB를 준비하고 API·웹·relay 테스트와 lint·타입·빌드를 확인한 뒤 push한다. PR 설명에 검증한 커밋·명령·결과를 기록하고, 실행 코드나 의존성을 수정했다면 해당 검사를 다시 수행한다. DB 준비는 [API 개발 안내](../apps/api/README.md)를 따른다.
 
-`.github/workflows/ci.yml`은 `main`·`release` 대상 PR에서 **lint·타입 검사만** 실행한다. Node.js 24.21.0·pnpm 12.3.4를 사용하며, PostgreSQL 컨테이너·전체 테스트·빌드는 실행하지 않는다. 병합 후 push의 중복 실행도 하지 않는다. 새 커밋이 올라오면 이전 실행을 취소하고 실행 시간은 10분으로 제한한다. 운영 DB·배포 비밀키 없이 실행하며 배포하지 않는다. 이 CI의 성공은 로컬 전체 검증을 대신하지 않는다.
+전환 준비 전 CI는 `main`·`release` 대상 PR의 lint·타입 검사만 수행했다. 이번 CI 준비 변경은 `main`·`release`·`release/**` 대상 PR과 `main`·`release/**` push에 전체 `pnpm check`를 실행하도록 확장한다. Node.js 24.21.0·pnpm 12.3.4와 전용 임시 PostgreSQL 18 테스트 DB를 사용하며 운영 DB·배포 비밀키에 접근하거나 배포하지 않는다. 원격 main에 반영되고 해당 병합 SHA의 전체 검증이 성공했는지 확인한 뒤 배포 후보를 준비한다. 기존 필수 검사 이름은 보호 규칙 호환을 위해 유지한다.
 
-2026-09-29 확인한 운영 연결은 다음과 같다.
+2026-10-01 확인한 운영 연결은 다음과 같다.
 
-- **웹·relay:** Cloudflare `envhandoff-relay`에 `mabyko/EnvHandoff` 저장소가 연결되어 있으며, 운영 브랜치는 `release`다. 루트 `apps/server`, 빌드 `pnpm -F @envhandoff/web build`, 배포 `npx wrangler deploy`다. `main` 병합만으로는 배포되지 않는다. 최근 Pro 화면은 feature 브랜치에서 Wrangler로 수동 배포했다.
-- **API:** Openship은 아직 `feature/pro-web-beta`를 사용하고 Auto Deploy·Webhook은 꺼져 있다. API 자동 배포는 연결하지 않았다.
+- **웹·relay:** Cloudflare `envhandoff-relay`에 `mabyko/EnvHandoff` 저장소가 연결되어 있으며, 운영 브랜치는 `release`다. 루트 `apps/server`, 빌드 `pnpm -F @envhandoff/web build`, 배포 `npx wrangler deploy`다. `main` 병합만으로는 배포되지 않는다. v0.0.4는 release 병합 후 자동 배포했다.
+- **API:** Openship 소스는 `release`이며 Auto Deploy·webhook이 활성화되어 있다. v0.0.4 배포 커밋과 API·DB 정상 상태를 확인했다.
 - **빌드 API 주소:** `VITE_PRO_API_ORIGIN`이 없으면 공식 웹은 `https://api.envhandoff.mabyko.com`을 사용한다. 자체 호스팅은 자신의 API 주소를 빌드할 때 지정한다.
 
-권장 반영 순서는 로컬 `pnpm check` → PR의 `lint and typecheck`·리뷰 확인 → `main` 병합 → `main`에서 `release`로 PR → 검사 후 운영 반영이다. 두 브랜치는 PR과 `lint and typecheck`를 필수로 요구하며 관리자에게도 적용한다. 로컬 테스트 완료 자체는 GitHub가 자동으로 강제하지 않으므로 PR의 검증 기록을 확인한다. 첫 Pro 릴리스에서는 `release`에 Compose/API 코드가 포함된 것을 확인한 뒤 Openship의 소스를 `release`로 변경하고 웹훅·Auto Deploy를 연결한다. 그 전에는 기존 feature 브랜치를 삭제하지 않는다.
+전환 전 적용하는 순서는 로컬 `pnpm check` → PR의 `lint and typecheck`·리뷰 확인 → `main` 병합 → `main`에서 `release`로 PR → 검사 후 운영 반영이다. 두 브랜치는 PR과 필수 검사를 요구하며 관리자에게도 적용한다. 기존 release 병합 이력이 main에 없어 최신 베이스 조건을 만족하지 않으면 이력 동기화가 필요하다. 전환 준비 문서·CI를 main에 병합하는 것만으로 현재 운영이 배포되지는 않는다.
 
-Cloudflare와 Openship의 push 배포는 서로 완료를 기다리지 않는다. 독립 배포 중에도 동작하도록 API 변경은 기존 웹과 호환되게 만든다. API 배포 성공 후 웹 배포가 반드시 필요한 변경은 두 자동 배포를 따로 시작하지 말고 위의 순차 CI 배포를 구성한다. 신규 전달 접수 설정(`PRO_ACCEPT_NEW_TRANSFERS`)과 운영 QA 완료 여부는 PR 병합과 별도로 관리한다.
+선택한 전환 목표는 검증한 main SHA의 `release/vX.Y.Z` 스냅샷과 GitHub 승인형 배포다. 문서 → CI → 보호·production 환경 → 승인된 배포 연결 준비 → 최종 전환 순서로 진행한다. main에는 PR·필수 CI 보호를 유지하고, 버전 브랜치는 최초 생성 검사와 이후 변경 금지를 적용한다. 실행은 해당 버전 브랜치의 Actions → Deploy production → Run workflow에서 시작하며, 승인 전에 정확한 SHA·전체 CI·main 소속·제품 버전을 확인한다. Review deployments에서 production을 승인하면 API 정상 확인 후 웹을 배포한다.
+
+production 환경에는 승인자·`prevent_self_review=false`·관리자 우회 금지·`release/v*` 브랜치 조건을 원격 적용하고 응답을 확인했다. 버전 브랜치 보호도 원격에 활성화하고 생성 검사 강제·우회 없음·이후 변경 제한을 확인했다. [배포 작업](../.github/workflows/deploy.yml)과 전용 SSH·프로젝트 한정 토큰을 준비했으며, 토큰의 로컬 읽기 조회와 권한 범위 거부를 검증했다. 배포 secrets는 production 환경의 승인된 작업에만 제공한다. GitHub runner 접속·기존 자동 배포 중지·실제 배포는 아직 실행하지 않았다. 이 작업은 기존 DB를 유지하고 API 서비스만 배포하며, 현재 운영 SHA 대비 Compose 또는 API SQL 변경은 자동 진행하지 않는다. 기존 release 삭제 전 서명 태그·보존 ref·이전 정상 이미지/Worker 복구 경로를 확인한다. Mermaid와 상세 실행·복구 조건은 [배포 흐름 문서](release-workflow.md)를 따른다.
+
+전환 전 Cloudflare와 Openship의 push 배포는 서로 완료를 기다리지 않는다. 승인형에서는 같은 SHA로 API 후 웹을 반영하지만 배포 도중 구버전 웹도 계속 사용할 수 있으므로 API 변경은 이전 웹과 호환되어야 한다. 신규 전달 접수 설정(`PRO_ACCEPT_NEW_TRANSFERS`)과 운영 QA 완료 여부는 PR 병합과 별도로 관리한다.
 
 ### 배포 PR 템플릿
 
-2026-09-30의 #6 배포 다음부터는 운영 배포마다 제품 버전을 올린다. 현재 버전은 `0.0.1`이며, 다음 배포가 수정만 포함하면 `0.0.2`, 기능을 추가하면 `0.1.0`으로 올린다. 초기 `0.x`에서 호환성을 깨는 변경은 minor를 올리고 사용자에게 필요한 조치를 명시한다.
+2026-09-30의 #6 배포 다음부터는 운영 배포마다 제품 버전을 올린다. 2026-10-01 현재 운영 버전은 `0.0.4`이며, 다음 patch 배포 예시는 `0.0.5`다. 초기 `0.x`에서 호환성을 깨는 변경은 minor를 올리고 사용자에게 필요한 조치를 명시한다.
 
-1. 배포에 포함할 변경을 모은 뒤, `main` 대상 PR에서 루트와 `apps/web`, `apps/api`, `apps/server`, `packages/protocol`의 `package.json` 버전을 같은 값으로 올린다. 제품 버전은 파일 형식·통신 프로토콜 버전과 별개다. 웹 하단 표시는 `apps/web/package.json`을 사용하므로 함께 확인한다.
-2. 버전 변경을 포함한 커밋으로 `pnpm check`를 실행하고 `main`에 병합한다. `release` PR을 연 뒤 배포 범위가 달라지면 버전과 변경 요약도 다시 확인한다.
-3. `main` → `release` PR 제목은 `release: v0.0.2 — 베타 코드 본인 확인 안내 개선`처럼 버전과 배포 요약으로 작성한다. 본문에는 이전 운영 버전부터 추가된 기능·수정, 호환성 변경·필요한 조치와 포함 PR을 정리한다. 첫 버전 배포의 비교 기준은 #6의 운영 커밋 `34816a707ff3273d1f3155912333a8237c85e28b`다.
-4. 배포 성공과 공개 사이트의 버전 표시를 확인한 뒤, 실제 배포한 `release` 커밋에 같은 이름의 Git 태그(`v0.0.2`)를 만들고 push한다. 태그는 서명하고 PR에 커밋·태그·Cloudflare 배포 ID를 기록한다. 기존 태그를 옮기거나 실패한 배포를 새 버전 태그로 기록하지 않는다.
+전환 후 [release 템플릿](../.github/PULL_REQUEST_TEMPLATE/release.md)은 **main 대상 버전 준비 PR**에 사용한다. `main → release` PR과 이력 동기화 PR을 새로 만들지 않는다.
 
-`main` → `release` 배포는 [배포 PR 만들기](https://github.com/mabyko/EnvHandoff/compare/release...main?quick_pull=1&template=release.md)로 연다. [release 템플릿](../.github/PULL_REQUEST_TEMPLATE/release.md)은 버전·변경 요약, 배포 범위·커밋, 로컬 검증, DB·환경변수 변경, 배포 순서·복구 방법과 배포 후 결과를 기록한다. 버전 갱신과 태그는 이 절차에 따라 수행하며 자동화는 아직 없다.
+1. 루트와 `apps/web`, `apps/api`, `apps/server`, `packages/protocol`의 `package.json`을 같은 제품 버전으로 올린다. 제품 버전은 파일 형식·통신 프로토콜 버전과 별개이며 웹 하단도 함께 확인한다.
+2. 제목은 `release: v0.0.5 — 배포 요약`으로 작성하고 이전 성공 배포 이후의 변경·포함 PR·호환성·필요한 조치·복구 계획을 기록한다. main 대상 PR의 CI·리뷰 후 병합한다.
+3. 병합된 main SHA의 전체 CI 성공을 확인하고 그 SHA에 버전 스냅샷을 만든다. 스냅샷에 PR이나 추가 커밋을 병합하지 않는다. 승인된 Actions 실행 링크·스냅샷 SHA·검증과 배포 결과를 기존 버전 준비 PR에 남긴다.
+4. 운영 배포 성공과 공개 버전을 확인한 뒤 실제 배포 SHA에 로컬 서명 태그 `vX.Y.Z`를 만들고 push한다. 기존 태그를 옮기거나 실패한 배포를 성공 태그로 기록하지 않는다. CI에 GPG 개인키를 넣지 않는다.
 
-템플릿 파일이 기본 브랜치 `main`에 반영된 뒤 위 링크에서 선택할 수 있다. GitHub가 대상 브랜치 이름으로 템플릿을 자동 선택하는 것은 아니므로 `template=release.md`가 포함된 링크를 사용한다. 템플릿은 작성 양식이며 입력 여부를 강제하는 추가 CI는 없다. 배포 후 항목은 병합 후 실제 결과를 확인하며 채운다.
-
-배포 PR은 **Create a merge commit**으로 병합하고 `main`을 삭제하지 않는다. 계속 유지하는 두 브랜치 사이에는 Squash/Rebase merge를 사용하지 않는다. `release`의 최신 베이스 필수 조건 때문에 이후 PR에 브랜치 갱신이 필요하면, `release`의 변경을 `main`으로 먼저 반영하고 검사를 확인한다. 강제 push로 우회하지 않는다.
+템플릿은 기본 브랜치에 반영된 뒤 새 main 대상 PR에서 `template=release.md`로 선택한다. 양식 자체가 운영 승인을 대신하지 않는다. 병합 후 기록할 main SHA·버전 브랜치·Actions 실행과 배포 결과는 실제 확인한 뒤 채운다. 준비 기간의 기존 고정 release 운영은 전환 완료 전까지 별도로 유지한다.
 
 ## 참고와 문제 해결
 
