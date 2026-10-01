@@ -1,15 +1,16 @@
 # EnvHandoff Pro 배포 가이드
 
-API는 mabyko 서버의 Openship에, 웹과 무료 relay는 기존 Cloudflare에 배포한다. **첫 배포와 QA를 마친 뒤 반복 배포를 자동화**하는 순서로 진행한다.
+API는 mabyko 서버의 Openship에, 웹과 무료 relay는 기존 Cloudflare에 배포한다. 현재 두 서비스는 고정 `release`에 연결되어 있으며, 버전별 브랜치로 전환하기 위한 문서·CI를 준비하고 있다.
 
 이 문서는 공식 클라우드의 서버·도메인을 기준으로 한다. 자신의 서버와 계정에 설치하려면 [자체 호스팅 가이드](self-hosting.md)의 Cloudflare 단독·Docker·Openship 경로를 따른다.
 
-기준일: 2026-09-29 · Openship 0.8.0. 개인 워크스페이스의 기존 EnvHandoff 프로젝트에 API·PostgreSQL을, Cloudflare `mabyko` 계정에 웹·relay를 배포했다. HTTPS·CORS·영속 볼륨·공개 relay 검사를 통과했다. 신규 Pro 전달과 자동 배포는 QA가 끝날 때까지 꺼둔다. 상세 결과와 남은 범위는 [QA 기록](qa.md#2026-09-29-운영-배포-검사)에 둔다.
+기준일: 2026-10-01 · Openship 0.8.0 · 운영 제품 버전 `0.0.4`. 기존 EnvHandoff 프로젝트의 API·PostgreSQL과 Cloudflare 웹·relay가 운영 중이며, Openship의 release 소스·Auto Deploy·webhook 활성화와 API·DB 정상 상태를 확인했다. 신규 Pro 전달 접수 설정과 남은 기능·기기 QA는 자동 배포 연결과 별도로 관리한다. 최초 배포 검사와 남은 범위는 [QA 기록](qa.md#2026-09-29-운영-배포-검사)에 둔다.
 
 | 지금 하려는 일 | 읽을 부분 |
 | --- | --- |
 | 처음 서버에 올리기 | [처음 배포하기](#처음-배포하기) |
 | 배포된 서비스를 업데이트하기 | [이후 업데이트하기](#이후-업데이트하기) |
+| 버전별 브랜치 전환·승인·복구 흐름 확인하기 | [버전별 배포 브랜치와 운영 배포 흐름](release-workflow.md) |
 | 코드 push만으로 배포하기 | [자동 배포 연결하기](#자동-배포-연결하기) |
 | 초기화 명령이나 다른 방식 확인하기 | [참고와 문제 해결](#참고와-문제-해결) |
 
@@ -248,28 +249,32 @@ CI로 묶을 때의 순서는 **검사 → 호환 가능한 API 배포 → 웹 �
 
 ### 공식 서비스의 브랜치와 CI
 
-전체 검증은 **로컬에서 `pnpm check`**로 수행한다. 로컬 PostgreSQL의 전용 `envhandoff_test` DB를 준비하고 API·웹·relay 테스트와 lint·타입·빌드를 확인한 뒤 push한다. PR 설명에 검증한 커밋·명령·결과를 기록하고, 실행 코드나 의존성을 수정했다면 해당 검사를 다시 수행한다. DB 준비는 [API 개발 안내](../apps/api/README.md)를 따른다.
+로컬에서도 **`pnpm check`**로 전체 검증을 수행한다. 로컬 PostgreSQL의 전용 `envhandoff_test` DB를 준비하고 API·웹·relay 테스트와 lint·타입·빌드를 확인한 뒤 push한다. PR 설명에 검증한 커밋·명령·결과를 기록하고, 실행 코드나 의존성을 수정했다면 해당 검사를 다시 수행한다. DB 준비는 [API 개발 안내](../apps/api/README.md)를 따른다.
 
-`.github/workflows/ci.yml`은 `main`·`release` 대상 PR에서 **lint·타입 검사만** 실행한다. Node.js 24.21.0·pnpm 12.3.4를 사용하며, PostgreSQL 컨테이너·전체 테스트·빌드는 실행하지 않는다. 병합 후 push의 중복 실행도 하지 않는다. 새 커밋이 올라오면 이전 실행을 취소하고 실행 시간은 10분으로 제한한다. 운영 DB·배포 비밀키 없이 실행하며 배포하지 않는다. 이 CI의 성공은 로컬 전체 검증을 대신하지 않는다.
+전환 준비 전 CI는 `main`·`release` 대상 PR의 lint·타입 검사만 수행했다. 이번 CI 준비 변경은 `main`·`release`·`release/**` 대상 PR과 `main`·`release/**` push에 전체 `pnpm check`를 실행하도록 확장한다. Node.js 24.21.0·pnpm 12.3.4와 전용 임시 PostgreSQL 18 테스트 DB를 사용하며 운영 DB·배포 비밀키에 접근하거나 배포하지 않는다. 원격 main에 반영되고 해당 병합 SHA의 전체 검증이 성공했는지 확인한 뒤 배포 후보를 준비한다. 기존 필수 검사 이름은 보호 규칙 호환을 위해 유지한다.
 
-2026-09-29 확인한 운영 연결은 다음과 같다.
+2026-10-01 확인한 운영 연결은 다음과 같다.
 
-- **웹·relay:** Cloudflare `envhandoff-relay`에 `mabyko/EnvHandoff` 저장소가 연결되어 있으며, 운영 브랜치는 `release`다. 루트 `apps/server`, 빌드 `pnpm -F @envhandoff/web build`, 배포 `npx wrangler deploy`다. `main` 병합만으로는 배포되지 않는다. 최근 Pro 화면은 feature 브랜치에서 Wrangler로 수동 배포했다.
-- **API:** Openship은 아직 `feature/pro-web-beta`를 사용하고 Auto Deploy·Webhook은 꺼져 있다. API 자동 배포는 연결하지 않았다.
+- **웹·relay:** Cloudflare `envhandoff-relay`에 `mabyko/EnvHandoff` 저장소가 연결되어 있으며, 운영 브랜치는 `release`다. 루트 `apps/server`, 빌드 `pnpm -F @envhandoff/web build`, 배포 `npx wrangler deploy`다. `main` 병합만으로는 배포되지 않는다. v0.0.4는 release 병합 후 자동 배포했다.
+- **API:** Openship 소스는 `release`이며 Auto Deploy·webhook이 활성화되어 있다. v0.0.4 배포 커밋과 API·DB 정상 상태를 확인했다.
 - **빌드 API 주소:** `VITE_PRO_API_ORIGIN`이 없으면 공식 웹은 `https://api.envhandoff.mabyko.com`을 사용한다. 자체 호스팅은 자신의 API 주소를 빌드할 때 지정한다.
 
-권장 반영 순서는 로컬 `pnpm check` → PR의 `lint and typecheck`·리뷰 확인 → `main` 병합 → `main`에서 `release`로 PR → 검사 후 운영 반영이다. 두 브랜치는 PR과 `lint and typecheck`를 필수로 요구하며 관리자에게도 적용한다. 로컬 테스트 완료 자체는 GitHub가 자동으로 강제하지 않으므로 PR의 검증 기록을 확인한다. 첫 Pro 릴리스에서는 `release`에 Compose/API 코드가 포함된 것을 확인한 뒤 Openship의 소스를 `release`로 변경하고 웹훅·Auto Deploy를 연결한다. 그 전에는 기존 feature 브랜치를 삭제하지 않는다.
+전환 전 적용하는 순서는 로컬 `pnpm check` → PR의 `lint and typecheck`·리뷰 확인 → `main` 병합 → `main`에서 `release`로 PR → 검사 후 운영 반영이다. 두 브랜치는 PR과 필수 검사를 요구하며 관리자에게도 적용한다. 기존 release 병합 이력이 main에 없어 최신 베이스 조건을 만족하지 않으면 이력 동기화가 필요하다. 전환 준비 문서·CI를 main에 병합하는 것만으로 현재 운영이 배포되지는 않는다.
+
+선택한 전환 목표는 검증한 main SHA를 `release/vX.Y.Z`에 보존하는 버전별 스냅샷이다. 배포 시작은 기존 연동의 소스 전환 방식과 GitHub 승인형 중 검토 중이며 아직 결정·적용하지 않았다. 문서 → CI → 보호 → 연동 준비 → 최종 전환 순서로 진행하고, 기존 release 삭제는 보존할 이력·정확한 SHA·실행 경로·복구 계획을 확인한 뒤 한다. 두 방식의 초기 설정·반복 작업·안전 조건 비교와 미적용 Mermaid 설계는 [배포 흐름 문서](release-workflow.md)를 따른다.
 
 Cloudflare와 Openship의 push 배포는 서로 완료를 기다리지 않는다. 독립 배포 중에도 동작하도록 API 변경은 기존 웹과 호환되게 만든다. API 배포 성공 후 웹 배포가 반드시 필요한 변경은 두 자동 배포를 따로 시작하지 말고 위의 순차 CI 배포를 구성한다. 신규 전달 접수 설정(`PRO_ACCEPT_NEW_TRANSFERS`)과 운영 QA 완료 여부는 PR 병합과 별도로 관리한다.
 
 ### 배포 PR 템플릿
 
-2026-09-30의 #6 배포 다음부터는 운영 배포마다 제품 버전을 올린다. 현재 버전은 `0.0.1`이며, 다음 배포가 수정만 포함하면 `0.0.2`, 기능을 추가하면 `0.1.0`으로 올린다. 초기 `0.x`에서 호환성을 깨는 변경은 minor를 올리고 사용자에게 필요한 조치를 명시한다.
+2026-09-30의 #6 배포 다음부터는 운영 배포마다 제품 버전을 올린다. 2026-10-01 현재 운영 버전은 `0.0.4`이며, 다음 patch 배포 예시는 `0.0.5`다. 초기 `0.x`에서 호환성을 깨는 변경은 minor를 올리고 사용자에게 필요한 조치를 명시한다.
+
+아래 템플릿과 main → release 절차는 고정 release를 유지하는 전환 준비 기간에 유효하다. 버전별 방식 적용 시 템플릿을 main의 버전 준비 PR과 실제 배포 SHA 기록에 맞춰 변경한다. 현재 템플릿을 버전 브랜치의 운영 승인 조건으로 간주하지 않는다.
 
 1. 배포에 포함할 변경을 모은 뒤, `main` 대상 PR에서 루트와 `apps/web`, `apps/api`, `apps/server`, `packages/protocol`의 `package.json` 버전을 같은 값으로 올린다. 제품 버전은 파일 형식·통신 프로토콜 버전과 별개다. 웹 하단 표시는 `apps/web/package.json`을 사용하므로 함께 확인한다.
 2. 버전 변경을 포함한 커밋으로 `pnpm check`를 실행하고 `main`에 병합한다. `release` PR을 연 뒤 배포 범위가 달라지면 버전과 변경 요약도 다시 확인한다.
-3. `main` → `release` PR 제목은 `release: v0.0.2 — 베타 코드 본인 확인 안내 개선`처럼 버전과 배포 요약으로 작성한다. 본문에는 이전 운영 버전부터 추가된 기능·수정, 호환성 변경·필요한 조치와 포함 PR을 정리한다. 첫 버전 배포의 비교 기준은 #6의 운영 커밋 `34816a707ff3273d1f3155912333a8237c85e28b`다.
-4. 배포 성공과 공개 사이트의 버전 표시를 확인한 뒤, 실제 배포한 `release` 커밋에 같은 이름의 Git 태그(`v0.0.2`)를 만들고 push한다. 태그는 서명하고 PR에 커밋·태그·Cloudflare 배포 ID를 기록한다. 기존 태그를 옮기거나 실패한 배포를 새 버전 태그로 기록하지 않는다.
+3. `main` → `release` PR 제목은 `release: v0.0.5 — 배포 요약`처럼 버전과 배포 요약으로 작성한다. 본문에는 이전 운영 버전부터 추가된 기능·수정, 호환성 변경·필요한 조치와 포함 PR을 정리한다. 비교 기준은 이전 성공 배포의 커밋과 서명 태그다.
+4. 배포 성공과 공개 사이트의 버전 표시를 확인한 뒤, 실제 배포한 `release` 커밋에 같은 이름의 Git 태그(`v0.0.5`)를 만들고 push한다. 태그는 서명하고 PR에 커밋·태그·Cloudflare 배포 ID를 기록한다. 기존 태그를 옮기거나 실패한 배포를 새 버전 태그로 기록하지 않는다.
 
 `main` → `release` 배포는 [배포 PR 만들기](https://github.com/mabyko/EnvHandoff/compare/release...main?quick_pull=1&template=release.md)로 연다. [release 템플릿](../.github/PULL_REQUEST_TEMPLATE/release.md)은 버전·변경 요약, 배포 범위·커밋, 로컬 검증, DB·환경변수 변경, 배포 순서·복구 방법과 배포 후 결과를 기록한다. 버전 갱신과 태그는 이 절차에 따라 수행하며 자동화는 아직 없다.
 
