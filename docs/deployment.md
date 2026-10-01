@@ -196,7 +196,7 @@ DB 구조를 바꾸는 업데이트는 기존 데이터와 이전 코드의 호�
 
 ### CLI 연결 — 처음 한 번
 
-CLI를 연결하면 운영자나 코딩 에이전트가 터미널에서 같은 프로젝트를 배포할 수 있다. 공식 Openship CLI를 설치하고 `openship login --help`, `openship deploy --help`로 지원 옵션을 확인한다. 아래 명령은 공식 문서 기준이며 이 서버에서 CLI 인증·배포를 실행해 검증한 상태는 아니다. [CLI 설치](https://openship.io/docs/cli), [연결과 인증](https://openship.io/docs/cli/access)
+CLI를 연결하면 운영자나 코딩 에이전트가 터미널에서 같은 프로젝트를 배포할 수 있다. 고정 버전 CLI의 `openship context add --help`, `openship deploy --help`로 지원 옵션을 확인한다. 0.8.0의 login은 프로젝트 한정 토큰에 허용되지 않는 토큰 관리 조회의 `404`를 인증 실패로 처리한다. context를 설정한 뒤 대상 프로젝트 조회로 인증을 검증한다. 전용 SSH·프로젝트 한정 토큰의 로컬 읽기 조회는 통과했으며 GitHub runner의 실제 배포는 최초 실행에서 확인한다. [CLI 설치](https://openship.io/docs/cli), [연결과 인증](https://openship.io/docs/cli/access)
 
 현재 대시보드의 `localhost:3001` 터널은 유지한다. CLI는 서버의 관리 API 포트 `4000`에 연결하므로, 별도 터미널에서 다음 터널을 연다. 로컬 `14000`은 비어 있어야 한다.
 
@@ -205,15 +205,17 @@ ssh -N -o ExitOnForwardFailure=yes \
   -L 127.0.0.1:14000:127.0.0.1:4000 mabyko-oci
 ```
 
-Openship `Settings → API tokens`에서 배포 대상 리소스에 필요한 권한을 가진 토큰을 준비한다. 다른 터미널에서 아래 명령을 실행하고 토큰은 CLI의 대화형 입력에 넣는다. 문서나 채팅에는 남기지 않는다.
+배포 대상 프로젝트에 한정된 토큰과 확인한 프로젝트 ID를 준비한다. 프로젝트 ID는 `ENVHANDOFF_PROJECT_ID`에 지정하고 다른 터미널에서 아래 명령을 실행한다. `read` 단계에서 토큰을 입력하며 입력값은 표시하지 않는다. context 설정 자체는 서버 인증을 검증하지 않으므로 마지막 프로젝트 조회까지 성공해야 한다. 토큰은 문서나 채팅에 남기지 않는다.
 
 ```sh
-openship login \
+read -r -s ENVHANDOFF_OPENSHIP_TOKEN
+openship context add envhandoff-production \
+  --token "${ENVHANDOFF_OPENSHIP_TOKEN:?Enter the project-scoped token}" \
   --api-url http://127.0.0.1:14000 \
   --dashboard-url http://localhost:3001 \
-  --context envhandoff-production
-openship context use envhandoff-production
-openship project list
+  --use
+unset ENVHANDOFF_OPENSHIP_TOKEN
+openship project get "${ENVHANDOFF_PROJECT_ID:?Set the verified project ID}" --json
 ```
 
 ### CLI 배포 — 업데이트할 때마다
@@ -273,7 +275,7 @@ CI로 묶을 때의 순서는 **검사 → 호환 가능한 API 배포 → 웹 �
 
 선택한 전환 목표는 검증한 main SHA의 `release/vX.Y.Z` 스냅샷과 GitHub 승인형 배포다. 문서 → CI → 보호·production 환경 → 승인된 배포 연결 준비 → 최종 전환 순서로 진행한다. main에는 PR·필수 CI 보호를 유지하고, 버전 브랜치는 최초 생성 검사와 이후 변경 금지를 적용한다. 실행은 해당 버전 브랜치의 Actions → Deploy production → Run workflow에서 시작하며, 승인 전에 정확한 SHA·전체 CI·main 소속·제품 버전을 확인한다. Review deployments에서 production을 승인하면 API 정상 확인 후 웹을 배포한다.
 
-production 환경에는 승인자·`prevent_self_review=false`·관리자 우회 금지·`release/v*` 브랜치 조건을 원격 적용하고 응답을 확인했다. [배포 작업](../.github/workflows/deploy.yml)은 준비했으며 배포 secrets는 해당 환경의 승인된 작업에만 제공한다. 전용 자격 증명·자동 배포 중지는 준비 중이고 승인 대기와 실제 배포 성공은 최초 실행으로 검증한다. 이 작업은 기존 DB를 유지하고 API 서비스만 배포하며, 현재 운영 SHA 대비 Compose 또는 API SQL 변경은 자동 진행하지 않는다. 기존 release 삭제 전 서명 태그·보존 ref·이전 정상 이미지/Worker 복구 경로를 확인한다. Mermaid와 상세 실행·복구 조건은 [배포 흐름 문서](release-workflow.md)를 따른다.
+production 환경에는 승인자·`prevent_self_review=false`·관리자 우회 금지·`release/v*` 브랜치 조건을 원격 적용하고 응답을 확인했다. 버전 브랜치 보호도 원격에 활성화하고 생성 검사 강제·우회 없음·이후 변경 제한을 확인했다. [배포 작업](../.github/workflows/deploy.yml)과 전용 SSH·프로젝트 한정 토큰을 준비했으며, 토큰의 로컬 읽기 조회와 권한 범위 거부를 검증했다. 배포 secrets는 production 환경의 승인된 작업에만 제공한다. GitHub runner 접속·기존 자동 배포 중지·실제 배포는 아직 실행하지 않았다. 이 작업은 기존 DB를 유지하고 API 서비스만 배포하며, 현재 운영 SHA 대비 Compose 또는 API SQL 변경은 자동 진행하지 않는다. 기존 release 삭제 전 서명 태그·보존 ref·이전 정상 이미지/Worker 복구 경로를 확인한다. Mermaid와 상세 실행·복구 조건은 [배포 흐름 문서](release-workflow.md)를 따른다.
 
 전환 전 Cloudflare와 Openship의 push 배포는 서로 완료를 기다리지 않는다. 승인형에서는 같은 SHA로 API 후 웹을 반영하지만 배포 도중 구버전 웹도 계속 사용할 수 있으므로 API 변경은 이전 웹과 호환되어야 한다. 신규 전달 접수 설정(`PRO_ACCEPT_NEW_TRANSFERS`)과 운영 QA 완료 여부는 PR 병합과 별도로 관리한다.
 

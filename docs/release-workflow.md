@@ -2,7 +2,7 @@
 
 전환 목표는 **검증한 main 커밋을 `release/vX.Y.Z`에 보존하고, GitHub Actions에서 승인한 뒤 배포하는 방식**이다. 버전별 브랜치는 배포할 SHA를 고정하는 스냅샷이며, 배포 시작은 GitHub의 수동 실행과 `production` 환경 승인이 담당한다. 고정 release에 개발 코드를 계속 병합하지 않으므로 `main → release` 배포 PR과 `release → main` 이력 동기화 PR은 필요 없어지고, 제품 변경과 버전 준비 PR은 계속 main을 대상으로 한다.
 
-**현재 운영은 아직 고정 `release` 방식이다.** 2026-10-01 확인 기준 제품 버전은 `0.0.4`이며, Openship의 API 자동 배포와 Cloudflare의 웹·relay 배포가 release에 연결되어 있다. GitHub 승인형을 선택했고 [배포 작업 파일](../.github/workflows/deploy.yml)을 준비했다. production 승인 환경은 원격에 설정했지만 작업의 운영 실행·전용 자격 증명·기존 자동 배포 중지는 아직 준비 단계다. 아래 절차는 전환 후 목표이며, 실제 운영 전환 결과는 검증 후 별도로 기록한다.
+**2026-10-01 전환 준비 기록:** 기존 운영 제품 버전은 `0.0.4`이며, Openship의 API 자동 배포와 Cloudflare의 웹·relay 배포는 고정 release에 연결되어 있었다. GitHub 승인형을 선택하고 [배포 작업 파일](../.github/workflows/deploy.yml), production 승인 환경, 전용 SSH·프로젝트 한정 토큰을 준비했다. 로컬 CLI의 읽기 조회를 검증했으며 GitHub runner 접속·실제 배포·기존 자동 배포 중지는 후속 전환 단계다. 실제 전환 결과와 최초 배포 실행은 [전환 PR #16](https://github.com/mabyko/EnvHandoff/pull/16)에 기록한다.
 
 ## 단계별 전환
 
@@ -25,7 +25,7 @@
 | `release/vX.Y.Z` | 전체 검증을 통과한 main SHA를 보존하는 스냅샷 | 생성 자체로는 아니요 |
 | 서명 태그 `vX.Y.Z` | 성공을 확인한 실제 배포 SHA의 기록 | 태그 자체로는 아니요 |
 
-main의 PR·필수 CI·최신 베이스 요구는 유지한다. 버전 브랜치는 생성 이후 커밋 추가·병합·강제 push를 하지 않는다. 수정은 main 대상 PR과 다음 버전 브랜치로 준비한다. [버전 보호 규칙](../.github/rulesets/versioned-releases.json)은 최초 생성에도 GitHub Actions의 필수 검사 성공을 요구하고 이후 업데이트·삭제·강제 push를 막는다. 브랜치 이름만으로 이런 보호가 적용되지는 않으므로 원격 규칙 적용 결과를 확인한다. [GitHub 규칙](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets)
+main의 PR·필수 CI·최신 베이스 요구는 유지한다. 버전 브랜치는 생성 이후 커밋 추가·병합·강제 push를 하지 않는다. 수정은 main 대상 PR과 다음 버전 브랜치로 준비한다. [버전 보호 규칙](../.github/rulesets/versioned-releases.json)은 최초 생성에도 GitHub Actions의 필수 검사 성공을 요구하고 이후 업데이트·삭제·강제 push를 막는다. 2026-10-01 원격 `release/*` 규칙을 활성화하고 우회 권한 없음·생성 검사 강제·이후 변경 제한을 API 응답으로 확인했다. 기존 고정 release에는 영향을 주지 않는다. [GitHub 규칙](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets)
 
 ## 전환 후 배포 흐름
 
@@ -73,6 +73,8 @@ API 정상 상태를 확인한 뒤 웹을 시작한다. 기존 서비스의 독�
 ## 기존 자동 배포와의 전환
 
 선택한 방식에서는 배포마다 두 서비스의 소스 브랜치를 수동 전환하지 않는다. 승인된 작업이 Openship에 정확한 커밋의 API 배포를 요청하고, 같은 SHA에서 빌드한 웹·relay를 Wrangler로 배포한다. 설치된 Openship 버전의 커밋 지정 기능과 실행기의 관리 API 접속·인증은 운영 전환 전에 검증한다.
+
+프로젝트 한정 토큰은 production 환경에 보관했다. 전용 SSH와 고정 버전 CLI로 대상 프로젝트·서비스·배포의 읽기 조회를 검증했고, 범위를 벗어난 관리 조회는 거부됨을 확인했다. 이 결과는 GitHub runner의 실제 배포 성공을 대신하지 않는다.
 
 작업은 기존 PostgreSQL과 영속 스택을 유지하고 API 서비스만 배포한다. 현재 정상 API 배포 SHA와 후보 사이에 `compose.production.yaml` 또는 `apps/api/sql` 변경이 있으면 자동 배포를 중단한다. DB·Compose 변경은 별도로 검토한 적용·호환성·복구 절차를 준비해야 하며, 실패한 검사를 우회하거나 운영 데이터를 초기화하지 않는다.
 
