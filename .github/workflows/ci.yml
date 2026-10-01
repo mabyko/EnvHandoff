@@ -2,7 +2,9 @@ name: CI
 
 on:
   pull_request:
-    branches: [main, release]
+    branches: [main, release, 'release/**']
+  push:
+    branches: [main, 'release/**']
   workflow_dispatch:
 
 permissions:
@@ -17,6 +19,20 @@ jobs:
     name: lint and typecheck
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: envhandoff
+          POSTGRES_PASSWORD: local-development-only
+          POSTGRES_DB: envhandoff_test
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U envhandoff -d envhandoff_test"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -27,4 +43,4 @@ jobs:
           package-manager-cache: false
       - run: npm install --global pnpm@12.3.4
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec turbo run lint typecheck
+      - run: pnpm check
