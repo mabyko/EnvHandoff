@@ -9,5 +9,13 @@
   <body>
     <!-- Browser regressions mount their own screens and mock requests here. -->
     <div id="root"></div>
+    <script type="module">
+      const preview = new URLSearchParams(location.search).get('preview')
+      if (preview === 'team') {
+        document.documentElement.dataset.theme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+        const { mountBetaQA } = await import('./pro-beta.browser.tsx')
+        await mountBetaQA(false, true)
+      }
+    </script>
   </body>
 </html>

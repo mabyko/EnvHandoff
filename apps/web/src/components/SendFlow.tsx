@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowLeft, ArrowRight, Download, File, FilePlus2, LockKeyhole, Plus, Radio, Trash2 } from 'lucide-react'
+import { ArrowRight, Download, File, FilePlus2, Plus, Radio, Trash2 } from 'lucide-react'
 import { createBundle, explainError, LIMITS, validateFiles } from '../lib/bundle.ts'
 import type { SealedBundle, SourceFile } from '../lib/bundle.ts'
 import { downloadFile, formatSize } from '../lib/files.ts'
@@ -63,7 +63,7 @@ export function SendFlow({ onHome }: { onHome: () => void }) {
     setStep(target)
   }
   const addFiles = (incoming: FileList | File[] | null) => {
-    if (!incoming?.length) return false
+    if (busy || !incoming?.length) return false
     if (files.length + incoming.length > LIMITS.files) {
       setError('최대 100개까지 추가할 수 있어요.')
       return false
@@ -130,7 +130,7 @@ export function SendFlow({ onHome }: { onHome: () => void }) {
     try {
       validateFiles(selected.map(({ path, file }) => ({ path, size: file.size })))
       setError('')
-      setStep(1)
+      void seal()
     } catch (reason) {
       setError(explainError(reason))
     }
@@ -140,10 +140,10 @@ export function SendFlow({ onHome }: { onHome: () => void }) {
     setBusy(true)
     setError('')
     try {
-      const result = sealed ?? (await createBundle(selected, project, environment))
+      const result = sealed ?? (await createBundle(selected, project.trim() || '설정 공유', environment.trim() || 'development'))
       if (operation !== epoch.current) return
       setSealed(result)
-      setStep(2)
+      setStep(1)
     } catch (reason) {
       if (operation === epoch.current) setError(explainError(reason))
     } finally {
@@ -154,7 +154,7 @@ export function SendFlow({ onHome }: { onHome: () => void }) {
   return (
     <>
       <Steps
-        labels={['보낼 파일', '공유 방식', '전달하기']}
+        labels={['파일 선택', '전달하기']}
         current={step}
         onBack={busy ? undefined : back}
       />
@@ -165,347 +165,320 @@ export function SendFlow({ onHome }: { onHome: () => void }) {
             check()
           }}
         >
-          <Heading title="어떤 파일을 보낼까요?">
-            필요한 설정 파일을 고르고, 받을 사람이 둘 경로를 확인해주세요.
+          <Heading title="보낼 파일을 골라주세요">
+            .env나 개발 설정 파일을 선택하면, 이 브라우저에서 암호화해요.
           </Heading>
-          <div className="fields two-columns">
-            <div className="field">
-              <label htmlFor="project">프로젝트 표시명</label>
-              <input
-                id="project"
-                value={project}
-                onChange={(event) => {
-                  edit()
-                  setProject(event.target.value)
-                }}
-                placeholder="예: my-project"
-                required
-                maxLength={80}
-                autoComplete="off"
-              />
-              <p className="help">받는 사람이 알아볼 수 있는 이름</p>
-            </div>
-            <div className="field">
-              <label htmlFor="environment">환경 이름</label>
-              <input
-                id="environment"
-                value={environment}
-                onChange={(event) => {
-                  edit()
-                  setEnvironment(event.target.value)
-                }}
-                required
-                maxLength={48}
-                autoComplete="off"
-              />
-              <p className="help">예: development, staging</p>
-            </div>
-          </div>
-          <label
-            className={`file-picker ${files.length ? 'compact' : ''} ${dragging ? 'dragging' : ''}`}
-            onDragOver={(event) => {
-              if (!event.dataTransfer.types.includes('Files')) return
-              event.preventDefault()
-              event.stopPropagation()
-              event.dataTransfer.dropEffect = 'copy'
-              setDragging(true)
-            }}
-            onDragLeave={(event) => {
-              if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false)
-            }}
-            onDrop={(event) => {
-              event.preventDefault()
-              event.stopPropagation()
-              setDragging(false)
-              if (Array.from(event.dataTransfer.items).some((item) => item.webkitGetAsEntry?.()?.isDirectory)) {
-                setError('폴더 대신 공유할 파일을 선택해서 끌어다 놓아주세요.')
-                return
-              }
-              addFiles(event.dataTransfer.files)
-            }}
-          >
-            <FilePlus2 aria-hidden="true" />
-            <strong>{dragging ? '여기에 파일을 놓아주세요' : '파일을 끌어다 놓거나 눌러서 선택'}</strong>
-            <span>파일당 1 MiB · 전체 10 MiB · 최대 100개</span>
-            <input
-              type="file"
-              multiple
-              aria-label="보낼 파일 선택"
-              onChange={(event) => {
-                addFiles(event.target.files)
-                event.target.value = ''
+          <fieldset className="plain-fieldset" disabled={busy}>
+            <label
+              className={`file-picker ${files.length ? 'compact' : ''} ${dragging ? 'dragging' : ''}`}
+              onDragOver={(event) => {
+                if (!event.dataTransfer.types.includes('Files')) return
+                event.preventDefault()
+                event.stopPropagation()
+                event.dataTransfer.dropEffect = 'copy'
+                setDragging(true)
               }}
-            />
-          </label>
-          <details className="env-editor" ref={envEditor}>
-            <summary>환경변수 직접 입력</summary>
-            <p className="help" id="env-help">
-              파일이 없어도 키와 값을 입력해 공유할 수 있어요. 값은 따옴표로 감싸지 말고 그대로 입력해주세요.
-            </p>
-            <div className="env-rows">
-              {envRows.map((row, index) => (
-                <div className="env-row" key={row.id}>
-                  <div className="field">
-                    <label htmlFor={`env-key-${row.id}`}>키 <span className="sr-only">{index + 1}</span></label>
-                    <input
-                      id={`env-key-${row.id}`}
-                      className="mono"
-                      value={row.key}
-                      placeholder="API_KEY"
-                      autoComplete="off"
-                      autoCapitalize="none"
-                      spellCheck={false}
-                      onChange={(event) => {
-                        editEnv()
-                        setEnvRows(envRows.map((item) => item.id === row.id ? { ...item, key: event.target.value } : item))
-                      }}
-                    />
-                  </div>
-                  <div className="field">
-                    <label htmlFor={`env-value-${row.id}`}>값 <span className="sr-only">{index + 1}</span></label>
-                    <textarea
-                      id={`env-value-${row.id}`}
-                      className="mono"
-                      value={row.value}
-                      rows={2}
-                      placeholder="값 (빈 값도 가능)"
-                      aria-describedby="env-help"
-                      autoComplete="off"
-                      autoCapitalize="none"
-                      spellCheck={false}
-                      onChange={(event) => {
-                        editEnv()
-                        setEnvRows(envRows.map((item) => item.id === row.id ? { ...item, value: event.target.value } : item))
-                      }}
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    className="icon-button"
-                    aria-label={`환경변수 ${index + 1} 삭제`}
-                    onClick={() => {
-                      editEnv()
-                      setEnvRows(envRows.length === 1
-                        ? [{ id: row.id, key: '', value: '' }]
-                        : envRows.filter((item) => item.id !== row.id))
-                      const adjacent = envRows[index + 1] ?? envRows[index - 1] ?? row
-                      document.getElementById(`env-key-${adjacent.id}`)?.focus()
-                    }}
-                  >
-                    <Trash2 aria-hidden="true" />
-                  </button>
-                </div>
-              ))}
-            </div>
-            {envError && <Notice error>{envError}</Notice>}
-            <div className="env-actions">
-              <button
-                type="button"
-                className="button"
-                onClick={() => {
-                  editEnv()
-                  setEnvRows([...envRows, { id: nextId.current++, key: '', value: '' }])
+              onDragLeave={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false)
+              }}
+              onDrop={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                setDragging(false)
+                if (Array.from(event.dataTransfer.items).some((item) => item.webkitGetAsEntry?.()?.isDirectory)) {
+                  setError('폴더 대신 공유할 파일을 선택해서 끌어다 놓아주세요.')
+                  return
+                }
+                addFiles(event.dataTransfer.files)
+              }}
+            >
+              <FilePlus2 aria-hidden="true" />
+              <strong>{dragging ? '여기에 파일을 놓아주세요' : '파일을 끌어다 놓거나 눌러서 선택'}</strong>
+              <span>파일당 1 MiB · 전체 10 MiB · 최대 100개</span>
+              <input
+                type="file"
+                multiple
+                aria-label="보낼 파일 선택"
+                onChange={(event) => {
+                  addFiles(event.target.files)
+                  event.target.value = ''
                 }}
-              >
-                <Plus aria-hidden="true" />변수 추가
-              </button>
-              <button type="button" className="button" onClick={addEnv}>.env 파일로 추가</button>
-            </div>
-            <p className="help" role="status">{envAdded ? '.env 파일을 아래 목록에 추가했어요. 공유 경로를 확인해주세요.' : ''}</p>
-          </details>
-          {files.length > 0 && (
-            <section className="file-list" aria-label="보낼 파일 목록">
-              <div className="file-list-header">
-                <label className="check-label">
-                  <input
-                    type="checkbox"
-                    checked={selected.length === files.length}
-                    onChange={(event) => {
-                      edit()
-                      setFiles(files.map((item) => ({ ...item, selected: event.target.checked })))
-                    }}
-                  />
-                  전체 선택
-                </label>
-                <span>
-                  {selected.length}개 · {formatSize(total)}
-                </span>
-              </div>
-              {files.map((item) => (
-                <div className="picked-file" key={item.id}>
-                  <label className="check-label file-select">
+              />
+            </label>
+            {files.length > 0 && (
+              <section className="file-list" aria-label="보낼 파일 목록">
+                <div className="file-list-header">
+                  <label className="check-label">
                     <input
                       type="checkbox"
-                      checked={item.selected}
-                      aria-label={`${item.file.name} 선택`}
+                      checked={selected.length === files.length}
                       onChange={(event) => {
                         edit()
-                        setFiles(
-                          files.map((file) =>
-                            file.id === item.id ? { ...file, selected: event.target.checked } : file,
-                          ),
-                        )
+                        setFiles(files.map((item) => ({ ...item, selected: event.target.checked })))
                       }}
                     />
-                    <File aria-hidden="true" />
+                    전체 선택
                   </label>
-                  <div className="file-details">
-                    <div className="file-name">
-                      <span className="mono">{item.file.name}</span>
-                      <span>{formatSize(item.file.size)}</span>
-                    </div>
-                    <label className="help" htmlFor={`path-${item.id}`}>
-                      {item.file.name}의 Git 저장소 루트 기준 배치 경로
+                  <span>
+                    {selected.length}개 · {formatSize(total)}
+                  </span>
+                </div>
+                {files.map((item) => (
+                  <div className="picked-file" key={item.id}>
+                    <label className="check-label file-select">
+                      <input
+                        type="checkbox"
+                        checked={item.selected}
+                        aria-label={`${item.file.name} 선택`}
+                        onChange={(event) => {
+                          edit()
+                          setFiles(
+                            files.map((file) =>
+                              file.id === item.id ? { ...file, selected: event.target.checked } : file,
+                            ),
+                          )
+                        }}
+                      />
+                      <File aria-hidden="true" />
                     </label>
-                    <input
-                      id={`path-${item.id}`}
-                      className="mono path-input"
-                      value={item.path}
-                      onChange={(event) => {
+                    <div className="file-details">
+                      <div className="file-name">
+                        <span className="mono">{item.file.name}</span>
+                        <span>{formatSize(item.file.size)}</span>
+                      </div>
+                      <label className="help" htmlFor={`path-${item.id}`}>
+                        {item.file.name}의 Git 저장소 루트 기준 배치 경로
+                      </label>
+                      <input
+                        id={`path-${item.id}`}
+                        className="mono path-input"
+                        value={item.path}
+                        onChange={(event) => {
+                          edit()
+                          setFiles(
+                            files.map((file) =>
+                              file.id === item.id ? { ...file, path: event.target.value } : file,
+                            ),
+                          )
+                        }}
+                        autoComplete="off"
+                        spellCheck={false}
+                      />
+                      {/^\.env(?:\..+)?$/.test(item.file.name) && (
+                        <button type="button" className="text-button" disabled={envEditLoading !== null} onClick={() => void openEnvEdit(item)}>
+                          {envEditLoading === item.id ? '읽는 중…' : '기존 .env 변수 편집'}
+                        </button>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      className="icon-button"
+                      aria-label={`${item.file.name} 제거`}
+                      onClick={() => {
                         edit()
-                        setFiles(
-                          files.map((file) =>
-                            file.id === item.id ? { ...file, path: event.target.value } : file,
-                          ),
-                        )
+                        setFiles(files.filter((file) => file.id !== item.id))
                       }}
-                      autoComplete="off"
-                      spellCheck={false}
-                    />
-                    {/^\.env(?:\..+)?$/.test(item.file.name) && (
-                      <button type="button" className="text-button" disabled={envEditLoading !== null} onClick={() => void openEnvEdit(item)}>
-                        {envEditLoading === item.id ? '읽는 중…' : '기존 .env 변수 편집'}
-                      </button>
+                    >
+                      <Trash2 />
+                    </button>
+                  </div>
+                ))}
+                {envDraft && (
+                  <div className="preview env-file-editor">
+                    <h2>{files.find(({ id }) => id === envDraft.id)?.file.name} 변수 편집</h2>
+                    <p className="help">원본의 주석·줄바꿈·변경하지 않은 값은 유지해요. 모호한 구문은 파일 전체를 다시 올려주세요.</p>
+                    <div className="env-rows">
+                      {envDraft.source.entries.map((entry, index) => (
+                        <div className="fields two-columns" key={entry.key}>
+                          <div className="field"><label htmlFor={`edit-key-${index}`}>변수</label><input id={`edit-key-${index}`} className="mono" value={entry.key} readOnly /></div>
+                          <div className="field"><label htmlFor={`edit-value-${index}`}>{entry.key} 값</label><textarea id={`edit-value-${index}`} className="mono" rows={2} value={envDraft.values[index]} autoComplete="off" autoCapitalize="none" spellCheck={false} onChange={(event) => setEnvDraft({ ...envDraft, values: envDraft.values.map((value, i) => i === index ? event.target.value : value), preview: null, error: '' })} /></div>
+                        </div>
+                      ))}
+                    </div>
+                    {envDraft.error && <Notice error>{envDraft.error}</Notice>}
+                    <div className="env-actions">
+                      <button type="button" className="button" onClick={() => {
+                        try { setEnvDraft({ ...envDraft, preview: previewEnvEdit(envDraft.source, envDraft.values), error: '' }) }
+                        catch (reason) { setEnvDraft({ ...envDraft, preview: null, error: explainError(reason) }) }
+                      }}>변경 미리보기</button>
+                      <button type="button" className="button" onClick={() => setEnvDraft(null)}>취소</button>
+                    </div>
+                    {envDraft.preview && (
+                      <div className="preview">
+                        <p>변경된 줄</p>
+                        <pre tabIndex={0} aria-label="변경 전후 줄">{envDraft.source.entries.flatMap((entry, index) => envDraft.values[index] === entry.value ? [] : [`- ${entry.key}=${entry.quote ? `${entry.quote}${entry.value}${entry.quote}` : entry.value}`, `+ ${entry.key}=${entry.quote ? `${entry.quote}${envDraft.values[index]}${entry.quote}` : envDraft.values[index]}`]).join('\n')}</pre>
+                        <p>결과 파일</p>
+                        <pre tabIndex={0} aria-label="수정된 .env 파일 내용">{envDraft.preview.text.slice(0, 16384)}</pre>
+                        {envDraft.preview.text.length > 16384 && <p className="help">미리보기는 앞의 16,384자만 표시해요. 공유 파일에는 전체 내용이 들어가요.</p>}
+                        <button type="button" className="button" onClick={saveEnvEdit}>변경 적용</button>
+                      </div>
                     )}
                   </div>
-                  <button
-                    type="button"
-                    className="icon-button"
-                    aria-label={`${item.file.name} 제거`}
-                    onClick={() => {
+                )}
+                <p className="help" role="status">{envEditNotice}</p>
+              </section>
+            )}
+            <details className="share-options">
+              <summary>공유 설정 <span>이름 · 환경 · 전달 방식</span></summary>
+              <div className="fields two-columns">
+                <div className="field">
+                  <label htmlFor="project">프로젝트 표시명</label>
+                  <input
+                    id="project"
+                    value={project}
+                    onChange={(event) => {
                       edit()
-                      setFiles(files.filter((file) => file.id !== item.id))
+                      setProject(event.target.value)
                     }}
-                  >
-                    <Trash2 />
-                  </button>
+                    placeholder="설정 공유 (선택 입력)"
+                    maxLength={80}
+                    autoComplete="off"
+                  />
+                  <p className="help">비워두면 ‘설정 공유’로 표시해요.</p>
                 </div>
-              ))}
-              {envDraft && (
-                <div className="preview env-file-editor">
-                  <h2>{files.find(({ id }) => id === envDraft.id)?.file.name} 변수 편집</h2>
-                  <p className="help">원본의 주석·줄바꿈·변경하지 않은 값은 유지해요. 모호한 구문은 파일 전체를 다시 올려주세요.</p>
-                  <div className="env-rows">
-                    {envDraft.source.entries.map((entry, index) => (
-                      <div className="fields two-columns" key={entry.key}>
-                        <div className="field"><label htmlFor={`edit-key-${index}`}>변수</label><input id={`edit-key-${index}`} className="mono" value={entry.key} readOnly /></div>
-                        <div className="field"><label htmlFor={`edit-value-${index}`}>{entry.key} 값</label><textarea id={`edit-value-${index}`} className="mono" rows={2} value={envDraft.values[index]} autoComplete="off" autoCapitalize="none" spellCheck={false} onChange={(event) => setEnvDraft({ ...envDraft, values: envDraft.values.map((value, i) => i === index ? event.target.value : value), preview: null, error: '' })} /></div>
-                      </div>
-                    ))}
-                  </div>
-                  {envDraft.error && <Notice error>{envDraft.error}</Notice>}
-                  <div className="env-actions">
-                    <button type="button" className="button" onClick={() => {
-                      try { setEnvDraft({ ...envDraft, preview: previewEnvEdit(envDraft.source, envDraft.values), error: '' }) }
-                      catch (reason) { setEnvDraft({ ...envDraft, preview: null, error: explainError(reason) }) }
-                    }}>변경 미리보기</button>
-                    <button type="button" className="button" onClick={() => setEnvDraft(null)}>취소</button>
-                  </div>
-                  {envDraft.preview && (
-                    <div className="preview">
-                      <p>변경된 줄</p>
-                      <pre tabIndex={0} aria-label="변경 전후 줄">{envDraft.source.entries.flatMap((entry, index) => envDraft.values[index] === entry.value ? [] : [`- ${entry.key}=${entry.quote ? `${entry.quote}${entry.value}${entry.quote}` : entry.value}`, `+ ${entry.key}=${entry.quote ? `${entry.quote}${envDraft.values[index]}${entry.quote}` : envDraft.values[index]}`]).join('\n')}</pre>
-                      <p>결과 파일</p>
-                      <pre tabIndex={0} aria-label="수정된 .env 파일 내용">{envDraft.preview.text.slice(0, 16384)}</pre>
-                      {envDraft.preview.text.length > 16384 && <p className="help">미리보기는 앞의 16,384자만 표시해요. 공유 파일에는 전체 내용이 들어가요.</p>}
-                      <button type="button" className="button" onClick={saveEnvEdit}>변경 적용</button>
-                    </div>
-                  )}
+                <div className="field">
+                  <label htmlFor="environment">환경 이름</label>
+                  <input
+                    id="environment"
+                    value={environment}
+                    onChange={(event) => {
+                      edit()
+                      setEnvironment(event.target.value)
+                    }}
+                    maxLength={48}
+                    autoComplete="off"
+                  />
+                  <p className="help">예: development, staging</p>
                 </div>
-              )}
-              <p className="help" role="status">{envEditNotice}</p>
-            </section>
-          )}
-          <p className="help spaced">
-            배치 경로는 보내는 프로젝트의 Git 저장소 루트 기준 상대 경로예요. 예를 들어 저장소의{' '}
-            <code>config/.env</code> 파일은 <code>config/.env</code>로 적어주세요. 브라우저는 Git 루트를 자동으로 찾지 않아요.
-          </p>
-          {error && <Notice error>{error}</Notice>}
-          <div className="actions">
-            <span className="muted">선택한 파일만 공유해요.</span>
-            <button className="button primary" type="submit" disabled={!selected.length}>
-              다음
-              <ArrowRight aria-hidden="true" />
-            </button>
-          </div>
-        </form>
-      )}
-      {step === 1 && (
-        <form
-          onSubmit={(event) => {
-            event.preventDefault()
-            void seal()
-          }}
-        >
-          <Heading title="어떻게 전달할까요?">파일과 공유 코드를 나눠서 전달해요.</Heading>
-          <div className="summary">
-            <File aria-hidden="true" />
-            <div>
-              <strong>{project}</strong>
-              <p>
-                {environment} · {selected.length}개 파일 · {formatSize(total)}
+              </div>
+              <fieldset className="method-options" disabled={busy}>
+                <legend className="sr-only">공유 방식</legend>
+                <label className={`method-option ${method === 'file' ? 'selected' : ''}`}>
+                  <input
+                    type="radio"
+                    name="method"
+                    value="file"
+                    checked={method === 'file'}
+                    onChange={() => setMethod('file')}
+                  />
+                  <File aria-hidden="true" />
+                  <span>
+                    <strong>공유 파일로 전달 <span className="tag">기본</span></strong>
+                    <small>암호화 파일을 내려받아 AirDrop이나 메신저로 보내요.</small>
+                    <span className="tag">서로 접속 시간이 달라도 괜찮아요</span>
+                  </span>
+                </label>
+                <label className={`method-option ${method === 'live' ? 'selected' : ''}`}>
+                  <input
+                    type="radio"
+                    name="method"
+                    value="live"
+                    checked={method === 'live'}
+                    onChange={() => setMethod('live')}
+                  />
+                  <Radio aria-hidden="true" />
+                  <span>
+                    <strong>실시간으로 전달</strong>
+                    <small>연결 링크를 보내고, 상대를 확인한 뒤 바로 전달해요.</small>
+                    <span className="tag">두 사람 모두 이 화면을 열어두세요</span>
+                  </span>
+                </label>
+              </fieldset>
+            </details>
+            <details className="env-editor" ref={envEditor}>
+              <summary>환경변수 직접 입력</summary>
+              <p className="help" id="env-help">
+                파일이 없어도 키와 값을 입력해 공유할 수 있어요. 값은 따옴표로 감싸지 말고 그대로 입력해주세요.
               </p>
+              <div className="env-rows">
+                {envRows.map((row, index) => (
+                  <div className="env-row" key={row.id}>
+                    <div className="field">
+                      <label htmlFor={`env-key-${row.id}`}>키 <span className="sr-only">{index + 1}</span></label>
+                      <input
+                        id={`env-key-${row.id}`}
+                        className="mono"
+                        value={row.key}
+                        placeholder="API_KEY"
+                        autoComplete="off"
+                        autoCapitalize="none"
+                        spellCheck={false}
+                        onChange={(event) => {
+                          editEnv()
+                          setEnvRows(envRows.map((item) => item.id === row.id ? { ...item, key: event.target.value } : item))
+                        }}
+                      />
+                    </div>
+                    <div className="field">
+                      <label htmlFor={`env-value-${row.id}`}>값 <span className="sr-only">{index + 1}</span></label>
+                      <textarea
+                        id={`env-value-${row.id}`}
+                        className="mono"
+                        value={row.value}
+                        rows={2}
+                        placeholder="값 (빈 값도 가능)"
+                        aria-describedby="env-help"
+                        autoComplete="off"
+                        autoCapitalize="none"
+                        spellCheck={false}
+                        onChange={(event) => {
+                          editEnv()
+                          setEnvRows(envRows.map((item) => item.id === row.id ? { ...item, value: event.target.value } : item))
+                        }}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      className="icon-button"
+                      aria-label={`환경변수 ${index + 1} 삭제`}
+                      onClick={() => {
+                        editEnv()
+                        setEnvRows(envRows.length === 1
+                          ? [{ id: row.id, key: '', value: '' }]
+                          : envRows.filter((item) => item.id !== row.id))
+                        const adjacent = envRows[index + 1] ?? envRows[index - 1] ?? row
+                        document.getElementById(`env-key-${adjacent.id}`)?.focus()
+                      }}
+                    >
+                      <Trash2 aria-hidden="true" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              {envError && <Notice error>{envError}</Notice>}
+              <div className="env-actions">
+                <button
+                  type="button"
+                  className="button"
+                  onClick={() => {
+                    editEnv()
+                    setEnvRows([...envRows, { id: nextId.current++, key: '', value: '' }])
+                  }}
+                >
+                  <Plus aria-hidden="true" />변수 추가
+                </button>
+                <button type="button" className="button" onClick={addEnv}>.env 파일로 추가</button>
+              </div>
+              <p className="help" role="status">{envAdded ? '.env 파일을 아래 목록에 추가했어요. 공유 경로를 확인해주세요.' : ''}</p>
+            </details>
+            {files.length > 0 && (
+              <p className="help spaced">
+                배치 경로는 보내는 프로젝트의 Git 저장소 루트 기준 상대 경로예요. 예를 들어 저장소의{' '}
+                <code>config/.env</code> 파일은 <code>config/.env</code>로 적어주세요. 브라우저는 Git 루트를 자동으로 찾지 않아요.
+              </p>
+            )}
+            {error && <Notice error>{error}</Notice>}
+            <div className="actions">
+              <span className="muted">선택한 파일만 공유해요.</span>
+              <button className="button primary" type="submit" disabled={!selected.length || busy}>
+                {busy ? '암호화하는 중…' : method === 'live' ? '실시간 전달 준비' : '공유 파일 만들기'}
+                <ArrowRight aria-hidden="true" />
+              </button>
             </div>
-            <LockKeyhole aria-hidden="true" />
-          </div>
-          <fieldset className="method-options" disabled={busy}>
-            <legend className="sr-only">공유 방식</legend>
-            <label className={`method-option ${method === 'file' ? 'selected' : ''}`}>
-              <input
-                type="radio"
-                name="method"
-                value="file"
-                checked={method === 'file'}
-                onChange={() => setMethod('file')}
-              />
-              <File aria-hidden="true" />
-              <span>
-                <strong>공유 파일로 전달</strong>
-                <small>암호화 파일을 내려받아 AirDrop이나 메신저로 보내요.</small>
-                <span className="tag">서로 접속 시간이 달라도 괜찮아요</span>
-              </span>
-            </label>
-            <label className={`method-option ${method === 'live' ? 'selected' : ''}`}>
-              <input
-                type="radio"
-                name="method"
-                value="live"
-                checked={method === 'live'}
-                onChange={() => setMethod('live')}
-              />
-              <Radio aria-hidden="true" />
-              <span>
-                <strong>실시간으로 전달</strong>
-                <small>연결 링크를 보내고, 상대를 확인한 뒤 바로 전달해요.</small>
-                <span className="tag">두 사람 모두 이 화면을 열어두세요</span>
-              </span>
-            </label>
           </fieldset>
-          <Notice>공유 코드는 파일을 여는 열쇠예요. 파일·연결 링크와 다른 대화 경로로 전달해주세요.</Notice>
-          {error && <Notice error>{error}</Notice>}
-          <div className="actions">
-            <button className="button" type="button" onClick={() => back(0)}>
-              <ArrowLeft aria-hidden="true" />
-              이전
-            </button>
-            <button className="button primary" type="submit" disabled={busy}>
-              {busy ? '암호화하는 중…' : '암호화하고 준비하기'}
-              <LockKeyhole aria-hidden="true" />
-            </button>
-          </div>
         </form>
       )}
-      {step === 2 &&
+      {step === 1 &&
         sealed &&
         (method === 'live' ? (
           <LiveSender sealed={sealed} onFallback={() => setMethod('file')} onHome={onHome} />

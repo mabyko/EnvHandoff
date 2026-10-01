@@ -66,8 +66,10 @@ export function ExternalReceive({ id, token, onHome }: { id?: string; token?: st
           <button type="submit" className="button primary" disabled={!code.trim()}>{busy ? '다운로드·검사 중…' : '파일 열기'}</button>
         </fieldset>
       </form>
-      <p>수신 확인은 파일 검사를 마쳤다는 보고예요. 받는 사람의 신원이나 파일 저장·프로젝트 적용을 증명하지 않아요.</p>
-      <p>코드를 잃었다면 복구할 수 없어요. 발신자가 원본으로 새 공유를 만들어야 해요.</p>
+      <details className="share-options"><summary>수신 확인과 코드 분실 안내</summary>
+        <p>수신 확인은 파일 검사를 마쳤다는 보고예요. 받는 사람의 신원이나 파일 저장·프로젝트 적용을 증명하지 않아요.</p>
+        <p>코드를 잃었다면 복구할 수 없어요. 발신자가 원본으로 새 공유를 만들어야 해요.</p>
+      </details>
     </>}
     {error && <Notice error>{error}</Notice>}{message && <p role="status">{message}</p>}
     {opened && <><OpenedFiles bundle={opened} /><button className="button" type="button" onClick={() => setOpened(null)}>열어둔 파일 닫기</button></>}
