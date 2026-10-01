@@ -41,6 +41,7 @@ export async function mountBetaQA(operator = false, withWorkspaces = false) {
     if (path === '/organizations/invitations/accept') { const joined = {id:crypto.randomUUID(),name:'초대된 워크스페이스',role:'member',active:1}; organizations.push(joined); return Response.json(joined) }
     const org = organizations.find(org => path.startsWith('/organizations/' + org.id))
     if (org && path.endsWith('/requests')) return Response.json({requests:[]})
+    if (org && path.endsWith('/shares')) return Response.json({shares:[]})
     if (org && path.endsWith('/catalog')) return Response.json({role:'owner',teams:[],projects:[]})
     if (org) return Response.json({...org,teams:[],members:[],invitations:[]})
     throw new Error('Unexpected QA request: ' + path)
@@ -149,7 +150,8 @@ export async function verifyWorkspaceNavigation() {
   const ready = () => !host.querySelector('[aria-busy="true"]')
   try {
     check(host.textContent!.includes('베타 코드 없이도'), 'Workspace invitation must explain independent access')
-    check(host.querySelector('#workspace-invite-title') && host.querySelector('#beta-join-title'), 'Both admission paths must be visible')
+    check(host.querySelector('#workspace-invite-title'), 'Workspace invitation is the primary admission path')
+    check(!host.querySelector<HTMLDetailsElement>('.pro-beta-card')?.open, 'Workspace creation stays collapsed for an invited member')
     click('프로젝트'); await until(() => !!host.querySelector('nav a[aria-current="page"]') && ready())
     host.querySelector<HTMLElement>('.pro-switcher summary')!.click()
     const choices = host.querySelectorAll<HTMLAnchorElement>('.pro-switcher-options > a')

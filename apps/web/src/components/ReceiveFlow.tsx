@@ -102,7 +102,7 @@ export function ReceiveFlow({
       <Steps labels={['공유 파일 열기', '파일 다운로드']} current={opened ? 1 : 0} />
       {opened ? (
         <>
-          <Heading title="파일을 열었어요">공유 경로를 확인하고 필요한 원본 파일을 다운로드하세요.</Heading>
+          <Heading title="이제 프로젝트에 넣어주세요">원본 파일을 다운로드하고, 안내된 경로에 직접 배치하면 돼요.</Heading>
           {live && <LiveStatus state={state} receiving />}
           <OpenedFiles bundle={opened} />
           <div className="actions end">
@@ -113,7 +113,7 @@ export function ReceiveFlow({
         </>
       ) : (
         <>
-          <Heading title={live ? '공유 파일을 받고 있어요' : '공유받은 파일을 열어볼까요?'}>
+          <Heading title={live ? '공유 파일을 받고 있어요' : '받은 파일을 열어주세요'}>
             {live
               ? '보낸 사람과 연결을 확인하고, 별도로 받은 코드를 입력해주세요.'
               : 'EnvHandoff 공유 파일과 별도로 받은 공유 코드가 필요해요.'}
@@ -230,7 +230,7 @@ export function OpenedFiles({ bundle }: { bundle: OpenedBundle }) {
                     {preview === file.path ? '내용 숨기기' : '내용 보기'}
                   </button>
                   <button
-                    className="button"
+                    className="button primary"
                     type="button"
                     aria-label={`${file.path} 다운로드`}
                     onClick={() => {

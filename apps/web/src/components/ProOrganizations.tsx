@@ -207,9 +207,9 @@ export function ProOrganizations({ api, userId, csrf, initialToken, route, onNav
           <button type="submit" className="button primary" disabled={preview.kind === 'owner' && !preview.accepted && !workspaceName.trim()}>{busy ? '참여하는 중…' : preview.accepted ? '워크스페이스 열기' : '초대 수락'}</button>
         </form>}
       </fieldset></section>
-      {beta && <section className="pro-join-card pro-beta-card" aria-labelledby="beta-join-title"><div className="pro-join-icon"><KeyRound aria-hidden="true" /></div><span className="pro-badge">베타 참여 코드</span><h3 id="beta-join-title">내 워크스페이스 만들기</h3><p>서비스 운영자가 발급한 코드로 개설 권한을 활성화해요. 워크스페이스 초대 링크와는 달라요.</p>
+      {beta && <details className="pro-join-card pro-beta-card" open={createFirst || beta.active}><summary>직접 팀을 시작하나요?</summary><div className="pro-join-icon"><KeyRound aria-hidden="true" /></div><span className="pro-badge">베타 참여 코드</span><h3 id="beta-join-title">내 워크스페이스 만들기</h3><p>서비스 운영자가 발급한 코드로 개설 권한을 활성화해요. 워크스페이스 초대 링크와는 달라요.</p>
         {beta.active ? <><p className="pro-join-status">개설 권한 활성화됨 · 소유 {beta.owned} / {beta.workspaceLimit}개</p><button className={'button' + (createFirst ? ' primary' : '')} disabled={busy || locked || beta.owned >= beta.workspaceLimit} onClick={openCreate}>{beta.owned >= beta.workspaceLimit ? '소유 한도에 도달했어요' : '워크스페이스 만들기'}</button></> : <><p className="pro-join-status">활성화하면 최대 {beta.workspaceLimit}개 개설 가능</p><a className="button" href={proPath(nav('beta'))} onClick={event => followProLink(event,nav('beta'),onNavigate)}>베타 코드 입력하기</a></>}
-      </section>}
+      </details>}
       </div></section>}
       {!busy && !detail && !['settings','start','beta'].includes(route.page) && <div className="pro-empty"><h3>{route.orgId ? '워크스페이스에 접근할 수 없어요' : '참여 중인 워크스페이스가 없어요'}</h3><p>{route.orgId ? '현재 계정과 참여 권한을 확인하거나 다른 워크스페이스를 선택해주세요.' : '팀 Owner에게 초대를 요청하거나 Pro Beta를 활성화해 내 워크스페이스를 만들어보세요.'}</p>{route.page !== 'start' && <a className="button primary" href={proPath({page:'start'})} onClick={event => followProLink(event, {page:'start'}, onNavigate)}>초대 링크로 참여</a>}</div>}
       {organizations.some((org) => !org.active) && <Notice>참여가 중지된 워크스페이스가 있어요. 운영자에게 문의해주세요.</Notice>}

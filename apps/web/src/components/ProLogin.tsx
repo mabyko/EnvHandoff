@@ -181,7 +181,27 @@ export function ProLogin() {
       {!route ? <div className="pro-entry"><div className="pro-entry-intro"><h2>페이지를 찾을 수 없어요</h2><p className="lead">링크 주소를 확인하거나 Pro 시작 화면으로 돌아가세요.</p></div><a className="button" href="/pro" onClick={event => followProLink(event, { page: 'start' }, navigate)}>Pro 시작으로</a></div> : session ? (
         <ProOrganizations key={'organizations:' + session.user.id + ':' + session.csrf} route={route} onNavigate={navigate} onResolvedOrganization={resolveOrganization} api={api} userId={session.user.id} csrf={session.csrf} initialToken={initialToken} disabled={busy || sessionUnavailable} onAccepted={() => setInitialToken('')} onExpired={expired}
           settings={<ProSecurity key={'security:' + session.user.id + ':' + session.csrf} api={api} userId={session.user.id} csrf={session.csrf} disabled={busy || sessionUnavailable} onExpired={expired} onDeleted={warning => { setError(warning); expired() }} />} />
-      ) : (session !== undefined || sessionUnavailable) && <div className="pro-entry"><p className="pro-entry-kicker"><ShieldCheck aria-hidden="true" />팀을 위한 안전한 파일 전달</p><div className="pro-entry-intro"><h2>필요한 설정 파일을,<br/>필요한 팀원에게.</h2><p className="lead">GitHub로 로그인하고 팀의 워크스페이스에서 시작하세요.</p></div><ul className="pro-entry-benefits"><li>팀원에게 필요한 환경 파일 요청</li><li>승인된 내 브라우저에서 안전하게 열기</li><li>외부에는 링크와 별도 코드로 전달</li></ul><button type="button" className="button primary" disabled={busy} onClick={() => { void act('start') }}>{authAction === 'start' ? 'GitHub로 이동 중…' : 'GitHub로 로그인'}<ArrowRight aria-hidden="true" /></button><p className="help pro-entry-footer">무료 초대 베타예요. 로그인 후 베타 참여 코드를 입력하거나 워크스페이스 초대를 수락할 수 있어요.</p></div>}
+      ) : (session !== undefined || sessionUnavailable) && (
+        <div className="pro-entry pro-entry-grid">
+          <div>
+            <p className="pro-entry-kicker"><ShieldCheck aria-hidden="true" />팀을 위한 설정 파일 공유</p>
+            <div className="pro-entry-intro">
+              <h2>팀의 설정,<br />필요할 때 요청하세요.</h2>
+              <p className="lead">매번 누구에게 물어볼지 찾지 않아도 돼요. 팀의 프로젝트에서 필요한 설정을 요청하고 받아보세요.</p>
+            </div>
+            <button type="button" className="button primary" disabled={busy} onClick={() => { void act('start') }}>
+              {authAction === 'start' ? 'GitHub로 이동 중…' : 'GitHub로 로그인'}<ArrowRight aria-hidden="true" />
+            </button>
+            <p className="help pro-entry-footer">무료 초대 베타예요. 팀의 초대 링크로 참여하거나, 베타 코드로 내 워크스페이스를 만들 수 있어요.</p>
+          </div>
+          <ol className="pro-entry-steps" aria-label="팀에서 시작하는 방법">
+            <li><span aria-hidden="true">01</span><div><strong>팀에 참여하기</strong><p>GitHub로 로그인하고 받은 초대를 수락해요.</p></div></li>
+            <li><span aria-hidden="true">02</span><div><strong>필요한 설정 요청하기</strong><p>프로젝트와 환경을 골라 팀원에게 요청해요.</p></div></li>
+            <li><span aria-hidden="true">03</span><div><strong>받아서 프로젝트에 넣기</strong><p>승인된 브라우저에서 열고 원본을 다운로드해요.</p></div></li>
+          </ol>
+        </div>
+      )}
+
     </section>
   )
 }
