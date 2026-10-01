@@ -1,8 +1,8 @@
 # 버전별 스냅샷과 GitHub 승인형 배포
 
-전환 목표는 **검증한 main 커밋을 `release/vX.Y.Z`에 보존하고, GitHub Actions에서 승인한 뒤 배포하는 방식**이다. 버전별 브랜치는 배포할 SHA를 고정하는 스냅샷이며, 배포 시작은 GitHub의 수동 실행과 `production` 환경 승인이 담당한다. 고정 release에 개발 코드를 계속 병합하지 않으므로 `main → release` 배포 PR과 `release → main` 이력 동기화 PR은 필요 없어지고, 제품 변경과 버전 준비 PR은 계속 main을 대상으로 한다.
+운영 배포는 **검증한 main 커밋을 `release/vX.Y.Z`에 보존하고, GitHub Actions에서 승인한 뒤 배포하는 방식**이다. 버전별 브랜치는 배포할 SHA를 고정하는 스냅샷이며, 배포 시작은 GitHub의 수동 실행과 `production` 환경 승인이 담당한다. 고정 release에 개발 코드를 계속 병합하지 않으므로 `main → release` 배포 PR과 `release → main` 이력 동기화 PR은 필요 없어지고, 제품 변경과 버전 준비 PR은 계속 main을 대상으로 한다.
 
-**2026-10-01 전환 준비 기록:** 기존 운영 제품 버전은 `0.0.4`이며, Openship의 API 자동 배포와 Cloudflare의 웹·relay 배포는 고정 release에 연결되어 있었다. GitHub 승인형을 선택하고 [배포 작업 파일](../.github/workflows/deploy.yml), production 승인 환경, 전용 SSH·프로젝트 한정 토큰을 준비했다. 로컬 CLI의 읽기 조회를 검증했으며 GitHub runner 접속·실제 배포·기존 자동 배포 중지는 후속 전환 단계다. 실제 전환 결과와 최초 배포 실행은 [전환 PR #16](https://github.com/mabyko/EnvHandoff/pull/16)에 기록한다.
+**2026-10-01 전환 완료:** 고정 release를 보존 후 정리하고 두 서비스의 독립 자동 배포를 중지했다. `release/v0.0.5` 스냅샷의 SHA·전체 CI·버전 검증과 production 승인 후 같은 SHA의 API·웹·relay 배포에 성공했다. Worker 메타데이터·공개 웹 assets·relay health·API 응답을 확인했으며 기존 PostgreSQL과 영속 스택을 유지했다. 실제 배포 SHA에 서명한 `v0.0.5` 태그를 검증하고 push했다. 성공 실행은 [Actions attempt 3](https://github.com/mabyko/EnvHandoff/actions/runs/36812232358/attempts/3)에, 전환과 진단 기록은 [PR #16](https://github.com/mabyko/EnvHandoff/pull/16)에 남긴다.
 
 ## 단계별 전환
 
@@ -31,7 +31,7 @@ main의 PR·필수 CI·최신 베이스 요구는 유지한다. 버전 브랜치
 
 배포 워크플로와 검증 코드도 선택한 스냅샷에서 실행된다. 따라서 신뢰하는 운영자가 검증된 main SHA로 스냅샷을 생성하는 것을 전제로 하며, 협업자의 쓰기 권한을 같은 신뢰로 간주하지 않는다.
 
-아래 Mermaid는 선택한 목표다. 원격 설정과 최초 운영 실행을 검증하기 전에는 적용 완료로 간주하지 않는다.
+아래 Mermaid는 v0.0.5의 최초 성공 배포에서 확인한 운영 흐름이다.
 
 ```mermaid
 flowchart TD
@@ -70,17 +70,17 @@ API 정상 상태를 확인한 뒤 웹을 시작한다. 기존 서비스의 독�
 - 배포용 SSH 키·API 토큰·Cloudflare 토큰과 접속 설정은 `production` 환경의 secrets/variables에 보관한다. 비밀값을 사용하는 작업에 환경을 연결해 승인 이후에만 접근하게 한다. 승인 전 검증에는 배포 secrets를 제공하지 않는다.
 - 검증과 실제 배포는 동일한 SHA를 사용한다. 실행 결과에는 버전·SHA·상태·배포 결과를 남기되 토큰·키·실제 설정 파일·운영 데이터는 출력하지 않는다.
 
-2026-10-01 원격 production 환경에 승인자·실행자 직접 승인 허용·관리자 우회 금지·`release/v*` 브랜치 조건을 적용하고 응답을 확인했다. 승인 대기와 비밀값 접근 제한이 배포 작업에서 작동하는지는 최초 실행으로 확인해야 한다. [GitHub 환경 보호](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments)
+2026-10-01 원격 production 환경에 승인자·실행자 직접 승인 허용·관리자 우회 금지·`release/v*` 브랜치 조건을 적용하고 응답을 확인했다. 최초 실행에서 승인 전 검증·production 승인 대기·승인 후 runner 접속을 확인했으며 실제 배포 성공은 별도로 확인한다. [GitHub 환경 보호](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments)
 
 ## 기존 자동 배포와의 전환
 
 선택한 방식에서는 배포마다 두 서비스의 소스 브랜치를 수동 전환하지 않는다. 승인된 작업이 Openship에 정확한 커밋의 API 배포를 요청하고, 같은 SHA에서 빌드한 웹·relay를 Wrangler로 배포한다. 설치된 Openship 버전의 커밋 지정 기능과 실행기의 관리 API 접속·인증은 운영 전환 전에 검증한다.
 
-프로젝트 한정 토큰은 production 환경에 보관했다. 전용 SSH와 고정 버전 CLI로 대상 프로젝트·서비스·배포의 읽기 조회를 검증했고, 범위를 벗어난 관리 조회는 거부됨을 확인했다. 이 결과는 GitHub runner의 실제 배포 성공을 대신하지 않는다.
+Openship 토큰에는 **대상 프로젝트의 READ/WRITE와 정확한 GitHub 저장소(`github_repository`, `owner/repo`)의 READ**가 필요하다. 프로젝트·서비스·배포의 읽기 조회만 성공해도 저장소 접근 권한이 없으면 배포 생성은 거부될 수 있다. production secret에 저장하기 전에 대상 프로젝트와 저장소의 읽기 조회를 모두 검증한다. 범위를 모든 저장소·관리 리소스로 넓히지 않는다. 토큰 교체로 권한을 보완할 때는 기존 만료일을 연장하지 않고 새 토큰 검증·secret 교체 후 이전 CI 토큰을 폐기한다.
 
 작업은 기존 PostgreSQL과 영속 스택을 유지하고 API 서비스만 배포한다. 현재 정상 API 배포 SHA와 후보 사이에 `compose.production.yaml` 또는 `apps/api/sql` 변경이 있으면 자동 배포를 중단한다. DB·Compose 변경은 별도로 검토한 적용·호환성·복구 절차를 준비해야 하며, 실패한 검사를 우회하거나 운영 데이터를 초기화하지 않는다.
 
-**Openship Auto Deploy와 Cloudflare Workers Builds의 독립 브랜치 자동 배포는 전환 시 중지한다.** 기존 저장소 push 연결이 살아 있으면 GitHub 승인을 기다리지 않거나 같은 버전을 중복 배포할 수 있다. 설정 중지는 실행 중인 API·DB·Worker를 삭제하는 작업과 구분한다. 기존 Openship 저장소 연결·webhook을 불필요하게 다시 만들지 않는다.
+**Openship Auto Deploy와 Cloudflare Workers Builds의 독립 브랜치 자동 배포는 중지했다.** 기존 저장소 push 연결을 다시 켜면 GitHub 승인을 기다리지 않거나 같은 버전을 중복 배포할 수 있다. 실행 중인 API·DB·Worker는 그대로 유지한다. 기존 Openship 저장소 연결·webhook을 불필요하게 다시 만들지 않는다.
 
 현재 설치된 Openship의 브랜치 값 변경은 즉시 배포·webhook 교체·실행 중 컨테이너 변경을 하지 않는다. Cloudflare는 production branch 하나의 push로 빌드하며 별도의 저장 단계를 사용한다. 저장 직후 빌드 여부는 확인하지 않았다. 이 동작을 새 버전별 배포 승인 기능으로 간주하지 않는다. [Openship 자동 배포](https://openship.io/docs/guides/auto-deploy), [Cloudflare 빌드 브랜치](https://developers.cloudflare.com/workers/ci-cd/builds/build-branches/)
 
@@ -102,7 +102,7 @@ Git에서는 `release`와 `release/v0.0.5`가 공존할 수 없다. 다음 준�
 
 한 단계가 실패하면 이후 배포를 중단하고 실제 상태부터 확인한다.
 
-- **API:** 이전 정상 배포 ID·실제 이미지와 서비스 설정으로 복구한다. DB·영속 볼륨·삭제대장을 초기화하지 않는다.
+- **API:** 이전 정상 배포 ID·실제 이미지와 서비스 설정으로 API 서비스만 복구한다. Openship 0.8.0의 프로젝트 전체 rollback·partial 배포 reject는 DB까지 재배포할 수 있으므로 바로 실행하지 않고 DB 유지 범위를 먼저 확인한다. DB·영속 볼륨·삭제대장을 초기화하지 않는다.
 - **웹·relay:** 이전 정상 Worker 버전으로 복구하고 공개 화면과 `/api/health`를 다시 확인한다.
 - **DB 변경:** 배포 전에 이전 API 이미지가 변경된 스키마에서 실행 가능한지 검토한다. 불가능하면 자동으로 구버전 API를 실행하지 않고 준비한 수정 배포 또는 [데이터 복원 절차](operations.md#과거-백업에서-복원할-때)를 따른다. 코드 복구와 과거 DB 복원은 별개다.
 

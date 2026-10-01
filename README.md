@@ -6,7 +6,7 @@
 
 EnvHandoff encrypts `.env` and other development configuration files for sharing. It bundles the settings a teammate still needs after cloning a repository, preserving each file as it is. The recipient opens the bundle with a separately shared code, extracts the original files, and uses them in their own project.
 
-The web app starts with file sharing and downloads. A planned native desktop app in v4.0 will add comparison, application, and recovery within a project folder. The current version is **0.0.4**, with file sharing and live transfer available in local development. The app interface and design documents are currently in Korean.
+The web app starts with file sharing and downloads. A planned native desktop app in v4.0 will add comparison, application, and recovery within a project folder. The current version is **0.0.5**, with file sharing and live transfer available in local development. The app interface and design documents are currently in Korean.
 
 ## Screenshots
 
