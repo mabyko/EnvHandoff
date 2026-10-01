@@ -1,0 +1,187 @@
+name: Deploy production
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  checks: read
+
+concurrency:
+  group: envhandoff-production
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      sha: ${{ steps.release.outputs.sha }}
+      ref: ${{ steps.release.outputs.ref }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.21.0
+          package-manager-cache: false
+      - run: node .github/scripts/release-gate.mjs --self-test
+      - id: release
+        name: Verify immutable release and full main CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node .github/scripts/release-gate.mjs
+
+  deploy:
+    name: Deploy API then web
+    needs: verify
+    environment: production
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      DEPLOY_SHA: ${{ needs.verify.outputs.sha }}
+      DEPLOY_REF: ${{ needs.verify.outputs.ref }}
+      DEPLOY_VERSION: ${{ needs.verify.outputs.version }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.verify.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.21.0
+          package-manager-cache: false
+      - run: npm install --global pnpm@12.3.4 openship@0.8.0
+      - run: pnpm install --frozen-lockfile
+      - name: Check both deployment targets are configured
+        env:
+          OPENSHIP_PROJECT_ID: ${{ vars.OPENSHIP_PROJECT_ID }}
+          OPENSHIP_API_SERVICE_ID: ${{ vars.OPENSHIP_API_SERVICE_ID }}
+          OPENSHIP_SSH_TARGET: ${{ secrets.OPENSHIP_SSH_TARGET }}
+          OPENSHIP_SSH_PRIVATE_KEY: ${{ secrets.OPENSHIP_SSH_PRIVATE_KEY }}
+          OPENSHIP_SSH_KNOWN_HOSTS: ${{ secrets.OPENSHIP_SSH_KNOWN_HOSTS }}
+          OPENSHIP_TOKEN: ${{ secrets.OPENSHIP_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in OPENSHIP_PROJECT_ID OPENSHIP_API_SERVICE_ID OPENSHIP_SSH_TARGET OPENSHIP_SSH_PRIVATE_KEY OPENSHIP_SSH_KNOWN_HOSTS OPENSHIP_TOKEN CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID; do
+            [[ -n "${!name}" ]] || { echo "::error::Missing $name; no deployment was started"; exit 1; }
+          done
+      - name: Build selected web commit
+        env:
+          VITE_PRO_API_ORIGIN: https://api.envhandoff.mabyko.com
+        run: pnpm --filter @envhandoff/web build
+      - name: Deploy API and verify its commit and health
+        env:
+          OPENSHIP_PROJECT_ID: ${{ vars.OPENSHIP_PROJECT_ID }}
+          OPENSHIP_API_SERVICE_ID: ${{ vars.OPENSHIP_API_SERVICE_ID }}
+          OPENSHIP_SSH_PORT: ${{ vars.OPENSHIP_SSH_PORT }}
+          OPENSHIP_SSH_TARGET: ${{ secrets.OPENSHIP_SSH_TARGET }}
+          OPENSHIP_SSH_PRIVATE_KEY: ${{ secrets.OPENSHIP_SSH_PRIVATE_KEY }}
+          OPENSHIP_SSH_KNOWN_HOSTS: ${{ secrets.OPENSHIP_SSH_KNOWN_HOSTS }}
+          OPENSHIP_TOKEN: ${{ secrets.OPENSHIP_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${OPENSHIP_PROJECT_ID:?Missing OPENSHIP_PROJECT_ID}"
+          : "${OPENSHIP_API_SERVICE_ID:?Missing OPENSHIP_API_SERVICE_ID}"
+          : "${OPENSHIP_SSH_TARGET:?Missing OPENSHIP_SSH_TARGET}"
+          : "${OPENSHIP_SSH_PRIVATE_KEY:?Missing OPENSHIP_SSH_PRIVATE_KEY}"
+          : "${OPENSHIP_SSH_KNOWN_HOSTS:?Missing OPENSHIP_SSH_KNOWN_HOSTS}"
+          : "${OPENSHIP_TOKEN:?Missing OPENSHIP_TOKEN}"
+          [[ "$OPENSHIP_SSH_TARGET" =~ ^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+$ ]] \
+            || { echo '::error::Invalid SSH target'; exit 1; }
+          ssh_port=${OPENSHIP_SSH_PORT:-22}
+          [[ "$ssh_port" =~ ^[1-9][0-9]{0,4}$ && "$ssh_port" -le 65535 ]] \
+            || { echo '::error::Invalid SSH port'; exit 1; }
+          temporary=$(mktemp -d "$RUNNER_TEMP/envhandoff-api.XXXXXX")
+          tunnel_pid=''
+          trap 'if [[ -n "$tunnel_pid" ]]; then kill "$tunnel_pid" 2>/dev/null || true; wait "$tunnel_pid" 2>/dev/null || true; fi; rm -rf "$temporary"' EXIT
+          umask 077
+          printf '%s\n' "$OPENSHIP_SSH_PRIVATE_KEY" > "$temporary/key"
+          printf '%s\n' "$OPENSHIP_SSH_KNOWN_HOSTS" > "$temporary/known_hosts"
+          ssh -F /dev/null -N -i "$temporary/key" -p "$ssh_port" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o "UserKnownHostsFile=$temporary/known_hosts" -o ExitOnForwardFailure=yes \
+            -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 \
+            -L 127.0.0.1:14000:127.0.0.1:4000 "$OPENSHIP_SSH_TARGET" \
+            > "$temporary/ssh.log" 2>&1 &
+          tunnel_pid=$!
+          ready=false
+          for attempt in {1..30}; do
+            kill -0 "$tunnel_pid" 2>/dev/null || { echo '::error::SSH tunnel failed'; exit 1; }
+            if curl --silent --fail --max-time 3 http://127.0.0.1:14000/api/health > "$temporary/health.json" && jq -e '.status == "ok"' "$temporary/health.json" > /dev/null; then ready=true; break; fi
+            sleep 2
+          done
+          [[ "$ready" == true ]] || { echo '::error::Management API did not become ready'; exit 1; }
+          export OPENSHIP_HOME="$temporary/context"
+          openship login --token "$OPENSHIP_TOKEN" --api-url http://127.0.0.1:14000 \
+            --dashboard-url http://127.0.0.1:3001 --context ci > "$temporary/login.log" 2>&1 \
+            || { echo '::error::Openship authentication failed'; exit 1; }
+          openship project get "$OPENSHIP_PROJECT_ID" --json > "$temporary/project.json" 2> "$temporary/project.log"
+          openship service list --project "$OPENSHIP_PROJECT_ID" --json > "$temporary/services.json" 2> "$temporary/services.log"
+          jq -e --arg id "$OPENSHIP_API_SERVICE_ID" \
+            '[.[] | select(.id == $id and .name == "api" and .kind == "compose" and .enabled == true)] | length == 1' \
+            "$temporary/services.json" > /dev/null \
+            || { echo '::error::Configured service must be the enabled API compose service'; exit 1; }
+          current_id=$(jq -er '.activeDeploymentId' "$temporary/project.json")
+          openship deployment get "$current_id" --json > "$temporary/current.json" 2> "$temporary/current.log"
+          current_sha=$(jq -er '.commitSha | select(test("^[a-f0-9]{40}$"))' "$temporary/current.json")
+          git cat-file -e "$current_sha^{commit}" \
+            || { echo '::error::Current deployment commit is unavailable; stop for operator review'; exit 1; }
+          git diff --quiet "$current_sha" "$DEPLOY_SHA" -- compose.production.yaml apps/api/sql \
+            || { echo '::error::Compose or database SQL changed; use the separately reviewed database deployment procedure'; exit 1; }
+          # Keep the existing database and persistent stack; only deploy the API service.
+          openship deploy --project "$OPENSHIP_PROJECT_ID" --service-ids "$OPENSHIP_API_SERVICE_ID" \
+            --branch "$DEPLOY_REF" --commit "$DEPLOY_SHA" --watch --json \
+            > "$temporary/events.jsonl" 2> "$temporary/deploy.log" \
+            || { echo '::error::API deployment failed; web deployment was not started'; exit 1; }
+          deployment_id=$(jq -ser '[.[] | select(.event == "outcome")] | last | select(.success == true and (.status == "ready" or .status == "no_changes")) | .deploymentId' "$temporary/events.jsonl")
+          openship deployment get "$deployment_id" --json > "$temporary/deployment.json" 2> "$temporary/get.log"
+          jq -e --arg sha "$DEPLOY_SHA" --arg ref "$DEPLOY_REF" \
+            '.commitSha == $sha and .branch == $ref and (.status == "ready" or .status == "no_changes")' \
+            "$temporary/deployment.json" > /dev/null
+          healthy=false
+          for attempt in {1..20}; do
+            status=$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 10 https://api.envhandoff.mabyko.com/auth/session || true)
+            if [[ "$status" == 401 ]]; then healthy=true; break; fi
+            sleep 3
+          done
+          [[ "$healthy" == true ]] || { echo '::error::API health verification failed; web deployment was not started'; exit 1; }
+          printf 'API deployment: `%s`\n\nVerified commit: `%s`; public session response: 401.\n\n' "$deployment_id" "$DEPLOY_SHA" >> "$GITHUB_STEP_SUMMARY"
+      - name: Deploy web and verify Worker metadata and public assets
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${CLOUDFLARE_API_TOKEN:?Missing CLOUDFLARE_API_TOKEN}"
+          : "${CLOUDFLARE_ACCOUNT_ID:?Missing CLOUDFLARE_ACCOUNT_ID}"
+          pnpm --filter @envhandoff/server exec wrangler deploy --tag "$DEPLOY_SHA" --message "$DEPLOY_REF" > "$RUNNER_TEMP/worker-deploy.log" 2>&1
+          pnpm --filter @envhandoff/server exec wrangler deployments list --json > "$RUNNER_TEMP/worker-deployments.json"
+          deployment=$(jq -ec 'max_by(.created_on) | select((.versions | length) == 1 and .versions[0].percentage == 100)' "$RUNNER_TEMP/worker-deployments.json")
+          version_id=$(jq -er '.versions[0].version_id' <<< "$deployment")
+          deployment_id=$(jq -er '.id' <<< "$deployment")
+          pnpm --filter @envhandoff/server exec wrangler versions view "$version_id" --json > "$RUNNER_TEMP/worker-version.json"
+          jq -e --arg sha "$DEPLOY_SHA" '.annotations["workers/tag"] == $sha' "$RUNNER_TEMP/worker-version.json" > /dev/null
+          curl --silent --show-error --fail --retry 5 --retry-delay 2 --max-time 10 https://envhandoff.mabyko.com/api/health | jq -e '.ok == true' > /dev/null
+          curl --silent --show-error --fail --retry 5 --retry-delay 2 --max-time 10 "https://envhandoff.mabyko.com/?release=$DEPLOY_SHA" > "$RUNNER_TEMP/production-index.html"
+          node --input-type=module - <<'JS'
+          import assert from 'node:assert/strict'
+          import {readFileSync} from 'node:fs'
+          const local = readFileSync('apps/web/dist/index.html', 'utf8')
+          const remote = readFileSync(`${process.env.RUNNER_TEMP}/production-index.html`, 'utf8')
+          const assets = [...local.matchAll(/(?:src|href)="(\/assets\/[^"]+)"/g)].map(match => match[1])
+          assert(assets.length > 0 && assets.every(asset => remote.includes(asset)), 'Public web assets must match the selected commit build')
+          JS
+          printf 'Worker deployment: `%s`\n\nWorker version: `%s`\n\nRelease v%s succeeded at `%s`. API, relay health and public web assets verified.\n\nCreate the signed tag on this SHA after review.\n' "$deployment_id" "$version_id" "$DEPLOY_VERSION" "$DEPLOY_SHA" >> "$GITHUB_STEP_SUMMARY"
