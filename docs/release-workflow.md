@@ -1,20 +1,20 @@
-# 버전별 배포 브랜치와 운영 배포 흐름
+# 버전별 스냅샷과 GitHub 승인형 배포
 
-전환 목표는 고정 `release` 대신 `release/v0.0.5`, `release/v0.0.6`처럼 **배포마다 새 버전 브랜치를 사용하는 것**이다. 검증한 `main` 커밋을 버전별로 보존한다. 운영 배포를 기존 서비스의 소스 전환으로 시작할지, GitHub 승인 작업으로 시작할지는 검토 중이다. 이전 운영 브랜치에 다음 개발 코드를 병합하지 않으므로 `release → main` 이력 동기화 PR을 반복할 필요가 없다.
+전환 목표는 **검증한 main 커밋을 `release/vX.Y.Z`에 보존하고, GitHub Actions에서 승인한 뒤 배포하는 방식**이다. 버전별 브랜치는 배포할 SHA를 고정하는 스냅샷이며, 배포 시작은 GitHub의 수동 실행과 `production` 환경 승인이 담당한다. 고정 release에 개발 코드를 계속 병합하지 않으므로 `main → release` 배포 PR과 `release → main` 이력 동기화 PR은 필요 없어지고, 제품 변경과 버전 준비 PR은 계속 main을 대상으로 한다.
 
-**현재 운영은 아직 고정 `release` 방식이다.** 2026-10-01 확인 기준 제품 버전은 `0.0.4`이며, Openship의 API 자동 배포와 Cloudflare의 웹·relay 배포가 `release`에 연결되어 있다. 아래는 전환 준비 절차다. 문서나 CI 변경만으로 기존 브랜치·보호 규칙·운영 연결을 변경하지 않는다. PR 생성·운영 승인·소스 전환·서명 태그 생성을 자동화하는 작업은 아직 없다.
+**현재 운영은 아직 고정 `release` 방식이다.** 2026-10-01 확인 기준 제품 버전은 `0.0.4`이며, Openship의 API 자동 배포와 Cloudflare의 웹·relay 배포가 release에 연결되어 있다. GitHub 승인형을 선택했고 [배포 작업 파일](../.github/workflows/deploy.yml)을 준비했다. production 승인 환경은 원격에 설정했지만 작업의 운영 실행·전용 자격 증명·기존 자동 배포 중지는 아직 준비 단계다. 아래 절차는 전환 후 목표이며, 실제 운영 전환 결과는 검증 후 별도로 기록한다.
 
 ## 단계별 전환
 
 | 단계 | 준비할 내용 | 완료 확인 |
 | --- | --- | --- |
 | 1. 문서 | 브랜치 역할·검증·승인·복구·공개 범위 확정 | 이 문서와 배포 가이드 검토 |
-| 2. CI | PR 검사에 전체 테스트·빌드를 추가하고 main·버전 브랜치의 push도 검사 | 실제 main 병합 커밋의 전체 검증 성공 |
-| 3. 보호 | `release/*` 최초 생성 시 검사 성공 조건과 이후 변경·삭제·강제 push 제한 준비 | 새 브랜치에 적용될 규칙과 권한 확인 |
-| 4. 연동 준비 | 실행 경로 선택·배포 시작 방법·인증·이전 배포 복구 방법 확인 | 현재 운영을 유지한 채 전환·복구 계획 검토 |
-| 5. 최종 전환 | 준비한 변경을 확인한 뒤 기존 release 정리·버전 브랜치 생성·선택한 실행 경로 적용 | 실제 배포 SHA·운영 응답·성공 후 태그 확인 |
+| 2. CI | main·버전 브랜치의 정확한 SHA에 전체 테스트·빌드 실행 | 실제 main 병합 SHA의 전체 검증 성공 |
+| 3. 보호 | 버전 브랜치 최초 생성 검사와 이후 변경 제한, production 승인 환경 준비 | 규칙·승인자·관리자 우회 금지 확인 |
+| 4. 연동 준비 | 승인된 작업의 API·웹 배포, 전용 자격 증명·접속·복구 경로 준비 | 현재 운영을 유지하며 작업·접속 검증 |
+| 5. 최종 전환 | 정상 배포 이력 보존, 독립 자동 배포 중지, 기존 release 정리, 최초 승인형 배포 | 실제 배포 SHA·운영 응답·성공 후 태그 확인 |
 
-현재 저장소 변경은 문서·CI·보호 규칙 초안 준비다. 원격 보호와 배포 연결은 아직 변경하지 않았다. 3·4단계 검토가 끝나면 삭제할 ref, 보존한 정상 배포, 배포할 SHA, 두 서비스에 적용할 설정을 구체적으로 확인하고 최종 전환한다.
+최종 전환 전에 보존할 ref·현재 정상 배포·배포할 SHA·자동 배포를 중지할 설정·복구 경로를 구체적으로 확인한다. 전용 배포 키와 토큰 준비는 이 단계에 포함되며 기존 자격 증명을 문서나 PR에 복사하지 않는다.
 
 ## 브랜치와 태그의 역할
 
@@ -22,98 +22,94 @@
 | --- | --- | --- |
 | `feature/*`, `fix/*` | 기능·수정 작업 후 main에 PR | 아니요 |
 | `main` | 검토한 코드와 제품 버전 변경을 모음 | 아니요 |
-| `release/vX.Y.Z` | 전체 검증을 통과한 main SHA를 가리키는 버전별 배포 스냅샷 | 생성 자체는 운영 승인·배포를 대신하지 않음 |
-| 서명 태그 `vX.Y.Z` | 성공을 확인한 실제 배포 SHA의 기록 | 태그 자체로 배포하지 않음 |
+| `release/vX.Y.Z` | 전체 검증을 통과한 main SHA를 보존하는 스냅샷 | 생성 자체로는 아니요 |
+| 서명 태그 `vX.Y.Z` | 성공을 확인한 실제 배포 SHA의 기록 | 태그 자체로는 아니요 |
 
-버전 브랜치는 승인한 SHA를 유지한다. 생성 이후 추가 커밋·병합·강제 push를 하지 않는다. 수정은 `main` 대상 PR로 반영하고 다음 버전 브랜치에서 배포한다. [보호 규칙 초안](../.github/rulesets/versioned-releases.json)은 최초 생성에도 GitHub Actions의 필수 검사 성공을 요구하고 후속 업데이트·삭제·강제 push를 막는다. 원격에는 아직 적용하지 않았다. [GitHub 규칙](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets)
+main의 PR·필수 CI·최신 베이스 요구는 유지한다. 버전 브랜치는 생성 이후 커밋 추가·병합·강제 push를 하지 않는다. 수정은 main 대상 PR과 다음 버전 브랜치로 준비한다. [버전 보호 규칙](../.github/rulesets/versioned-releases.json)은 최초 생성에도 GitHub Actions의 필수 검사 성공을 요구하고 이후 업데이트·삭제·강제 push를 막는다. 브랜치 이름만으로 이런 보호가 적용되지는 않으므로 원격 규칙 적용 결과를 확인한다. [GitHub 규칙](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets)
 
-## 실행 경로 비교
+## 전환 후 배포 흐름
 
-버전별 스냅샷을 쓰는 목표는 동일하다. 아래 두 실행 경로 중 어느 쪽을 적용할지는 아직 결정하지 않았다.
-
-| 구분 | 기존 자동 배포 활용 | GitHub 승인형 배포 |
-| --- | --- | --- |
-| 최초 준비 | 기존 연동을 활용하므로 초기 작업이 적음 | 전용 배포 키·토큰과 실행기 접속 경로를 먼저 설정 |
-| 매회 배포 | 두 서비스의 운영 소스를 해당 버전 브랜치로 전환 | 정확한 SHA를 지정한 작업을 승인하고 실행 |
-| 순서와 확인 | API 성공 후 웹을 시작하도록 운영자가 순서·실제 SHA 확인 | 작업이 같은 SHA로 API 후 웹을 배포하고 상태 확인 |
-| 중복·승인 보호 | 소스 전환 자체의 자동 실행 여부 확인 필요 | 기존 독립 자동 배포가 승인 전에 실행하거나 중복 배포하지 않도록 차단 필요 |
-
-GitHub 승인형은 반복 작업을 줄일 수 있지만 배포 워크플로·자격 증명·관리 API 접속과 기존 자동 배포 경로를 함께 준비해야 한다. 현재는 배포 자동화와 GitHub 운영 승인 환경 모두 구현·적용하지 않았다.
-
-## 전환 후 배포 흐름 설계
-
-아래 Mermaid는 미적용 설계이며, 실행 경로 선택 후 구체적인 설정과 명령을 확정한다.
+아래 Mermaid는 선택한 목표다. 원격 설정과 최초 운영 실행을 검증하기 전에는 적용 완료로 간주하지 않는다.
 
 ```mermaid
 flowchart TD
     Work["기능·수정 및 제품 버전 PR"] --> Main["main 병합 · 배포할 SHA 확정"]
-    Main --> Check["그 main SHA의 전체 테스트·빌드 성공 확인"]
-    Check --> Version["보호 규칙에 따라 release/vX.Y.Z 준비 · SHA 고정"]
-    Version --> Approval["SHA·변경 내용·호환성·복구 계획 확인 · 운영 승인"]
-    Approval --> Route{"실행 경로 · 선택 전"}
-    Route -->|"기존 연동 활용"| Source["운영자가 서비스별 소스 전환·배포 시작 제어"]
-    Route -->|"GitHub 승인형"| Job["승인된 작업이 정확한 SHA로 배포 호출"]
-    Source --> API["API 배포 · 정상 상태 확인"]
-    Job --> API
-    API --> Web["웹·relay 배포"]
-    Web --> Observe["두 서비스의 실제 SHA·배포 상태·공개 응답 확인"]
+    Main --> Check["그 main SHA의 전체 CI 성공 확인"]
+    Check --> Version["release/vX.Y.Z 생성 · SHA 변경 금지"]
+    Version --> Run["Actions · Deploy production · Run workflow"]
+    Run --> Verify["승인 전 정확한 SHA·CI·main 소속·제품 버전 검증"]
+    Verify --> Approval["Review deployments · production 승인"]
+    Approval --> API["승인한 SHA의 API 배포 · 정상 상태 확인"]
+    API --> Web["같은 SHA의 웹·relay 배포"]
+    Web --> Observe["실제 배포 SHA·배포 상태·공개 응답 확인"]
     Observe --> Result{"배포 성공 확인?"}
-    Result -->|"성공"| Record["실제 배포 SHA에 서명 태그 · 결과 기록"]
-    Result -->|"실패"| Recover["실패 대상 확인 · 이전 정상 이미지 또는 Worker 복구"]
+    Result -->|"성공"| Record["로컬 서명 태그 · Actions 결과·PR 기록"]
+    Result -->|"실패"| Recover["이후 단계 중단 · 이전 정상 이미지 또는 Worker 복구"]
 ```
 
-이 설계는 API 성공을 확인한 뒤 웹을 시작하는 순서를 요구한다. 기존 독립 자동 배포가 서로 기다린다는 뜻은 아니다. 기존 연동 방식은 운영자가 시작 시점을 제어하고, GitHub 승인형은 작업 안에서 순서를 제어해야 한다. API가 바뀌지 않는 배포는 실행 코드가 같은지와 현재 정상 상태를 확인하고 건너뛴 사유를 기록한다.
+API 정상 상태를 확인한 뒤 웹을 시작한다. 기존 서비스의 독립 자동 배포가 서로 기다리는 구조를 사용하지 않는다. 운영 배포는 직렬로 진행하고, 새 실행 때문에 진행 중인 배포를 취소하지 않는다.
 
-## CI와 승인을 통과시키는 방법
+## 실제 배포할 때
 
-1. 제품 버전은 `main` 대상 PR에서 루트·웹·API·relay·protocol의 `package.json` 다섯 곳에 같은 값으로 올린다. 버전 준비 PR에 변경 요약·포함 PR·호환성·DB 및 환경변수 변경·복구 계획을 기록한다.
-2. PR 검사뿐 아니라 **병합된 main SHA 자체의 전체 `pnpm check` 성공**을 확인한다. PR의 임시 병합 커밋에 대한 성공만으로 다른 SHA를 배포하지 않는다. 테스트는 전용 임시 PostgreSQL DB를 사용하며 운영 DB·배포 자격 증명에 접근하지 않는다.
-3. 최초 생성에도 검사 성공을 요구하는 보호 규칙을 먼저 적용한다. **main SHA의 CI 성공 → 그 SHA로 버전 브랜치 생성 → 동일 SHA의 브랜치 CI·보호 설정 확인** 순서로 준비한다. 최초 생성은 PR 병합이 아니므로 PR 대상에 `release/**`를 추가하는 것만으로 검증이 강제되지는 않는다.
-4. 운영자는 정확한 버전·SHA·검증 결과·변경 요약·순서·이전 정상 배포를 확인하고 승인한다. 승인과 배포 결과는 버전 준비 PR에 기록한다. 준비하는 동안 main이 앞서가더라도 승인한 SHA는 바꾸지 않는다.
-5. 선택한 실행 경로에서 승인 뒤에만 배포를 시작한다. 기존 연동을 사용할 때는 소스 설정 변경 자체가 배포를 시작할 수 있다. GitHub 승인형이라면 기존 독립 자동 배포가 승인 경로를 우회하지 않도록 전환해야 한다.
+1. [버전 준비 PR 템플릿](../.github/PULL_REQUEST_TEMPLATE/release.md)을 사용해 main 대상 PR을 준비한다. 루트·웹·API·relay·protocol의 `package.json` 다섯 곳을 같은 제품 버전으로 올리고 변경 요약·호환성·DB 및 환경변수 변경·복구 계획을 기록한다.
+2. PR 병합 뒤 **그 main SHA 자체의 전체 `pnpm check` 성공**을 확인한다. PR의 임시 병합 SHA에 대한 성공만으로 다른 SHA를 배포하지 않는다. 테스트는 전용 임시 PostgreSQL DB를 사용하고 운영 DB·배포 자격 증명에 접근하지 않는다.
+3. 성공한 main SHA에서 `release/vX.Y.Z`를 생성한다. 최초 생성에도 검사를 요구하는 보호를 먼저 적용한다. main SHA의 CI 성공 → 그 SHA로 브랜치 생성 → 같은 SHA의 브랜치 CI·보호 상태 확인 순서다. 버전 브랜치로 추가 PR을 병합하지 않는다.
+4. GitHub **Actions → Deploy production → Run workflow**에서 해당 `release/vX.Y.Z`를 선택해 실행한다. 추가 입력값은 없다. `Verify release` 작업이 승인 전에 SHA를 고정하고 main 소속·해당 SHA의 최신 main push CI 성공·전체 `pnpm check` 단계 성공·GitHub Actions의 검사 출처·브랜치 이름과 다섯 제품 버전의 일치를 확인한다. 실패하면 운영 승인·배포로 진행하지 않는다.
+5. 실행 화면에서 검증 결과·정확한 SHA·변경 내용·복구 계획을 확인하고 **Review deployments → production → Approve and deploy**를 누른다. 혼자 운영하는 동안은 실행자가 직접 승인할 수 있다.
+6. 승인된 `Deploy API then web` 작업이 API를 배포하고 정상 상태를 확인한 뒤 웹·relay를 배포한다. 승인 대기 중 main이 앞서가도 선택한 버전과 SHA는 바뀌지 않는다. Job Summary의 SHA·전체 CI 링크·API 및 Worker 배포 ID·Worker 버전·상태 확인 결과를 보고, 실행 링크와 배포 결과를 버전 준비 PR에 남긴다.
+7. 운영 상태 확인 후 실제 배포 SHA에 로컬에서 서명 태그 `vX.Y.Z`를 만들고 push한다. 기존 서명 방식을 재사용하며 CI에 GPG 개인키를 넣지 않는다. 실패한 배포에 성공 태그를 붙이거나 기존 태그를 옮기지 않는다.
 
-현재 [배포 PR 템플릿](../.github/PULL_REQUEST_TEMPLATE/release.md)은 `main → release` 방식용이다. 고정 release를 사용하는 전환 준비 기간에는 그대로 사용한다. 버전별 방식의 최종 적용 때에는 main의 버전 준비 PR과 배포 후 기록에 맞춰 대상·소스 검증, 병합 지시, 실제 배포 SHA 항목을 바꾼다.
+수동 실행은 배포 승인이 아니다. `Run workflow` 뒤의 `production` 승인까지 있어야 배포가 시작된다. [수동 실행](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow)
 
-## Openship·Cloudflare의 연결
+## production 환경 보호
 
-- **Openship:** 현재 API 소스는 `release`, Auto Deploy는 활성화되어 있다. 설치된 버전의 브랜치 변경은 소스 브랜치 값만 바꾸며 브랜치 존재 확인·즉시 배포·webhook 교체·실행 중 컨테이너 변경을 하지 않는다. 기존 연동 방식에서는 저장소 연결을 다시 만들지 않고 브랜치 값만 전환한 뒤 최초 배포를 명시적으로 시작한다. GitHub 승인형에서는 실행기가 정확한 SHA를 지정하는 배포 호출과 인증·접속 경로를 검증해야 한다. [자동 배포 문서](https://openship.io/docs/guides/auto-deploy)
-- **Cloudflare:** 실제 빌드 설정 화면에서 production branch는 현재 `release` 하나이며, 원격에 존재하는 브랜치를 선택한 뒤 별도로 저장한다. 해당 브랜치의 push가 자동 빌드를 시작한다고 안내한다. 기존 연동 방식이면 버전마다 이 소스를 전환한다. 설정 저장이 즉시 빌드를 시작하는지는 검증하지 않았으므로 준비 단계에서 확인해야 한다. GitHub 승인형이면 승인된 SHA의 빌드를 Wrangler로 배포하고 기존 브랜치 자동 배포의 중복 실행을 막아야 한다. preview branch 패턴은 운영 브랜치 선택을 대신하지 않는다. [빌드 브랜치 문서](https://developers.cloudflare.com/workers/ci-cd/builds/build-branches/)
-- **보호와 시작 경로:** 기존 이름 `release`의 보호는 `release/vX.Y.Z`에 자동 이전되지 않는다. 새 규칙을 먼저 준비한다. GitHub Actions로 운영 승인을 적용한다면, 독립 자동 배포가 그 승인을 우회하지 않도록 배포 시작 경로까지 함께 바꿔야 한다.
+- 승인자를 지정하고, 혼자 운영하는 동안 `Prevent self-review`는 끈다(`prevent_self_review=false`). 관리자 보호 규칙 우회는 허용하지 않는다.
+- 배포 브랜치는 `release/v*`로 제한한다. 브랜치 보호와 운영 승인은 각각 적용한다.
+- 배포용 SSH 키·API 토큰·Cloudflare 토큰과 접속 설정은 `production` 환경의 secrets/variables에 보관한다. 비밀값을 사용하는 작업에 환경을 연결해 승인 이후에만 접근하게 한다. 승인 전 검증에는 배포 secrets를 제공하지 않는다.
+- 검증과 실제 배포는 동일한 SHA를 사용한다. 실행 결과에는 버전·SHA·상태·배포 결과를 남기되 토큰·키·실제 설정 파일·운영 데이터는 출력하지 않는다.
 
-기존 연동을 활용하면 **매번 두 서비스의 운영 소스를 선택·전환하는 비용**이 있다. GitHub 승인형은 이 반복 작업을 줄이는 대신 첫 인증·워크플로 설정이 필요하다. 브랜치를 `release/v0.0.5`로 이름 짓는 것만으로 배포 작업이 자동화되지는 않는다.
+2026-10-01 원격 production 환경에 승인자·실행자 직접 승인 허용·관리자 우회 금지·`release/v*` 브랜치 조건을 적용하고 응답을 확인했다. 승인 대기와 비밀값 접근 제한이 배포 작업에서 작동하는지는 최초 실행으로 확인해야 한다. [GitHub 환경 보호](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments)
 
-## 기존 release를 정리하기 전
+## 기존 자동 배포와의 전환
 
-Git에서는 `release`와 `release/v0.0.5`가 공존할 수 없다. 원격 `release`를 삭제하면 버전별 원격 브랜치를 만들 수 있지만, 삭제 전에 다음을 확인한다.
+선택한 방식에서는 배포마다 두 서비스의 소스 브랜치를 수동 전환하지 않는다. 승인된 작업이 Openship에 정확한 커밋의 API 배포를 요청하고, 같은 SHA에서 빌드한 웹·relay를 Wrangler로 배포한다. 설치된 Openship 버전의 커밋 지정 기능과 실행기의 관리 API 접속·인증은 운영 전환 전에 검증한다.
 
-1. 현재 정상 배포의 커밋·서명 태그·API 이미지·Worker 버전과 복구 방법을 보존한다. 기존 release SHA를 `release-legacy/v0.0.4`처럼 충돌하지 않는 보존 ref에 남기고 SHA 일치를 확인한다. 기존 태그는 옮기지 않는다.
-2. 기존 release에 진행 중인 PR·배포·webhook 이벤트가 없는지 확인하고 선택한 실행 경로의 전환 계획을 준비한다. 브랜치 삭제를 서비스 중지나 배포 성공으로 간주하지 않는다.
-3. 로컬 `release` 브랜치와 이를 사용하는 worktree를 확인한다. 필요한 이력과 작업은 `release-legacy/v0.0.4`처럼 `release/`와 충돌하지 않는 이름으로 보존한다. 사용 중인 worktree나 변경을 무조건 삭제하지 않는다.
-4. 원격 삭제 후 각 체크아웃에서 `git fetch --prune origin`으로 오래된 `origin/release` 추적 ref를 정리한다. 로컬 `release`와 원격 추적 ref가 남아 있으면 버전별 브랜치 생성·fetch에도 접두사 충돌이 생길 수 있다.
-5. 승인한 SHA로 새 버전 브랜치를 준비하고 검증 결과를 확인한다. 이후 앞의 운영 승인·배포 순서대로 진행한다. `release/v0.0.5`와 `release/v0.0.6`는 함께 보존할 수 있다.
+작업은 기존 PostgreSQL과 영속 스택을 유지하고 API 서비스만 배포한다. 현재 정상 API 배포 SHA와 후보 사이에 `compose.production.yaml` 또는 `apps/api/sql` 변경이 있으면 자동 배포를 중단한다. DB·Compose 변경은 별도로 검토한 적용·호환성·복구 절차를 준비해야 하며, 실패한 검사를 우회하거나 운영 데이터를 초기화하지 않는다.
 
-최초 전환 순서는 **main SHA 전체 검증·연동 준비 → 보존 ref 확인 → 고정 release 삭제 → 검증한 SHA로 버전 브랜치 생성 → 같은 SHA의 CI·보호 확인 → 선택한 실행 경로 적용 → 최초 배포·검증**이다. 버전 브랜치가 남아 있으면 고정 `release`를 다시 만드는 것도 접두사 충돌로 막힌다. 복구를 위해 버전 브랜치를 일괄 삭제하지 않는다.
+**Openship Auto Deploy와 Cloudflare Workers Builds의 독립 브랜치 자동 배포는 전환 시 중지한다.** 기존 저장소 push 연결이 살아 있으면 GitHub 승인을 기다리지 않거나 같은 버전을 중복 배포할 수 있다. 설정 중지는 실행 중인 API·DB·Worker를 삭제하는 작업과 구분한다. 기존 Openship 저장소 연결·webhook을 불필요하게 다시 만들지 않는다.
+
+현재 설치된 Openship의 브랜치 값 변경은 즉시 배포·webhook 교체·실행 중 컨테이너 변경을 하지 않는다. Cloudflare는 production branch 하나의 push로 빌드하며 별도의 저장 단계를 사용한다. 저장 직후 빌드 여부는 확인하지 않았다. 이 동작을 새 버전별 배포 승인 기능으로 간주하지 않는다. [Openship 자동 배포](https://openship.io/docs/guides/auto-deploy), [Cloudflare 빌드 브랜치](https://developers.cloudflare.com/workers/ci-cd/builds/build-branches/)
+
+## 기존 release 정리와 최초 전환
+
+Git에서는 `release`와 `release/v0.0.5`가 공존할 수 없다. 다음 준비를 마친 뒤 고정 release를 정리한다.
+
+1. 현재 정상 release SHA·서명 태그·Openship 배포·API 이미지·Worker 버전과 복구 방법을 보존한다. 이전 SHA를 `release-legacy/v0.0.4`처럼 충돌하지 않는 ref에 남기고 서명 태그와 SHA 일치를 확인한다.
+2. 선택한 main SHA의 전체 검증, versioned 보호 규칙, production 환경, 전용 자격 증명, 승인형 작업을 준비한다. 진행 중인 PR·배포·webhook 이벤트와 기존 자동 배포 중지 계획을 확인한다.
+3. 로컬 release와 이를 사용하는 worktree를 확인한다. 필요한 이력과 작업은 충돌하지 않는 이름으로 보존하며 사용 중인 worktree나 변경을 무조건 삭제하지 않는다.
+4. 기존 자동 배포를 중지하고 그 상태를 확인한 뒤 원격 release를 삭제한다. 각 체크아웃에서 `git fetch --prune origin`으로 오래된 `origin/release` 추적 ref를 정리한다. 남은 로컬 release와 추적 ref도 버전별 브랜치 생성·fetch의 접두사 충돌을 일으킬 수 있다.
+5. 검증한 SHA로 버전 브랜치를 생성하고 같은 SHA의 CI·보호를 확인한다. 이후 앞의 Run workflow·운영 승인·배포 순서로 최초 배포를 검증한다.
+
+버전 브랜치가 남아 있으면 고정 release를 다시 만드는 것도 접두사 충돌로 막힌다. 복구를 위해 버전 브랜치를 일괄 삭제하지 않는다. `release/v0.0.5`와 `release/v0.0.6`는 함께 보존할 수 있다.
 
 ## 배포 확인과 실패 복구
 
-배포 요청 접수나 소스 저장만으로 성공 처리하지 않는다. 두 서비스에서 승인한 SHA와 실제 배포 SHA, 배포 ID, 최종 상태를 각각 확인한다. 공개 웹의 제품 버전·변경 화면·relay `/api/health`, API·DB 상태 및 무쿠키 `/auth/session`의 `401` 응답을 점검한다. 필요한 기능·로그인 검사는 변경 범위에 맞춰 수행한다.
+배포 요청 접수만으로 성공 처리하지 않는다. 작업은 API 배포의 커밋·브랜치·정상 상태와 무쿠키 `/auth/session`의 `401`, Worker의 SHA 태그·100% 반영 상태·relay `/api/health`·해당 SHA에서 빌드한 웹 asset 경로 일치를 확인한다. 공개 제품 버전·변경 화면과 기존 DB 상태도 운영 점검에 포함한다. 변경한 로그인·전달 기능은 범위에 맞춰 추가 검사한다.
 
-한쪽 배포가 실패하면 다음 대상의 배포를 멈추고 실제 상태부터 확인한다. 복구는 다음과 같이 대상별로 한다.
+한 단계가 실패하면 이후 배포를 중단하고 실제 상태부터 확인한다.
 
-- **API:** 이전에 정상 동작한 실제 이미지와 서비스 설정으로 되돌린다. 실패한 버전 브랜치를 덮어쓰거나 DB·영속 볼륨·삭제대장을 초기화하지 않는다.
+- **API:** 이전 정상 배포 ID·실제 이미지와 서비스 설정으로 복구한다. DB·영속 볼륨·삭제대장을 초기화하지 않는다.
 - **웹·relay:** 이전 정상 Worker 버전으로 복구하고 공개 화면과 `/api/health`를 다시 확인한다.
-- **DB 변경이 있는 경우:** 배포 전에 이전 API 이미지가 변경된 스키마에서 실행 가능한지 검토한다. 불가능하면 자동으로 구버전 API를 실행하지 말고 준비한 수정 배포 또는 [데이터 복원 절차](operations.md#과거-백업에서-복원할-때)를 따른다. 코드 복구와 과거 DB 복원은 별개다.
+- **DB 변경:** 배포 전에 이전 API 이미지가 변경된 스키마에서 실행 가능한지 검토한다. 불가능하면 자동으로 구버전 API를 실행하지 않고 준비한 수정 배포 또는 [데이터 복원 절차](operations.md#과거-백업에서-복원할-때)를 따른다. 코드 복구와 과거 DB 복원은 별개다.
 
-기존 연동 방식은 실패한 브랜치를 자동으로 재배포하지 않도록 확인하고 필요하면 이전 정상 버전 브랜치 또는 보존 ref로 브랜치 값만 되돌린다. GitHub 승인형은 실패한 작업의 이후 배포를 중단하고 이전 정상 버전 복구를 별도로 실행한다. 전환 첫 배포에서는 기존 release를 재생성하기보다 보존한 Openship 배포 ID·실제 이미지와 Worker 버전으로 복구한다. 이 경로는 기존 release 삭제 전에 확인해 둔다. API·웹이 서로 다른 정상 SHA를 사용하는 경우에는 실제 상태와 호환성을 기록한다.
+전환 첫 배포도 기존 release를 재생성하기보다 보존한 실제 배포로 복구한다. 이 경로는 release 삭제 전에 확인한다. 웹·API가 서로 다른 정상 SHA를 사용하는 경우에는 실제 상태와 호환성을 기록한다. Actions 실행 링크·승인 SHA·실제 배포 SHA·각 배포 ID·확인 시각·서명 태그를 버전 준비 PR에 남긴다.
 
-성공한 실제 배포 SHA에만 서명 태그 `vX.Y.Z`를 만들고 push한다. 실패한 배포에 성공 태그를 붙이거나 기존 태그를 옮기지 않는다. 배포 결과·승인 및 실제 SHA·각 배포 ID·확인 시각·태그·건너뛴 대상의 사유를 버전 준비 PR에 남긴다.
+## 대안과 선택 이유
 
-## 대안: 고정 release 유지
+기존 자동 배포를 활용하면 초기 작업은 적지만 매번 두 서비스의 운영 소스를 전환하고 순서를 확인해야 한다. GitHub 승인형은 첫 인증·워크플로 설정이 필요하지만 SHA 검증·운영 승인·API 후 웹 배포를 한 실행 기록으로 남길 수 있어 이 방식을 선택했다.
 
-고정 release를 계속 쓴다면 최신 `release`에서 임시 `deploy/vX.Y.Z` 브랜치를 만들고 선택한 main 커밋을 병합해 `deploy/vX.Y.Z → release` PR을 열 수 있다. PR 소스가 최신 release 이력을 포함하므로 별도 `release → main` 동기화 PR을 없앨 수 있다. 배포 후보의 파일 내용이 선택한 main과 같은지, 전체 검증·필수 CI·리뷰 결과가 정상인지 확인한 뒤 merge commit으로 병합한다. 이 경우 기존 두 서비스의 소스 연결은 유지한다.
-
-현재 선택한 전환 목표는 버전별 스냅샷이며 배포 실행 경로는 검토 중이다. 고정 release 대안은 브랜치 전환 자체를 피하려는 경우에 검토한다.
+고정 release를 유지하는 대안은 최신 release에서 `deploy/vX.Y.Z`를 만들고 main 커밋을 병합해 release 대상 PR을 여는 방식이다. 현재 전환 목표에는 사용하지 않는다.
 
 ## 공개 문서의 범위
 
-브랜치 역할·검증 조건·배포 순서는 공개할 수 있다. 배포 토큰·SSH 개인키·인증 쿠키·실제 설정 파일·운영 데이터·내부 관리 주소·계정 및 프로젝트 식별자는 문서나 PR에 추가하지 않는다. 배포 자격 증명은 도구의 비밀 설정에 보관한다. Mermaid에는 공개 가능한 서비스명과 단계만 넣는다.
+브랜치 역할·검증 조건·승인·배포 순서는 공개할 수 있다. 배포 토큰·SSH 개인키·인증 쿠키·실제 설정 파일·운영 데이터·내부 관리 주소·계정 및 프로젝트 식별자를 문서나 PR에 추가하지 않는다. 환경 설정 이름만 문서화하고 값은 비밀 설정에 보관한다. Mermaid에는 공개 가능한 서비스명과 단계만 넣는다.
