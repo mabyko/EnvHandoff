@@ -11,5 +11,5 @@
     "erasableSyntaxOnly": true,
     "allowImportingTsExtensions": true
   },
-  "include": ["src"]
+  "include": ["src", "cloudflare.config.ts", "wrangler.config.ts"]
 }

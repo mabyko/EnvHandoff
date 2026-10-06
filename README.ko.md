@@ -135,7 +135,7 @@ docs/                   제품 계획·웹·데스크톱·파일 규격·relay �
   images/               README용 제품 스크린샷
 ```
 
-Turborepo가 workspace 작업을 실행한다. 테스트와 개발 서버는 캐시하지 않는다. 결과물은 각 앱의 `dist/`에 생성하며 원격 캐시는 연결하지 않았다. 네이티브 데스크톱 앱은 v4.0의 별도 작업이다. JS/TS 의존성은 루트 `pnpm-lock.yaml` 하나로 관리한다. 의존성 설치 스크립트는 필요한 esbuild·workerd만 `pnpm-workspace.yaml`에서 허용한다.
+Turborepo가 workspace 작업을 실행한다. 테스트와 개발 서버는 캐시하지 않는다. 웹·API 결과물은 각 앱의 `dist/`, Worker Build Output은 `apps/server/.cloudflare/output/v0/`에 생성한다. 원격 캐시는 연결하지 않았다. 네이티브 데스크톱 앱은 v4.0의 별도 작업이다. JS/TS 의존성은 루트 `pnpm-lock.yaml` 하나로 관리한다. 의존성 설치 스크립트는 필요한 esbuild·workerd만 `pnpm-workspace.yaml`에서 허용한다.
 
 루트와 모든 workspace 패키지의 시작 버전은 `0.0.1`이다. 제품 계획의 기능 단계 v1.0·v2.0, 공유 파일의 형식 버전 1과는 구분한다.
 
@@ -147,6 +147,6 @@ Turborepo가 workspace 작업을 실행한다. 테스트와 개발 서버는 캐
 
 브라우저 검증은 Aside의 Chromium에서 공개 가짜 파일로 진행했다. 파일 선택 → 암호화 파일 다운로드 → 재열기 → 원본 다운로드와 두 탭의 실시간 전달에서 원본 바이트가 같음을 확인했다. 320·375·560·700·800·1024px iframe과 데스크톱 화면에서 반응형 배치를 확인했다. 긴 경로와 미리보기를 포함해 가로 넘침이 없고 밝은 화면·어두운 화면에서 동작했다.
 
-2026-09-24에 공개 화면과 `/api/health` 응답을 확인했고, 당시 화면 HTML의 해시가 배포에 사용한 웹 빌드와 일치했다. 같은 날 분리된 Chromium 브라우저 컨텍스트 두 개에서 공개 relay로 가짜 `.env`를 전송하고, 승인·복호화·수신 확인과 사용한 링크의 재접속 거부를 확인했다. Worker가 웹 빌드(`apps/web/dist`)를 정적 자산으로 제공하고 `/api/*`만 직접 처리하므로 웹과 relay는 같은 origin을 쓴다. 커스텀 도메인과 `WEB_ORIGINS`는 `apps/server/wrangler.jsonc`에 있다. 실제 Cloudflare 한도·장애, 서로 다른 두 기기, Safari·Firefox와 모바일 기기 검증은 정식 출시 전 작업으로 남아 있다.
+2026-09-24에 공개 화면과 `/api/health` 응답을 확인했고, 당시 화면 HTML의 해시가 배포에 사용한 웹 빌드와 일치했다. 같은 날 분리된 Chromium 브라우저 컨텍스트 두 개에서 공개 relay로 가짜 `.env`를 전송하고, 승인·복호화·수신 확인과 사용한 링크의 재접속 거부를 확인했다. Worker가 웹 빌드(`apps/web/dist`)를 정적 자산으로 제공하고 `/api/*`만 직접 처리하므로 웹과 relay는 같은 origin을 쓴다. 커스텀 도메인과 `WEB_ORIGINS`는 `apps/server/cloudflare.config.ts`에 있다. 실제 Cloudflare 한도·장애, 서로 다른 두 기기, Safari·Firefox와 모바일 기기 검증은 정식 출시 전 작업으로 남아 있다.
 
 제품의 후속 범위는 [웹 설계](docs/web-design.md), [제품 계획](docs/product-plan.md), [데스크톱 설계](docs/app-design.md), [공통 용어](CONTEXT.md)를 따른다.

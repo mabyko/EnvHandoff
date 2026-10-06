@@ -135,7 +135,7 @@ docs/                   Product, web, desktop, bundle format, and relay designs
   images/               Product screenshots for the README
 ```
 
-Turborepo runs workspace tasks. Tests and development servers are not cached. Build output goes into each app's `dist/`; no remote cache is connected. Native desktop apps are separate work in v4.0. JavaScript and TypeScript dependencies use one root `pnpm-lock.yaml`. Only the required esbuild and workerd dependency installation scripts are allowed in `pnpm-workspace.yaml`.
+Turborepo runs workspace tasks. Tests and development servers are not cached. Web and API build output goes into each app's `dist/`; Worker Build Output goes into `apps/server/.cloudflare/output/v0/`. No remote cache is connected. Native desktop apps are separate work in v4.0. JavaScript and TypeScript dependencies use one root `pnpm-lock.yaml`. Only the required esbuild and workerd dependency installation scripts are allowed in `pnpm-workspace.yaml`.
 
 The root and all workspace packages start at version `0.0.1`. This is separate from the product plan's v1.0 and v2.0 feature stages and shared file format version 1.
 
@@ -147,6 +147,6 @@ Web 0.0.1 connects the introduction home directly to working send and receive sc
 
 Browser checks used public dummy files in Aside's Chromium. Original bytes matched after file selection → encrypted download → reopening → original download, and after live transfer between two tabs. Responsive layouts were checked in 320, 375, 560, 700, 800, and 1024px iframes and at desktop size. Long paths and previews caused no horizontal overflow, and both light and dark themes worked.
 
-On 2026-09-24, the public page and `/api/health` responded, and the HTML hash matched the web build used for that deployment. Two isolated Chromium browser contexts then transferred a dummy `.env` through the public relay, confirmed sender approval, decryption and receipt, and rejected reuse of the link. The Worker serves the web build (`apps/web/dist`) as static assets and handles `/api/*` itself, so web and relay share one origin; `apps/server/wrangler.jsonc` sets the custom domain and `WEB_ORIGINS`. Actual Cloudflare limits and failures, two separate devices, Safari, Firefox, and mobile devices still need testing before formal release.
+On 2026-09-24, the public page and `/api/health` responded, and the HTML hash matched the web build used for that deployment. Two isolated Chromium browser contexts then transferred a dummy `.env` through the public relay, confirmed sender approval, decryption and receipt, and rejected reuse of the link. The Worker serves the web build (`apps/web/dist`) as static assets and handles `/api/*` itself, so web and relay share one origin; `apps/server/cloudflare.config.ts` sets the custom domain and `WEB_ORIGINS`. Actual Cloudflare limits and failures, two separate devices, Safari, Firefox, and mobile devices still need testing before formal release.
 
 Further product scope is defined in the [web design](docs/web-design.md), [product plan](docs/product-plan.md), [desktop design](docs/app-design.md), and [shared terminology](CONTEXT.md).
