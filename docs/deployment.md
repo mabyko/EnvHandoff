@@ -149,20 +149,22 @@ Cloudflare 보안 규칙은 이 API 호스트에만 적용한다. 자동 탐색 
 
 API가 준비되면 같은 릴리스의 웹을 배포한다. Cloudflare 배포 권한이 연결된 로컬 환경에서, 저장소 루트를 기준으로 실행한다.
 
-여러 Cloudflare 계정을 쓰면 계정과 인증 프로필을 명시한다. 이번 배포는 Wrangler 4.131.0의 `wrangler auth create mabyko --browser=false`로 `mabyko` 계정만 허용한 프로필을 만들었다. 기존 기본 프로필은 유지했다. [Wrangler 인증 프로필](https://developers.cloudflare.com/workers/wrangler/profiles/)
+Worker 명령은 고정 버전 `cf@1.0.0-beta.12`를 사용한다. `apps/server/cloudflare.config.ts`에 도메인·바인딩·SQLite Durable Object 클래스를 선언하고, `wrangler.config.ts`에 정적 자산 경로와 빌드 옵션을 둔다. `cf`는 베타이며 이 프로젝트에서는 `wrangler@4.147.0`을 내부 빌드·로컬 실행에 사용한다. [마이그레이션 안내](https://developers.cloudflare.com/cf/wrangler/migrate/)
+
+여러 Cloudflare 계정을 쓰면 계정과 인증 프로필을 명시한다. `cf`는 기존 Wrangler 로그인을 재사용하지 않는다. 로컬에서 처음 배포할 때 `pnpm --filter @envhandoff/server exec cf auth create mabyko --no-browser`로 별도 프로필을 인증하고 아래 명령에 `--profile mabyko`를 전달한다. CI는 기존 `CLOUDFLARE_API_TOKEN`·`CLOUDFLARE_ACCOUNT_ID`를 사용한다. [인증 안내](https://developers.cloudflare.com/cf/get-started/)
 
 먼저 웹을 빌드하고 Worker 배포 내용을 점검한다. 이 단계는 실제 배포하지 않는다.
 
 ```sh
 VITE_PRO_API_ORIGIN=https://api.envhandoff.mabyko.com pnpm --filter @envhandoff/web build
-pnpm --filter @envhandoff/server exec wrangler deploy --dry-run
+pnpm --filter @envhandoff/server exec cf deploy --dry-run
 ```
 
 빌드와 배포 대상이 맞으면 실행한다.
 
 ```sh
 CLOUDFLARE_ACCOUNT_ID=5a6f1112ebbc56a66a3de83bdb52ae3f \
-  pnpm --filter @envhandoff/server exec wrangler deploy --profile mabyko
+  pnpm --filter @envhandoff/server exec cf deploy --profile mabyko
 ```
 
 **확인:** `/pro`, `/pro/requests` 등으로 직접 접속하거나 새로고침해도 화면이 열리고, 웹이 운영 API에 연결된다.

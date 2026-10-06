@@ -167,12 +167,12 @@ jobs:
           set -euo pipefail
           : "${CLOUDFLARE_API_TOKEN:?Missing CLOUDFLARE_API_TOKEN}"
           : "${CLOUDFLARE_ACCOUNT_ID:?Missing CLOUDFLARE_ACCOUNT_ID}"
-          pnpm --filter @envhandoff/server exec wrangler deploy --tag "$DEPLOY_SHA" --message "$DEPLOY_REF" > "$RUNNER_TEMP/worker-deploy.log" 2>&1
-          pnpm --filter @envhandoff/server exec wrangler deployments list --json > "$RUNNER_TEMP/worker-deployments.json"
-          deployment=$(jq -ec 'max_by(.created_on) | select((.versions | length) == 1 and .versions[0].percentage == 100)' "$RUNNER_TEMP/worker-deployments.json")
+          pnpm --filter @envhandoff/server exec cf deploy --tag "$DEPLOY_SHA" --message "$DEPLOY_REF" > "$RUNNER_TEMP/worker-deploy.log" 2>&1
+          pnpm --filter @envhandoff/server exec cf workers deployments list --worker envhandoff-relay > "$RUNNER_TEMP/worker-deployments.json"
+          deployment=$(jq -ec '.deployments | max_by(.created_on) | select((.versions | length) == 1 and .versions[0].percentage == 100)' "$RUNNER_TEMP/worker-deployments.json")
           version_id=$(jq -er '.versions[0].version_id' <<< "$deployment")
           deployment_id=$(jq -er '.id' <<< "$deployment")
-          pnpm --filter @envhandoff/server exec wrangler versions view "$version_id" --json > "$RUNNER_TEMP/worker-version.json"
+          pnpm --filter @envhandoff/server exec cf workers versions get "$version_id" --worker-id envhandoff-relay > "$RUNNER_TEMP/worker-version.json"
           jq -e --arg sha "$DEPLOY_SHA" '.annotations["workers/tag"] == $sha' "$RUNNER_TEMP/worker-version.json" > /dev/null
           curl --silent --show-error --fail --retry 5 --retry-delay 2 --max-time 10 https://envhandoff.mabyko.com/api/health | jq -e '.ok == true' > /dev/null
           curl --silent --show-error --fail --retry 5 --retry-delay 2 --max-time 10 "https://envhandoff.mabyko.com/?release=$DEPLOY_SHA" > "$RUNNER_TEMP/production-index.html"

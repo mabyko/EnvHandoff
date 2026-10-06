@@ -11,6 +11,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import WebSocket from 'ws'
 import { RELAY } from '../../../packages/protocol/src/index.ts'
 
+// cf uses Wrangler internally; invoke it with the new config so each test run can isolate storage.
 // These are protocol integration tests against a real local workerd, using public fake bytes.
 let worker: ReturnType<typeof spawn>
 let directory = ''
@@ -35,6 +36,7 @@ before(
       [
         fileURLToPath(new URL('../node_modules/wrangler/bin/wrangler.js', import.meta.url)),
         'dev',
+        '--experimental-new-config',
         '--local',
         '--ip',
         '127.0.0.1',
@@ -47,7 +49,7 @@ before(
       ],
       {
         cwd: fileURLToPath(new URL('..', import.meta.url)),
-        env: { ...process.env, WRANGLER_SEND_METRICS: 'false', CI: 'true' },
+        env: { ...process.env, DO_NOT_TRACK: '1', WRANGLER_SEND_METRICS: 'false', CI: 'true' },
         stdio: ['ignore', 'pipe', 'pipe'],
       },
     )

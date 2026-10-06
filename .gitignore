@@ -5,6 +5,7 @@ dist/
 dist-ssr/
 coverage/
 .wrangler/
+.cloudflare/
 apps/server/wrangler.self-hosted.jsonc
 *.tsbuildinfo
 *.log
