@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { createServer } from 'vite'
 import react from '@vitejs/plugin-react'
+import { parseBrowserCliResult } from './browser-cli-result.mjs'
 
 // Component regressions with mocked HTTP, plus real Web Crypto/IndexedDB checks.
 // This suite does not connect to an API server or use a signed-in browser profile.
@@ -25,9 +26,7 @@ async function command(args, { json = true, cleanup = false } = {}) {
     cwd: root, env, timeout: timeout + 15_000, maxBuffer: 2 * 1024 * 1024,
     ...(cleanup ? {} : { signal: abort.signal }),
   })
-  const result = json ? JSON.parse(stdout) : stdout
-  if (result?.isError || result?.error) throw new Error(JSON.stringify(result))
-  return result
+  return json ? parseBrowserCliResult(stdout) : stdout
 }
 
 async function evaluate(expression) {
