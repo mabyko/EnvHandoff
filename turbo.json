@@ -21,6 +21,7 @@
     },
     "test": {
       "cache": false,
+      "passThroughEnv": ["BROWSER_CHROME_PATH"],
       "dependsOn": ["^build"],
       "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/fixtures/**"],
       "outputs": []

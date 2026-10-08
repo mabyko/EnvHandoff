@@ -1,14 +1,16 @@
 {
   "name": "@envhandoff/web",
   "private": true,
-  "version": "0.0.6",
+  "version": "0.0.7",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "lint": "oxlint --deny-warnings",
     "typecheck": "tsc -b",
-    "test": "node --test tests/*.test.ts",
+    "test": "pnpm test:unit && pnpm test:browser",
+    "test:unit": "node --test tests/*.test.ts",
+    "test:browser": "node tests/run-browser.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -26,6 +28,7 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
     "@vitejs/plugin-react": "^6.1.1",
+    "chrome-devtools-mcp": "1.10.1",
     "oxlint": "^1.81.0",
     "typescript": "~6.0.2",
     "vite": "^8.3.0"

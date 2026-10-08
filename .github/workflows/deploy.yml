@@ -2,6 +2,11 @@ name: Deploy production
 
 on:
   workflow_dispatch:
+    inputs:
+      migration_preflight_sha:
+        description: 'Reviewed v0.0.7 migration only: exact SHA after operator maintenance and encrypted permission backup'
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -48,6 +53,7 @@ jobs:
       DEPLOY_SHA: ${{ needs.verify.outputs.sha }}
       DEPLOY_REF: ${{ needs.verify.outputs.ref }}
       DEPLOY_VERSION: ${{ needs.verify.outputs.version }}
+      MIGRATION_PREFLIGHT_SHA: ${{ inputs.migration_preflight_sha }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -138,8 +144,9 @@ jobs:
           current_sha=$(jq -er '.commitSha | select(test("^[a-f0-9]{40}$"))' "$temporary/current.json")
           git cat-file -e "$current_sha^{commit}" \
             || { echo '::error::Current deployment commit is unavailable; stop for operator review'; exit 1; }
-          git diff --quiet "$current_sha" "$DEPLOY_SHA" -- compose.production.yaml apps/api/sql \
-            || { echo '::error::Compose or database SQL changed; use the separately reviewed database deployment procedure'; exit 1; }
+          # Only the separately reviewed v0.0.7 migration accepts an exact-SHA
+          # preflight acknowledgement. Every other schema/Compose delta fails closed.
+          CURRENT_DEPLOY_SHA="$current_sha" node .github/scripts/migration-gate.mjs
           # Keep the existing database and persistent stack; only deploy the API service.
           openship deploy --project "$OPENSHIP_PROJECT_ID" --service-ids "$OPENSHIP_API_SERVICE_ID" \
             --branch "$DEPLOY_REF" --commit "$DEPLOY_SHA" --watch --json \

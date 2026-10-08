@@ -56,7 +56,7 @@ API 정상 상태를 확인한 뒤 웹을 시작한다. 기존 서비스의 독�
 1. [버전 준비 PR 템플릿](../.github/PULL_REQUEST_TEMPLATE/release.md)을 사용해 main 대상 PR을 준비한다. 루트·웹·API·relay·protocol의 `package.json` 다섯 곳을 같은 제품 버전으로 올리고 변경 요약·호환성·DB 및 환경변수 변경·복구 계획을 기록한다.
 2. PR 병합 뒤 **그 main SHA 자체의 전체 `pnpm check` 성공**을 확인한다. PR의 임시 병합 SHA에 대한 성공만으로 다른 SHA를 배포하지 않는다. 테스트는 전용 임시 PostgreSQL DB를 사용하고 운영 DB·배포 자격 증명에 접근하지 않는다.
 3. 성공한 main SHA에서 `release/vX.Y.Z`를 생성한다. 최초 생성에도 검사를 요구하는 보호를 먼저 적용한다. main SHA의 CI 성공 → 그 SHA로 브랜치 생성 → 같은 SHA의 브랜치 CI·보호 상태 확인 순서다. 버전 브랜치로 추가 PR을 병합하지 않는다.
-4. GitHub **Actions → Deploy production → Run workflow**에서 해당 `release/vX.Y.Z`를 선택해 실행한다. 추가 입력값은 없다. `Verify release` 작업이 승인 전에 SHA를 고정하고 main 소속·해당 SHA의 최신 main push CI 성공·전체 `pnpm check` 단계 성공·GitHub Actions의 검사 출처·브랜치 이름과 다섯 제품 버전의 일치를 확인한다. 실패하면 운영 승인·배포로 진행하지 않는다.
+4. GitHub **Actions → Deploy production → Run workflow**에서 해당 `release/vX.Y.Z`를 선택해 실행한다. 일반 배포는 추가 입력값을 비워 둔다. DB 전환을 포함한 v0.0.7만 [별도 검토 절차](release-v0.0.7.md)에 따라 준비한 정확한 SHA를 `migration_preflight_sha`에 입력한다. `Verify release` 작업이 승인 전에 SHA를 고정하고 main 소속·해당 SHA의 최신 main push CI 성공·전체 `pnpm check` 단계 성공·GitHub Actions의 검사 출처·브랜치 이름과 다섯 제품 버전의 일치를 확인한다. 실패하면 운영 승인·배포로 진행하지 않는다.
 5. 실행 화면에서 검증 결과·정확한 SHA·변경 내용·복구 계획을 확인하고 **Review deployments → production → Approve and deploy**를 누른다. 혼자 운영하는 동안은 실행자가 직접 승인할 수 있다.
 6. 승인된 `Deploy API then web` 작업이 API를 배포하고 정상 상태를 확인한 뒤 웹·relay를 배포한다. 승인 대기 중 main이 앞서가도 선택한 버전과 SHA는 바뀌지 않는다. Job Summary의 SHA·전체 CI 링크·API 및 Worker 배포 ID·Worker 버전·상태 확인 결과를 보고, 실행 링크와 배포 결과를 버전 준비 PR에 남긴다.
 7. 운영 상태 확인 후 실제 배포 SHA에 로컬에서 서명 태그 `vX.Y.Z`를 만들고 push한다. 기존 서명 방식을 재사용하며 CI에 GPG 개인키를 넣지 않는다. 실패한 배포에 성공 태그를 붙이거나 기존 태그를 옮기지 않는다.
@@ -78,7 +78,7 @@ API 정상 상태를 확인한 뒤 웹을 시작한다. 기존 서비스의 독�
 
 Openship 토큰에는 **대상 프로젝트의 READ/WRITE와 정확한 GitHub 저장소(`github_repository`, `owner/repo`)의 READ**가 필요하다. 프로젝트·서비스·배포의 읽기 조회만 성공해도 저장소 접근 권한이 없으면 배포 생성은 거부될 수 있다. production secret에 저장하기 전에 대상 프로젝트와 저장소의 읽기 조회를 모두 검증한다. 범위를 모든 저장소·관리 리소스로 넓히지 않는다. 토큰 교체로 권한을 보완할 때는 기존 만료일을 연장하지 않고 새 토큰 검증·secret 교체 후 이전 CI 토큰을 폐기한다.
 
-작업은 기존 PostgreSQL과 영속 스택을 유지하고 API 서비스만 배포한다. 현재 정상 API 배포 SHA와 후보 사이에 `compose.production.yaml` 또는 `apps/api/sql` 변경이 있으면 자동 배포를 중단한다. DB·Compose 변경은 별도로 검토한 적용·호환성·복구 절차를 준비해야 하며, 실패한 검사를 우회하거나 운영 데이터를 초기화하지 않는다.
+작업은 기존 PostgreSQL과 영속 스택을 유지하고 API 서비스만 배포한다. 현재 정상 API 배포 SHA와 후보 사이에 `compose.production.yaml` 또는 `apps/api/sql` 변경이 있으면 자동 배포를 중단한다. DB·Compose 변경은 별도로 검토한 적용·호환성·복구 절차를 준비해야 하며, 실패한 검사를 우회하거나 운영 데이터를 초기화하지 않는다. v0.0.7의 010/011 전환만 고정된 이전 SHA·SQL 해시·버전·사전 준비 SHA를 검사하는 [제한된 절차](release-v0.0.7.md)를 사용한다. 일반 SQL/Compose 변경 차단과 production 승인은 유지한다.
 
 **Openship Auto Deploy와 Cloudflare Workers Builds의 독립 브랜치 자동 배포는 중지했다.** 기존 저장소 push 연결을 다시 켜면 GitHub 승인을 기다리지 않거나 같은 버전을 중복 배포할 수 있다. 실행 중인 API·DB·Worker는 그대로 유지한다. 기존 Openship 저장소 연결·webhook을 불필요하게 다시 만들지 않는다.
 

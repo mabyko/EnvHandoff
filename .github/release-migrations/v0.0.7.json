@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "release": "v0.0.7",
+  "baselineSha": "c4cbc4d6c9a15f246f515ac6d14ac32049a2eb6c",
+  "deployRef": "release/v0.0.7",
+  "deployVersion": "0.0.7",
+  "migrations": {
+    "apps/api/sql/010-project-permissions.sql": "56917b6e44dc26f94a3f875cd44e9f40a301c92bbee91903b4d7cc714776cff7",
+    "apps/api/sql/011-upload-cancellations.sql": "9347e553d2660839843c7ed193c9df4e6df933c97031d335f4bf3bdfb5c2b85f"
+  },
+  "manualPreflight": [
+    "The operator acknowledges this exact candidate SHA only after completing the separately reviewed private preflight; this manifest is not evidence that those operations ran.",
+    "Gate external API traffic and confirm all old API processes are stopped before the candidate starts; preserve PostgreSQL, encrypted-object storage and the independent deletion ledger.",
+    "Prepare an encrypted policy-compliant metadata backup and exact pre-migration permission recovery material privately; exclude share token hashes and prohibited one-time/retry records, and never roll back the independent deletion ledger.",
+    "Capture Member effective permissions with absent grants normalized to zero. Verify their per-environment receive/send/external-share bits after startup migration, allowing the intentional Owner automatic-access change.",
+    "Keep maintenance in place until schema version 11, unchanged PostgreSQL container/storage, deletion-ledger health, API health and matching web/relay release are verified. Require stale clients to reload before permission edits.",
+    "After migrations commit, recovery is forward-only: keep traffic gated and old API stopped on failure. Do not automatically restore the old API image; database disaster recovery requires the separately reviewed restore-safe procedure."
+  ]
+}
