@@ -16,6 +16,7 @@ concurrency:
 
 jobs:
   check:
+    # Required status context is also checked by release-gate.mjs.
     name: lint and typecheck
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -44,4 +45,11 @@ jobs:
       - run: npm install --global pnpm@12.3.4
       - run: pnpm install --frozen-lockfile
       - run: node .github/scripts/release-gate.mjs --self-test
+      - run: node .github/scripts/migration-gate.mjs --self-test
+      - name: Locate isolated test browser
+        run: |
+          chrome_path="$(command -v google-chrome || command -v chromium || command -v chromium-browser)"
+          test -n "$chrome_path"
+          "$chrome_path" --version
+          echo "BROWSER_CHROME_PATH=$chrome_path" >> "$GITHUB_ENV"
       - run: pnpm check

@@ -1,4 +1,16 @@
-export const betaClosedMessage = '베타의 신규 전달 접수가 종료됐어요. 기존 전달은 원래 기한까지 받을 수 있어요.'
+export const betaClosedMessage = '서버에서 신규 파일 전달을 일시 중지했어요. 새 요청과 업로드는 운영자가 재개한 뒤 가능해요. 기존 전달은 원래 기한까지 받을 수 있어요.'
+
+export class ProRequestError extends Error {
+  readonly status: number
+  readonly code?: string
+  constructor(message: string, status: number, code?: string) { super(message); this.status = status; this.code = code }
+}
+
+// A rejected first reservation has no upload to recover. Network/5xx outcomes
+// may have committed, so retain their operation ID and encrypted bytes.
+export function reservationRejected(error: unknown): boolean {
+  return error instanceof ProRequestError && (error.code === 'beta_closed' || (error.status >= 400 && error.status < 500 && error.status !== 408))
+}
 
 export function subscribeTabReturn(refresh: () => void): () => void {
   const visible = () => { if (document.visibilityState === 'visible') refresh() }

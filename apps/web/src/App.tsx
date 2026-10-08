@@ -42,6 +42,7 @@ export default function App() {
       if (location.pathname !== '/' || !location.hash.startsWith('#receive')) return
       const invitation = readInvitation(location.hash)
       clearFragment()
+      if (!confirmWorkLoss()) return
       setRoute({ view: 'receive', invitation: invitation ?? undefined, invalid: !invitation })
       setArrival((value) => value + 1)
     }

@@ -25,7 +25,7 @@ export async function verifyProCatalog() {
   const root = createRoot(container), originalFetch = window.fetch
   const catalog = { role: 'owner', teams: [{id:firstId,name:'모두',isDefault:1,members:[userId]}], projects: [] as {id:string;name:string;teamIds:string[];environments:[] }[] }
   let route: ProRoute = {page:'projects',orgId}, creations = 0, hold = false
-  const render = () => root.render(createElement(ProCatalog, {api,orgId,csrf:'test-only',members:[{id:userId,login:'qa-member'}],route,onNavigate:next=>{route=next;render()},disabled:false,onExpired:()=>{throw new Error('Unexpected expiry')},onTeamsChanged:async()=>{}}))
+  const render = () => root.render(createElement(ProCatalog, {api,orgId,csrf:'test-only',members:[{id:userId,login:'qa-owner',role:'owner'}],route,onNavigate:next=>{route=next;render()},disabled:false,onExpired:()=>{throw new Error('Unexpected expiry')},onTeamsChanged:async()=>{}}))
   window.fetch = async (input,init) => {
     const url = String(input)
     if (!url.startsWith(api)) return originalFetch(input,init)
@@ -93,7 +93,10 @@ export async function verifyProPages() {
     if (path.endsWith('/shares')) return Response.json({ shares: [...shares.values()] })
     const id = path.split('/')[4]
     if (!shares.has(id)) return Response.json({ error: 'share_unavailable' }, { status: 404 })
-    if (path.endsWith('/revoke')) { revocations++; await until(() => !holdRecovery); shares.set(id, share(id, 'cancelled')) }
+    if (path.endsWith('/revoke') || path.endsWith('/cancel')) {
+      revocations++; await until(() => !holdRecovery)
+      if (path.endsWith('/revoke') || shares.get(id)?.status !== 'available') shares.set(id, share(id, 'cancelled'))
+    }
     else if (holdRecovery) await until(() => !holdRecovery)
     if (path.endsWith('/content')) shares.set(id, share(id))
     return Response.json(shares.get(id))

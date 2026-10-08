@@ -11,7 +11,10 @@ UUID references must point to operator records with contact verification evidenc
 The replacement account must sign in once first. --owners must match all current Owners, including disabled accounts.
 Without --apply, roles, sessions, invitations and contacts stay unchanged; metadata-read audit events are recorded.
 Migrations and mandatory deletion-ledger enforcement still run, including previously requested deletions.
-DATABASE_URL and DELETION_LEDGER_PATH are required. Existing file permissions and device trust are never restored.`
+DATABASE_URL and DELETION_LEDGER_PATH are required.
+The replacement Owner automatically receives all file-operation permissions in this organization.
+Demoted Owners revert to their stored Member permissions; affected requests and shares are revoked.
+Device keys, device trust and access to another recipient's past files are never restored.`
 
 export async function executeManagementRecovery(db:Database,ledger:Deletions,input:ReturnType<typeof parseRecoveryArgs>,fetcher=fetch) {
   await ledger.sync(db)

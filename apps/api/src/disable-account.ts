@@ -2,7 +2,7 @@ import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Database } from './database.ts'
 import { Deletions } from './deletions.ts'
-import { invalidateRequests } from './requests.ts'
+import { invalidateRequests } from './lifecycle.ts'
 
 function userId(value: string) {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value)) throw new Error('invalid_user_id')
@@ -18,7 +18,7 @@ export async function disableUser(db: Database, id: string, now = Date.now()): P
     await db.run('DELETE FROM oauth_flows WHERE previous_session IN (SELECT token_hash FROM sessions WHERE user_id=$1)', id)
     await db.run('DELETE FROM sessions WHERE user_id=$1', id)
     await db.run("UPDATE invitations SET status='cancelled' WHERE status='pending' AND (issuer_id=$1 OR target_id=(SELECT github_id FROM users WHERE id=$1))", id)
-    await invalidateRequests(db, now)
+    await invalidateRequests(db, now, { userId: id })
     await db.run("INSERT INTO auth_events(user_id,event,created_at) VALUES($1,'account_disabled',$2)", id, now)
   })
 }

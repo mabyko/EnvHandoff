@@ -179,7 +179,7 @@ export function ProLogin() {
       {error && <Notice error>{error}</Notice>}
       {sessionUnavailable && <Notice error>서버에 연결하지 못해 작업을 잠시 멈췄어요. 이 탭의 파일과 코드는 유지돼요. <button className="button" type="button" disabled={busy} onClick={() => refreshSession.current()}>연결 다시 확인</button></Notice>}
       {!route ? <div className="pro-entry"><div className="pro-entry-intro"><h2>페이지를 찾을 수 없어요</h2><p className="lead">링크 주소를 확인하거나 Pro 시작 화면으로 돌아가세요.</p></div><a className="button" href="/pro" onClick={event => followProLink(event, { page: 'start' }, navigate)}>Pro 시작으로</a></div> : session ? (
-        <ProOrganizations key={'organizations:' + session.user.id + ':' + session.csrf} route={route} onNavigate={navigate} onResolvedOrganization={resolveOrganization} api={api} userId={session.user.id} csrf={session.csrf} initialToken={initialToken} disabled={busy || sessionUnavailable} onAccepted={() => setInitialToken('')} onExpired={expired}
+        <ProOrganizations acceptNewTransfers={session.acceptNewTransfers !== false} key={'organizations:' + session.user.id + ':' + session.csrf} route={route} onNavigate={navigate} onResolvedOrganization={resolveOrganization} api={api} userId={session.user.id} csrf={session.csrf} initialToken={initialToken} disabled={busy || sessionUnavailable} onAccepted={() => setInitialToken('')} onExpired={expired}
           settings={<ProSecurity key={'security:' + session.user.id + ':' + session.csrf} api={api} userId={session.user.id} csrf={session.csrf} disabled={busy || sessionUnavailable} onExpired={expired} onDeleted={warning => { setError(warning); expired() }} />} />
       ) : (session !== undefined || sessionUnavailable) && (
         <div className="pro-entry pro-entry-grid">

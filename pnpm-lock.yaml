@@ -205,6 +205,9 @@ importers:
       '@vitejs/plugin-react':
         specifier: ^6.1.1
         version: 6.1.1(vite@8.3.0(@types/node@24.13.4)(esbuild@0.28.1))
+      chrome-devtools-mcp:
+        specifier: 1.10.1
+        version: 1.10.1
       oxlint:
         specifier: ^1.81.0
         version: 1.82.0
@@ -1057,6 +1060,19 @@ packages:
     resolution: {integrity: sha512-tyQ+Jpnw+4NDwDtl7ZNteXBm7N0TeJ6gYww79kkabpcYoCEXkUUpmt9BlDUKH8ub17tjAeiuyqa9NQzH0vp2Aw==}
     engines: {node: '>=22'}
     hasBin: true
+
+  chrome-devtools-mcp@1.10.1:
+    resolution: {integrity: sha512-Klw6HWDqHC/XS1JwZldd2r49aUhbUJN9m9Mvcx4SEueIPXtzuQX+QelxAViobv8YUkDZ7HWDrmViR6LeYK0wAw==}
+    engines: {node: ^20.19.0 || ^22.12.0 || >=23}
+    hasBin: true
+    peerDependencies:
+      '@blackwell-systems/gcf': ^2.2.2
+      '@toon-format/toon': ^4.1.0
+    peerDependenciesMeta:
+      '@blackwell-systems/gcf':
+        optional: true
+      '@toon-format/toon':
+        optional: true
 
   cliui@6.0.0:
     resolution: {integrity: sha512-t6wbgtoCXvAzst7QgXxJYqPt0usEfbgQdftEPbLL/cvv6HPE5VgvqCuAIDR0NgU52ds6rFwqrgakNLrHEjCbrQ==}
@@ -2141,6 +2157,8 @@ snapshots:
       - '@types/node'
       - bufferutil
       - utf-8-validate
+
+  chrome-devtools-mcp@1.10.1: {}
 
   cliui@6.0.0:
     dependencies:

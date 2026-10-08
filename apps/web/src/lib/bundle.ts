@@ -1,3 +1,5 @@
+import { METADATA_LIMITS } from '@envhandoff/protocol'
+
 export const LIMITS = {
   files: 100,
   fileBytes: 1024 * 1024,
@@ -174,8 +176,8 @@ export async function createBundle(
   environmentInput: string,
 ): Promise<SealedBundle> {
   const subtle = getCrypto()
-  const projectLabel = text(projectInput, '프로젝트 표시명', 80)
-  const environment = text(environmentInput, '환경 이름', 48)
+  const projectLabel = text(projectInput, '프로젝트 표시명', METADATA_LIMITS.project)
+  const environment = text(environmentInput, '환경 이름', METADATA_LIMITS.environment)
   const paths = validateFiles(sources.map(({ file, path }) => ({ path, size: file.size })))
   const files = []
   for (let i = 0; i < sources.length; i++) {
@@ -286,8 +288,8 @@ export async function openBundle(buffer: ArrayBuffer, code: string): Promise<Ope
   const paths = validateFiles(files.map((file) => ({ path: file.path, size: file.bytes.byteLength })))
   return {
     bundleId: payload.bundleId,
-    projectLabel: text(payload.projectLabel, '프로젝트 표시명', 80),
-    environment: text(payload.environment, '환경 이름', 48),
+    projectLabel: text(payload.projectLabel, '프로젝트 표시명', METADATA_LIMITS.project),
+    environment: text(payload.environment, '환경 이름', METADATA_LIMITS.environment),
     createdAt: payload.createdAt,
     files: files.map((file, i) => ({ ...file, path: paths[i] })),
   }

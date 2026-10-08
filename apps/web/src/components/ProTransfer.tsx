@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { betaClosedMessage, limitMessage, uploadEncrypted } from '../lib/pro-feedback.ts'
+import { betaClosedMessage, reservationRejected, uploadEncrypted } from '../lib/pro-feedback.ts'
+import { proRequest, uploadResolution } from '../lib/pro-api.ts'
 import { followProLink, proPath } from '../lib/pro-navigation.ts'
 import type { ProRoute } from '../lib/pro-navigation.ts'
 import { Notice } from './ui.tsx'
@@ -19,7 +20,7 @@ const errors: Record<string,string> = { beta_closed:betaClosedMessage, device_re
 type Context = { pendingUpload?: {id:string;status:string}; sessionHash:string; sender?:DeviceIdentity; receiver:DeviceIdentity; binding?:TeamBinding; organizationId?:string; projectId?:string; environmentId?:string; requestId?:string; senderUserId?:string; recipientUserId?:string; recipientDeviceId?:string; id?:string; status?:string; size?:number; digest?:string }
 type Pending = { id:string; bytes:ArrayBuffer; digest:string; days:number; deviceId:string }
 
-export function ProTransfer({ api,orgId,requestId,userId,csrf,sending,project,environment,onDone,onExpired,onNavigate }: { api:string;orgId:string;requestId:string;userId:string;csrf:string;sending:boolean;project:string;environment:string;onDone:()=>Promise<void>;onExpired:()=>void;onNavigate:(route:ProRoute)=>void }) {
+export function ProTransfer({ api,orgId,requestId,userId,csrf,sending,project,environment,acceptNewTransfers=true,onDone,onExpired,onNavigate }: { api:string;orgId:string;requestId:string;userId:string;csrf:string;sending:boolean;project:string;environment:string;acceptNewTransfers?:boolean;onDone:()=>Promise<void>;onExpired:()=>void;onNavigate:(route:ProRoute)=>void }) {
  const [context,setContext]=useState<Context|null>(null),[trusted,setTrusted]=useState(false),[fingerprint,setFingerprint]=useState('')
  const [files,setFiles]=useState<SourceFile[]>([]),[days,setDays]=useState(1),[opened,setOpened]=useState<OpenedBundle|null>(null)
  const [pending,setPending]=useState<Pending|null>(null),[busy,setBusy]=useState(false),[progress,setProgress]=useState(0),[error,setError]=useState(''),[message,setMessage]=useState('')
@@ -32,11 +33,9 @@ export function ProTransfer({ api,orgId,requestId,userId,csrf,sending,project,en
  useEffect(()=>{const controller=new AbortController();lifetime.current=controller;return()=>{controller.abort();work.current?.abort();cancellation.current?.abort()}},[])
  useEffect(()=>{if(!files.length&&!opened&&!pending)return;const warn=(e:BeforeUnloadEvent)=>{e.preventDefault();e.returnValue=''};window.addEventListener('beforeunload',warn);return()=>window.removeEventListener('beforeunload',warn)},[files,opened,pending])
  async function call(path:string,body?:Record<string,unknown>,signal=lifetime.current!.signal) {
-  const response=await fetch(api+base+path,{method:body?'POST':'GET',credentials:'include',signal:AbortSignal.any([signal,AbortSignal.timeout(120_000)]),headers:body?{'content-type':'application/json','x-csrf-token':csrf}:{},body:body?JSON.stringify(body):undefined})
-  if(response.status===401){onExpired();throw new Error('로그인이 만료됐어요.')}
-  if(!response.ok){const value=await response.json().catch(()=>({}));throw new Error(response.status===429?limitMessage(value.error as string,response.headers.get('retry-after')):errors[value.error as string]??'처리 결과를 확인하지 못했어요. 상태 확인 후 다시 시도해주세요.')}
-  return response
+  return proRequest(api+base+path,{csrf,signal,body,errors,onExpired})
  }
+
  async function run(action:(signal:AbortSignal)=>Promise<void>,label='처리 중…') {
   if(work.current||cancellation.current)return
   const controller=new AbortController();work.current=controller;setBusy(true);setOperation(label);setError('');setMessage('')
@@ -75,8 +74,11 @@ export function ProTransfer({ api,orgId,requestId,userId,csrf,sending,project,en
  }
  async function cancelUpload(id:string,signal=lifetime.current!.signal) {
   const operationId=cancellations.current.get(id)??crypto.randomUUID();cancellations.current.set(id,operationId)
-  await call('/uploads/'+id+'/cancel',{operationId},signal)
-  signal.throwIfAborted();cancellations.current.delete(id)
+  const result:{status:string}=await (await call('/uploads/'+id+'/cancel',{operationId},signal)).json()
+  signal.throwIfAborted()
+  if(uploadResolution(result.status)==='pending')throw new Error('취소 결과를 확인하지 못했어요. 같은 시도를 다시 취소해주세요.')
+  cancellations.current.delete(id)
+  return result
  }
  async function stopUpload() {
   if(!pending||cancellation.current)return
@@ -84,12 +86,18 @@ export function ProTransfer({ api,orgId,requestId,userId,csrf,sending,project,en
   work.current?.abort()
   const signal=AbortSignal.any([controller.signal,lifetime.current!.signal])
   try {
-   await cancelUpload(pending.id,signal)
-   if(!signal.aborted){setPending(null);setProgress(0);setMessage('업로드 시도를 취소했어요. 요청은 다시 사용할 수 있어요.')}
+   const result=await cancelUpload(pending.id,signal)
+   if(!signal.aborted){
+    setPending(null);setProgress(0)
+    if(uploadResolution(result.status)==='complete'){setFiles([]);setMessage('업로드가 이미 완료됐어요.');await onDone()}
+    else setMessage('업로드 시도를 취소했어요. 원본으로 새로 준비할 수 있어요.')
+   }
   } catch(error) {if(!signal.aborted)setError(explainError(error))}
   finally{if(cancellation.current===controller)cancellation.current=null;if(!lifetime.current?.signal.aborted)setCancelling(false)}
  }
  async function send(signal:AbortSignal) {
+  if(!acceptNewTransfers)throw new Error(betaClosedMessage)
+  const firstAttempt=!pending
   if(!context||!peer)throw new Error('상대 기기를 먼저 확인해주세요.')
   const local=await loadLocalDevice(userId);if(!local)throw new Error('기기를 먼저 등록해주세요.')
   const key=await trustedPeerEncryptionKey(userId,peer)
@@ -103,7 +111,9 @@ export function ProTransfer({ api,orgId,requestId,userId,csrf,sending,project,en
    if(signal.aborted)return
    setPending(upload)
   }
-  const reserved=await (await call('/uploads',{operationId:upload.id,deviceId:upload.deviceId,size:upload.bytes.byteLength,digest:upload.digest,retentionDays:upload.days},signal)).json()
+  let reserved:{status:string}
+  try{reserved=await(await call('/uploads',{operationId:upload.id,deviceId:upload.deviceId,size:upload.bytes.byteLength,digest:upload.digest,retentionDays:upload.days},signal)).json()}
+  catch(error){if(firstAttempt&&reservationRejected(error)&&!signal.aborted)setPending(null);throw error}
   if(signal.aborted)return
   if(reserved.status==='available'){setFiles([]);setPending(null);await onDone();return}
   if(reserved.status!=='reserved')throw new Error('업로드 상태를 확인한 뒤 새 시도를 준비해주세요.')
@@ -136,6 +146,7 @@ export function ProTransfer({ api,orgId,requestId,userId,csrf,sending,project,en
  }
  const editingSource=editing
  return <section className="pro-transfer" aria-label={sending?'파일 전달':'전달 파일 열기'} aria-busy={busy||cancelling} data-work-loss={!!files.length || !!opened || !!pending}>
+  {sending&&!acceptNewTransfers&&<Notice>{betaClosedMessage}</Notice>}
   {error&&<Notice error>{error}</Notice>}{message&&<p role="status">{message}</p>}
   <fieldset disabled={busy||cancelling} className="plain-fieldset pro-panel">
    <legend>{sending?'암호화해서 보내기':'내 기기로 파일 열기'}</legend>
@@ -147,7 +158,7 @@ export function ProTransfer({ api,orgId,requestId,userId,csrf,sending,project,en
      <label>별도 대화로 받은 상대 기기 지문<input value={fingerprint} onChange={e=>setFingerprint(e.target.value)} required maxLength={43} autoComplete="off" spellCheck={false}/></label>
      <p className="help">알고 있는 연락 경로에서 상대의 계정·기기·지문을 대조해주세요.</p><button className="button primary" type="submit">지문 대조 후 저장</button>
     </form>:<p>이 브라우저에 확인한 상대 기기가 저장돼 있어요.</p>}</>}
-   {context?.pendingUpload&&!pending&&<><p>이 요청에 이전 업로드가 남아 있어요. 파일을 잃었다면 이전 시도를 취소한 뒤 다시 선택해주세요.</p><button className="button" type="button" onClick={()=>{if(window.confirm('다른 탭에서 진행 중인 업로드도 중단돼요. 이전 업로드 시도를 취소할까요?'))void run(async signal=>{await cancelUpload(context.pendingUpload!.id,signal);await inspect(signal)})}}>이전 업로드 취소</button></>}
+   {context?.pendingUpload&&!pending&&<><p>이 요청에 이전 업로드가 남아 있어요. 파일을 잃었다면 이전 시도를 취소한 뒤 다시 선택해주세요.</p><button className="button" type="button" onClick={()=>{if(window.confirm('다른 탭에서 진행 중인 업로드도 중단돼요. 이전 업로드 시도를 취소할까요?'))void run(async signal=>{const result=await cancelUpload(context.pendingUpload!.id,signal);if(uploadResolution(result.status)==='complete')await onDone();else await inspect(signal)})}}>이전 업로드 취소</button></>}
    {trusted&&sending&&<>
     <label className="pro-form">보낼 파일<input type="file" multiple disabled={!!pending} onChange={e=>{const selected=Array.from(e.target.files??[]).map(file=>({file,path:file.name}));try{validateFiles(selected.map(x=>({path:x.path,size:x.file.size})));setFiles(selected);setEditing(null)}catch(error){setError(explainError(error))}e.target.value=''}}/></label>
     {files.map((file,index)=><div className="pro-form" key={index}><label>배치 경로<input value={file.path} disabled={!!pending} onChange={e=>setFiles(current=>current.map((f,i)=>i===index?{...f,path:e.target.value}:f))}/></label>
@@ -160,11 +171,11 @@ export function ProTransfer({ api,orgId,requestId,userId,csrf,sending,project,en
     <label className="pro-form">보관 기간<select value={days} disabled={!!pending} onChange={e=>setDays(Number(e.target.value))}><option value={1}>24시간</option><option value={3}>3일</option><option value={7}>7일</option></select></label>
     <p>조직·프로젝트·환경 이름은 서버에 저장돼요. 파일 이름·배치 경로·내용은 암호화된 묶음 안에만 담겨요.</p>
     <p>업로드 확정부터 이용할 수 있는 기간이에요. 만료·회수 뒤 저장소 삭제까지 최대 24시간이 더 걸릴 수 있어요.</p>
-    <button className="button primary" type="button" disabled={!files.length||!!editing} onClick={()=>{void run(send,'암호화·업로드 처리 중…')}}>{pending?'같은 업로드 재시도':'암호화해서 업로드'}</button>
+    <button className="button primary" type="button" disabled={!acceptNewTransfers||!files.length||!!editing} onClick={()=>{void run(send,'암호화·업로드 처리 중…')}}>{pending?'같은 업로드 재시도':'암호화해서 업로드'}</button>
    </>}
    {trusted&&!sending&&<p>수신 확인은 이 브라우저가 파일 검사를 마쳤다는 보고예요. 파일 저장이나 프로젝트 적용 여부를 보장하지 않아요.</p>}
    {trusted&&!sending&&<button className="button primary" type="button" onClick={()=>{void run(receive,'파일 다운로드·검사 중…')}}>파일 다운로드·검사</button>}
-   {pending&&<button className="button" type="button" onClick={()=>{void run(async signal=>{const value=await(await call('/uploads/'+pending.id,undefined,signal)).json();if(signal.aborted)return;if(value.status==='available'){setFiles([]);setPending(null);await onDone()}else if(['failed','cancelled'].includes(value.status)){setPending(null);setProgress(0);setMessage('이전 업로드는 종료됐어요. 새로 업로드할 수 있어요.')}else setMessage(value.status==='writing'?'서버가 파일을 저장하고 있어요. 완료 응답을 기다리거나 잠시 후 상태를 다시 확인해주세요.':'업로드 대기 중이에요. 같은 업로드를 재시도할 수 있어요.')})}}>업로드 상태 확인</button>}
+   {pending&&<button className="button" type="button" onClick={()=>{void run(async signal=>{const value=await(await call('/uploads/'+pending.id,undefined,signal)).json();if(signal.aborted)return;if(uploadResolution(value.status)==='complete'){setFiles([]);setPending(null);await onDone()}else if(uploadResolution(value.status)==='ended'){setPending(null);setProgress(0);setMessage('이전 업로드는 종료됐어요. 새로 업로드할 수 있어요.')}else setMessage(value.status==='writing'?'서버가 파일을 저장하고 있어요. 완료 응답을 기다리거나 잠시 후 상태를 다시 확인해주세요.':'업로드 대기 중이에요. 같은 업로드를 재시도할 수 있어요.')})}}>업로드 상태 확인</button>}
   </fieldset>
   <p className="pro-operation-status" role="status">{cancelling?'업로드 취소 확인 중…':busy?operation:''}</p>
   {busy&&sending&&operation==='암호화·업로드 처리 중…'&&progress>0&&<progress max={100} value={progress} aria-label="파일 업로드 진행률"/>}

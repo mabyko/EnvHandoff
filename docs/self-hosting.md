@@ -38,10 +38,10 @@ git rev-parse HEAD
 저장소 루트에서 실행한다. 기존 자체 호스팅 설정이 있으면 복사하지 않고 그 파일을 편집한다.
 
 ```sh
-cp -n apps/server/wrangler.jsonc apps/server/wrangler.self-hosted.jsonc
+cp -n apps/server/wrangler.self-hosted.example.jsonc apps/server/wrangler.self-hosted.jsonc
 ```
 
-새 파일은 Git에서 제외된다. 공식 서비스용 `wrangler.jsonc`는 수정하지 않고, 복사본의 다음 항목을 바꾼다.
+새 파일은 Git에서 제외된다. 공식 서비스는 `cloudflare.config.ts`와 `wrangler.config.ts`를 사용한다. 자체 호스팅은 별도의 Wrangler 예제를 복사해 사용하고, 복사본의 다음 항목을 바꾼다.
 
 | 항목 | 예시 |
 | --- | --- |
@@ -160,7 +160,7 @@ curl -sS -o /dev/null -w '%{http_code}\n' https://api.example.com/auth/session
 dc exec api node src/invite-owner.ts YOUR_GITHUB_LOGIN
 ```
 
-출력된 대상 계정·만료 시각을 확인하고 초대 링크를 해당 계정으로 연다. 워크스페이스를 만든 뒤 패스키 또는 인증 앱을 등록하고, 팀·프로젝트·환경을 만든다. Owner도 파일 권한을 자동으로 얻지 않으므로 필요한 보내기·받기·외부 공유 권한을 명시적으로 설정한다. 팀원은 별도의 GitHub 계정으로 초대한다.
+출력된 대상 계정·만료 시각을 확인하고 초대 링크를 해당 계정으로 연다. 워크스페이스를 만든 뒤 패스키 또는 인증 앱을 등록하고, 팀·프로젝트·환경을 만든다. Owner는 보내기·받기·외부 공유 권한을 자동으로 얻는다. 팀원은 프로젝트 기본 권한을 설정하고 필요한 환경에만 예외를 둔다. 팀원은 별도의 GitHub 계정으로 초대한다.
 
 초대를 잘못 발급했다면 출력된 초대 ID로 취소한다.
 

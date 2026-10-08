@@ -8,22 +8,28 @@ import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { Client } from 'pg'
 import { Database } from '../src/database.ts'
 import { Deletions } from '../src/deletions.ts'
 
-test('real HTTP server accepts beta JSON bodies and preserves authentication, size and rate limits', { timeout: 20_000 }, async t => {
+test('real HTTP server accepts beta JSON bodies and preserves authentication, size and rate limits', { timeout: 60_000 }, async t => {
   const url = new URL(process.env.TEST_DATABASE_URL ?? 'postgresql://envhandoff:local-development-only@127.0.0.1:55432/envhandoff_test')
   assert.match(url.pathname, /^\/[a-z0-9_]+_test$/, 'Use a dedicated test database')
-  const admin = new Database(url.href), name = 'http_' + randomUUID().replaceAll('-', '') + '_test'
+  // CREATE/DROP DATABASE can wait for a cluster checkpoint while other tests write.
+  // Give only this isolated test's administrative DDL a bounded longer timeout;
+  // application connections retain their normal 15-second statement timeout.
+  const admin = new Client({ connectionString: url.href, connectionTimeoutMillis: 5000, statement_timeout: 45_000 });
+  const name = 'http_' + randomUUID().replaceAll('-', '') + '_test'
   const root = await mkdtemp(join(tmpdir(), 'envhandoff-http-'))
   let db: Database | undefined, stop = async () => {}
   t.after(async () => {
     await stop(); await db?.close()
-    try { await admin.run(`DROP DATABASE IF EXISTS ${name}`) }
-    finally { await admin.close(); await rm(root, { recursive: true, force: true }) }
+    try { await admin.query(`DROP DATABASE IF EXISTS ${name}`) }
+    finally { await admin.end(); await rm(root, { recursive: true, force: true }) }
   })
   // The entry point uses the public schema; give its child process an isolated database.
-  await admin.run(`CREATE DATABASE ${name}`)
+  await admin.connect()
+  await admin.query(`CREATE DATABASE ${name}`)
   url.pathname = '/' + name
   db = new Database(url.href); await db.migrate()
   await Deletions.initialize(join(root, 'ledger'))

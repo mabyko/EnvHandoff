@@ -6,7 +6,7 @@
 
 EnvHandoff encrypts `.env` and other development configuration files for sharing. It bundles the settings a teammate still needs after cloning a repository, preserving each file as it is. The recipient opens the bundle with a separately shared code, extracts the original files, and uses them in their own project.
 
-The web app starts with file sharing and downloads. A planned native desktop app in v4.0 will add comparison, application, and recovery within a project folder. The current version is **0.0.6**, with file sharing and live transfer available in local development. The app interface and design documents are currently in Korean.
+The web app starts with file sharing and downloads. A planned native desktop app in v4.0 will add comparison, application, and recovery within a project folder. The current version is **0.0.7**, with file sharing and live transfer available in local development. The app interface and design documents are currently in Korean.
 
 ## Screenshots
 
@@ -137,7 +137,7 @@ docs/                   Product, web, desktop, bundle format, and relay designs
 
 Turborepo runs workspace tasks. Tests and development servers are not cached. Web and API build output goes into each app's `dist/`; Worker Build Output goes into `apps/server/.cloudflare/output/v0/`. No remote cache is connected. Native desktop apps are separate work in v4.0. JavaScript and TypeScript dependencies use one root `pnpm-lock.yaml`. Only the required esbuild and workerd dependency installation scripts are allowed in `pnpm-workspace.yaml`.
 
-The root and all workspace packages start at version `0.0.1`. This is separate from the product plan's v1.0 and v2.0 feature stages and shared file format version 1.
+The root and all workspace packages share the current product version shown above. Package versions are separate from the product plan's feature stages and shared file format version 1.
 
 ## Validation and deployment status
 

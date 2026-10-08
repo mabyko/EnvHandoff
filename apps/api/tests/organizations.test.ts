@@ -25,6 +25,19 @@ function request(path: string, account?: Awaited<ReturnType<typeof user>>, body?
       ...(body === undefined ? {} : { 'content-type': 'application/json' }), ...headers,
     }, body: body === undefined ? undefined : JSON.stringify(body) });
 }
+test('environment create and rename enforce the encrypted bundle metadata limit', async (t) => {
+  const db = (await testDatabase(t)).connect();
+  try {
+    const api = new AuthApi(db, config, fetch, () => time), store = new Organizations(db, () => time), owner = await user(db, 1);
+    const org = await bootstrap(store, owner), project = await store.createProject(owner.userId, org.id, 'p'.repeat(80), [org.teamId]);
+    const path = '/organizations/' + org.id;
+    const environment = await store.createEnvironment(owner.userId, org.id, project.id, 'e'.repeat(48));
+    assert.equal((await api.handle(request(path + '/projects/' + project.id + '/environments', owner, { name: 'e'.repeat(49) }))).status, 400);
+    assert.equal((await api.handle(request(path + '/environments/' + environment.id + '/rename', owner, { name: 'e'.repeat(49) }))).status, 400);
+    await db.run('UPDATE environments SET name=$1 WHERE id=$2', 'legacy'.repeat(10), environment.id);
+    assert.equal((await api.handle(request(path + '/environments/' + environment.id + '/rename', owner, { name: 'production' }))).status, 200);
+  } finally { await db.close(); }
+});
 test('opening invitation is account-bound and idempotent across two DB connections and restart', async (t) => {
   const testDb = await testDatabase(t);
   let db = testDb.connect();
@@ -225,7 +238,7 @@ test('two simulated accounts complete member onboarding over HTTP and cannot byp
     await db.close();
   }
 });
-test('projects use default team metadata access while all three file permissions default to deny, including Owner', async (t) => {
+test('projects use default team metadata access with automatic Owner permissions and default-deny Member permissions', async (t) => {
   const testDb = await testDatabase(t);
   const db = testDb.connect();
   try {
@@ -235,15 +248,11 @@ test('projects use default team metadata access while all three file permissions
     await store.accept(member.userId, (await store.issueMember(owner.userId, org.id, org.teamId, member)).token);
     const project = (await store.createProject(owner.userId, org.id, 'API')), env = (await store.createEnvironment(owner.userId, org.id, project.id, 'production'));
     assert.deepEqual((await store.catalog(owner.userId, org.id)).projects[0]!.teamIds, [org.teamId]);
-    for (const account of [owner, member]) {
-      assert.equal((await store.catalog(account.userId, org.id)).projects.length, 1);
-      for (const action of ['receive', 'send', 'externalShare'] as const)
-        await assert.rejects(async () => (await store.requireFilePermission(account.userId, org.id, env.id, action)), /file_permission_required/);
+    for (const action of ['receive', 'send', 'externalShare'] as const) {
+      await store.requireFilePermission(owner.userId, org.id, env.id, action);
+      await assert.rejects(store.requireFilePermission(member.userId, org.id, env.id, action), /file_permission_required/);
     }
-    await store.setPermissions(owner.userId, org.id, env.id, owner.userId, true, false, false);
-    await store.requireFilePermission(owner.userId, org.id, env.id, 'receive');
-    await assert.rejects(async () => (await store.requireFilePermission(owner.userId, org.id, env.id, 'send')), /file_permission_required/);
-    await assert.rejects(async () => (await store.requireFilePermission(owner.userId, org.id, env.id, 'externalShare')), /file_permission_required/);
+    await assert.rejects(store.setPermissions(owner.userId, org.id, env.id, owner.userId, true, false, false), /owner_permissions_automatic/);
     await store.setPermissions(owner.userId, org.id, env.id, member.userId, false, true, false);
     await store.requireFilePermission(member.userId, org.id, env.id, 'send');
     assert.deepEqual((await store.catalog(member.userId, org.id)).projects[0]!.environments[0]!.grants, []);
@@ -253,7 +262,7 @@ test('projects use default team metadata access while all three file permissions
     await assert.rejects(async () => (await store.setPermissions(owner.userId, org.id, env.id, member.userId, 'false', true, false)), /invalid_permission/);
     await store.setTeamMember(owner.userId, org.id, org.teamId, owner.userId, false);
     assert.equal((await store.catalog(owner.userId, org.id)).projects.length, 1, 'Owner retains management metadata access');
-    await assert.rejects(async () => (await store.requireFilePermission(owner.userId, org.id, env.id, 'receive')), /file_permission_required/);
+    await store.requireFilePermission(owner.userId, org.id, env.id, 'receive');
   }
   finally {
     await db.close();
@@ -341,9 +350,11 @@ test('rename and deletion keep scope boundaries, preserve the default team and r
     const org = (await bootstrap(store, owner)), other = (await bootstrap(store, owner, 'Other'));
     const project = (await store.createProject(owner.userId, org.id, 'API')), env = (await store.createEnvironment(owner.userId, org.id, project.id, 'dev'));
     const otherProject = (await store.createProject(owner.userId, other.id, 'API'));
+    const member = await user(db, 3);
+    await store.accept(member.userId, (await store.issueMember(owner.userId, org.id, org.teamId, member)).token);
     const team = (await store.createTeam(owner.userId, org.id, 'Backend')), invite = (await store.issueMember(owner.userId, org.id, team.id, target));
     await store.setProjectTeams(owner.userId, org.id, project.id, [org.teamId, team.id]);
-    await store.setPermissions(owner.userId, org.id, env.id, owner.userId, true, true, true);
+    await store.setPermissions(owner.userId, org.id, env.id, member.userId, true, true, true);
     await store.rename(owner.userId, org.id, 'projects', project.id, 'Renamed');
     await store.rename(owner.userId, org.id, 'environments', env.id, 'production');
     await store.rename(owner.userId, org.id, 'teams', team.id, 'Platform');
@@ -358,8 +369,8 @@ test('rename and deletion keep scope boundaries, preserve the default team and r
     assert.equal((await db.get("SELECT count(*) AS n FROM environment_permissions"))!.n, 0);
     const newEnv = (await store.createEnvironment(owner.userId, org.id, project.id, 'production'));
     assert.notEqual(newEnv.id, env.id);
-    await assert.rejects(async () => (await store.requireFilePermission(owner.userId, org.id, newEnv.id, 'send')), /file_permission_required/);
-    await store.setPermissions(owner.userId, org.id, newEnv.id, owner.userId, true, true, true);
+    await assert.rejects(async () => (await store.requireFilePermission(member.userId, org.id, newEnv.id, 'send')), /file_permission_required/);
+    await store.setPermissions(owner.userId, org.id, newEnv.id, member.userId, true, true, true);
     await store.remove(owner.userId, org.id, 'projects', project.id);
     assert.equal((await db.get("SELECT count(*) AS n FROM environment_permissions"))!.n, 0);
     assert.equal((await db.get("SELECT count(*) AS n FROM environments"))!.n, 0);

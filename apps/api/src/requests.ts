@@ -1,6 +1,5 @@
 import { limits } from './limits.ts'
-import { invalidateShares } from './shares.ts'
-import { invalidateTransfers } from './transfers.ts'
+import { invalidateRequests, invalidateTransfers } from './lifecycle.ts'
 import { randomUUID } from 'node:crypto'
 import type { Database } from './database.ts'
 import type { Organizations } from './organizations.ts'
@@ -12,20 +11,6 @@ function id(value: unknown): string {
   return value
 }
 type Row = { id: string; org_id: string; environment_id: string; receiver_id: string; sender_id: string; receiver_device_id: string; status: string; created_at: number; expires_at: number; ended_at: number | null }
-
-// Also called inside permission/device/account mutations, before their transaction commits.
-export async function invalidateRequests(db: Database, now: number): Promise<void> {
-  await db.transaction(async () => {
-    await db.run("UPDATE file_requests SET status='expired',ended_at=$1 WHERE status IN ('pending','approved') AND expires_at <= $1", now)
-    await db.run(`UPDATE file_requests r SET status='cancelled',ended_at=$1 WHERE status IN ('pending','approved') AND (
-      NOT EXISTS(SELECT 1 FROM effective_file_permissions p WHERE p.org_id=r.org_id AND p.environment_id=r.environment_id AND p.user_id=r.receiver_id AND p.receive=1)
-      OR NOT EXISTS(SELECT 1 FROM effective_file_permissions p WHERE p.org_id=r.org_id AND p.environment_id=r.environment_id AND p.user_id=r.sender_id AND p.send=1)
-      OR NOT EXISTS(SELECT 1 FROM devices d WHERE d.id=r.receiver_device_id AND d.user_id=r.receiver_id AND d.status='active')
-    )`, now)
-    await invalidateTransfers(db, now)
-    await invalidateShares(db, now)
-  })
-}
 
 export class Requests {
   private readonly db: Database
@@ -40,6 +25,7 @@ export class Requests {
     await this.db.transaction(async () => {
       await invalidateRequests(this.db, this.clock())
       await this.db.run('DELETE FROM file_requests r WHERE ended_at <= $1 AND NOT EXISTS(SELECT 1 FROM uploads u WHERE u.request_id=r.id)', this.clock() - 30 * DAY)
+      await this.db.run("DELETE FROM upload_cancellations c WHERE c.kind='team' AND NOT EXISTS(SELECT 1 FROM file_requests r WHERE r.id=c.request_id)")
     })
   }
   private async owner(userId: string, orgId: string): Promise<boolean> {
@@ -111,7 +97,7 @@ export class Requests {
     if (!['pending', 'approved'].includes(row.status) || (action !== 'cancel' && row.status !== 'pending')) throw new HttpError(409, 'request_closed')
     const status = action === 'approve' ? 'approved' : action === 'reject' ? 'rejected' : 'cancelled'
     await this.db.run('UPDATE file_requests SET status=$1,ended_at=$2 WHERE id=$3', status, status === 'approved' ? null : this.clock(), row.id)
-    await invalidateTransfers(this.db, this.clock())
+    await invalidateTransfers(this.db, this.clock(), { requestId: row.id })
     return this.remember(userId, operationId, row.id, input, status)
   }
   async handle(request: Request, session: () => Promise<{ user_id: string; token_hash: string }>) {
@@ -124,7 +110,7 @@ export class Requests {
     return this.db.transaction(async () => {
       if ((await session()).token_hash !== auth.token_hash) throw new HttpError(401, 'session_expired')
       await this.db.run('UPDATE sessions SET last_seen=$1 WHERE token_hash=$2', this.clock(), auth.token_hash)
-      await invalidateRequests(this.db, this.clock())
+      await invalidateRequests(this.db, this.clock(), { organizationId: orgId })
       if (!resource && body) return this.create(auth.user_id, orgId, body)
       if (resource === 'options' && !action && !body) return this.options(auth.user_id, orgId, id(url.searchParams.get('environmentId')))
       if (!resource && !body) {

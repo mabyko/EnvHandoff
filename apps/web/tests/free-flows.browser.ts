@@ -5,6 +5,7 @@ import { createRoot } from 'react-dom/client'
 import { SendFlow } from '../src/components/SendFlow.tsx'
 import { ReceiveFlow } from '../src/components/ReceiveFlow.tsx'
 import { openBundle } from '../src/lib/bundle.ts'
+import App from '../src/App.tsx'
 
 const check = (value: unknown, message: string) => { if (!value) throw new Error(message) }
 async function until(condition: () => boolean) {
@@ -43,6 +44,9 @@ export async function verifyFreeFlows() {
     check(!host.querySelector<HTMLDetailsElement>('.share-options')!.open, 'Optional settings start collapsed')
     select(new File([source], '.env'))
     await until(() => !!host.querySelector('.picked-file'))
+    check(!!host.querySelector('[data-work-loss="true"]'), 'Selected files must participate in navigation protection')
+    const sendingUnload = new Event('beforeunload', { cancelable: true }); window.dispatchEvent(sendingUnload)
+    check(sendingUnload.defaultPrevented, 'Selected files must warn before reload')
     submit(); await until(() => !!host.querySelector('.task-card'))
     const code = host.querySelector<HTMLInputElement>('.copy-field input')!.value
     click('공유 파일 다운로드'); await until(() => downloads.length === 1)
@@ -79,6 +83,9 @@ export async function verifyFreeFlows() {
     input('input[name="share-code"]', code)
     await until(() => !host.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled)
     submit(); await until(() => !!host.querySelector('.received-files'))
+    check(!!host.querySelector('[data-work-loss="true"]'), 'Opened plaintext must participate in navigation protection')
+    const receivingUnload = new Event('beforeunload', { cancelable: true }); window.dispatchEvent(receivingUnload)
+    check(receivingUnload.defaultPrevented, 'Opened plaintext must warn before reload')
     check(!host.querySelector('.preview'), 'File content stays hidden until requested')
     check(host.querySelector('h1')?.textContent === '이제 프로젝트에 넣어주세요', 'Receiving explains the remaining manual placement step')
     click('다운로드'); await until(() => downloads.length === 3)
@@ -88,4 +95,34 @@ export async function verifyFreeFlows() {
     root.unmount(); host.remove(); URL.createObjectURL = originalCreateURL; HTMLAnchorElement.prototype.click = originalClick
     for (const url of urls) URL.revokeObjectURL(url)
   }
+}
+
+export async function verifyFreeNavigationGuard() {
+  const host = document.createElement('div'); document.body.append(host)
+  const root = createRoot(host), originalConfirm = window.confirm, originalURL = location.href
+  let confirmations = 0, leave = false
+  window.confirm = () => { confirmations++; return leave }
+  const button = (text: string) => [...host.querySelectorAll<HTMLButtonElement>('button')].find(node => node.textContent?.trim() === text)!
+  try {
+    history.replaceState(null, '', '/')
+    root.render(createElement(App)); await until(() => !!host.querySelector('.landing-hero'))
+    host.querySelector<HTMLButtonElement>('.landing-hero button.primary')!.click()
+    await until(() => !!host.querySelector('input[type="file"]'))
+    button('홈으로').click(); await until(() => !!host.querySelector('.landing-hero'))
+    check(confirmations === 0, 'Empty sender must navigate without confirmation')
+    host.querySelector<HTMLButtonElement>('.landing-hero button.primary')!.click()
+    await until(() => !!host.querySelector('input[type="file"]'))
+    const data = new DataTransfer(); data.items.add(new File(['PUBLIC=fixture\n'], '.env'))
+    const file = host.querySelector<HTMLInputElement>('input[type="file"]')!; file.files = data.files; file.dispatchEvent(new Event('change', { bubbles: true }))
+    await until(() => !!host.querySelector('.picked-file'))
+    button('홈으로').click(); await new Promise(resolve => setTimeout(resolve, 30))
+    check(confirmations === 1 && !!host.querySelector('.picked-file'), 'Declining home navigation must preserve the selected file')
+    history.replaceState(null, '', '/#receive-invalid'); window.dispatchEvent(new HashChangeEvent('hashchange'))
+    await until(() => confirmations === 2)
+    check(!!host.querySelector('.picked-file') && location.hash === '', 'Declining a receive link must preserve sender work and clear the fragment')
+    leave = true; button('홈으로').click(); await until(() => !!host.querySelector('.landing-hero'))
+    const cleanUnload = new Event('beforeunload', { cancelable: true }); window.dispatchEvent(cleanUnload)
+    check(!cleanUnload.defaultPrevented, 'Leaving the flow must remove its unload listener')
+    return { passed: true, checks: ['empty flow navigation', 'home guard retains files', 'receive link guard', 'unload cleanup'] }
+  } finally { root.unmount(); host.remove(); window.confirm = originalConfirm; history.replaceState(null, '', originalURL) }
 }

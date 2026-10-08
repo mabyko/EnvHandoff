@@ -5,7 +5,7 @@ import { testDatabase } from './database.ts'
 test('PostgreSQL transactions isolate concurrent callers, roll back failures and rerun migrations safely', async (t) => {
   const fixture = await testDatabase(t), a = fixture.connect(), b = fixture.connect()
   await Promise.all([a.migrate(), b.migrate()])
-  assert.equal((await a.get('SELECT count(*) AS n FROM schema_migrations'))!.n, 9)
+  assert.equal((await a.get('SELECT count(*) AS n FROM schema_migrations'))!.n, 11)
   await a.run('CREATE TABLE counter (n INTEGER NOT NULL)')
   await a.run('INSERT INTO counter VALUES (0)')
   await assert.rejects(a.transaction(async () => {
