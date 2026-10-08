@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { betaClosedMessage, limitMessage, subscribeTabReturn, uploadEncrypted } from '../lib/pro-feedback.ts'
+import { betaClosedMessage, reservationRejected, subscribeTabReturn, uploadEncrypted } from '../lib/pro-feedback.ts'
+import { proRequest, uploadResolution } from '../lib/pro-api.ts'
 import { CopyField, Notice } from './ui.tsx'
 import { createBundle, explainError, validateFiles } from '../lib/bundle.ts'
 import type { SourceFile } from '../lib/bundle.ts'
@@ -16,7 +17,7 @@ type Pending = Secret & { id: string; bytes: ArrayBuffer; digest: string; tokenH
 const statuses: Record<string, string> = { reserved: '업로드 대기', writing: '서버 저장 중', uploading: '업로드 중', available: '공유 중', revoked: '회수됨', expired: '만료됨', cancelled: '취소됨', failed: '업로드 실패' }
 const errors: Record<string, string> = { beta_closed: betaClosedMessage, share_unavailable: '공유를 확인할 수 없어요. 목록을 다시 확인해주세요.', file_permission_required: '외부 공유 권한이 없어요. Owner에게 권한을 요청해주세요.', creator_required: '공유를 만든 사람만 링크를 재발급할 수 있어요.', storage_limit: '워크스페이스 저장 용량 또는 동시 업로드 한도에 도달했어요.', request_rate_limit: '생성 한도에 도달했어요. 10분 뒤 다시 시도해주세요.', operation_conflict: '이 작업의 내용이 달라요. 업로드 상태를 확인해주세요.', upload_in_progress: '업로드 처리 중이에요. 상태를 확인한 뒤 다시 시도해주세요.', storage_unavailable: '파일 저장소가 아직 준비되지 않았어요.' }
 
-export function ProShares({ api, orgId, userId, csrf, targetId, route, onNavigate, disabled, onExpired }: { api: string; orgId: string; userId: string; csrf: string; targetId?: string; route: ProRoute; onNavigate: (route: ProRoute) => void; disabled: boolean; onExpired: () => void }) {
+export function ProShares({ api, orgId, userId, csrf, targetId, route, onNavigate, disabled, acceptNewTransfers = true, onExpired }: { api: string; orgId: string; userId: string; csrf: string; targetId?: string; route: ProRoute; onNavigate: (route: ProRoute) => void; disabled: boolean; acceptNewTransfers?: boolean; onExpired: () => void }) {
   const detailId = route.id ?? targetId
   const routeKey = JSON.stringify([detailId, route.create, route.environmentId])
   const currentView = useRef({ id: detailId, create: route.create, environmentId: route.environmentId, key: routeKey })
@@ -38,14 +39,9 @@ export function ProShares({ api, orgId, userId, csrf, targetId, route, onNavigat
   const listRoute: ProRoute = { page: 'shares', orgId }, createRoute: ProRoute = { ...listRoute, create: true }
 
   async function call(path: string, signal: AbortSignal, body?: Record<string, unknown> | ArrayBuffer) {
-    const binary = body instanceof ArrayBuffer
-    const response = await fetch(api + path, { method: body ? 'POST' : 'GET', credentials: 'include', cache: 'no-store', signal: AbortSignal.any([signal, AbortSignal.timeout(120_000)]), headers: body ? { 'content-type': binary ? 'application/octet-stream' : 'application/json', 'x-csrf-token': csrf } : {}, body: binary ? body : body ? JSON.stringify(body) : undefined })
-    if (response.status === 401) { expired.current(); throw new Error('로그인이 만료됐어요.') }
-    const value = await response.json().catch(() => ({}))
-    if (!response.ok) throw new Error(response.status === 429 ? limitMessage(value.error as string, response.headers.get('retry-after')) : errors[value.error as string] ?? '처리 결과를 확인하지 못했어요. 상태 확인 후 같은 작업을 다시 시도해주세요.')
-    signal.throwIfAborted()
-    return value
+    return (await proRequest(api + path, { csrf, signal, body, errors, onExpired: () => expired.current() })).json()
   }
+
   async function load(signal: AbortSignal) {
     const view = currentView.current
     try {
@@ -59,9 +55,9 @@ export function ProShares({ api, orgId, userId, csrf, targetId, route, onNavigat
         setEnvironmentId(current => {
           if (pending) return pending.environmentId
           const requested = environmentChanged ? view.environmentId ?? '' : current
-          return available.some(env => env.id === requested) ? requested : view.environmentId ? '' : available[0]?.id ?? ''
+          return requested || available[0]?.id || ''
         })
-        if (view.environmentId && !available.some(env => env.id === view.environmentId)) throw new Error('선택한 환경에 외부 공유 권한이 없어요. 다른 환경을 선택하거나 Owner에게 권한을 요청해주세요.')
+        if (view.environmentId && !available.some(env => env.id === view.environmentId)) setError('선택한 환경에 외부 공유 권한이 없어요. 다른 환경을 선택하거나 Owner에게 권한을 요청해주세요.')
       } else {
         const result = await call(base + (view.id ? '/' + view.id : ''), signal)
         if (signal.aborted || view.key !== currentView.current.key) return
@@ -111,6 +107,8 @@ export function ProShares({ api, orgId, userId, csrf, targetId, route, onNavigat
     onNavigate({ page: 'shares', orgId, id: upload.id })
   }
   async function send(signal: AbortSignal) {
+    if (!acceptNewTransfers) throw new Error(betaClosedMessage)
+    const firstAttempt = !pending
     let upload = pending
     if (!upload) {
       const env = environments.find(env => env.id === environmentId)
@@ -119,7 +117,9 @@ export function ProShares({ api, orgId, userId, csrf, targetId, route, onNavigat
       upload = { id: crypto.randomUUID(), bytes: bundle.bytes, code: bundle.code, token, tokenHash: await hashShareToken(token), digest: await deviceHash(new Uint8Array(bundle.bytes)), environmentId: env.id, days }
       signal.throwIfAborted(); setPending(upload)
     }
-    const reserved: Share = await call(base, signal, { operationId: upload.id, environmentId: upload.environmentId, size: upload.bytes.byteLength, digest: upload.digest, retentionDays: upload.days, tokenHash: upload.tokenHash })
+    let reserved: Share
+    try { reserved = await call(base, signal, { operationId: upload.id, environmentId: upload.environmentId, size: upload.bytes.byteLength, digest: upload.digest, retentionDays: upload.days, tokenHash: upload.tokenHash }) }
+    catch (error) { if (firstAttempt && reservationRejected(error) && !signal.aborted) setPending(null); throw error }
     if (reserved.status === 'available') { await finish(upload, signal); return }
     if (reserved.status !== 'reserved') throw new Error('이 업로드를 계속할 수 없어요. 상태를 확인한 뒤 종료된 시도는 지우고 다시 준비해주세요.')
     setProgress(0)
@@ -143,9 +143,25 @@ export function ProShares({ api, orgId, userId, csrf, targetId, route, onNavigat
     if (pending?.id === id) setPending(null)
     await load(signal); setMessage('공유를 회수했어요. 이미 받은 로컬 사본은 지워지지 않아요.')
   }
+  async function resolvePending(state: Share, upload: Pending, signal: AbortSignal) {
+    const resolution = uploadResolution(state.status)
+    if (resolution === 'complete') await finish(upload, signal)
+    else if (resolution === 'ended') {
+      setPending(null); setProgress(0); await load(signal)
+      setMessage('이전 업로드가 종료됐어요. 원본으로 새 공유를 만들 수 있어요.')
+    } else setMessage('업로드 상태: ' + (statuses[state.status] ?? '확인 중'))
+  }
+  async function cancelPending(upload: Pending, signal: AbortSignal) {
+    const operationId = revocations.current.get(upload.id) ?? crypto.randomUUID()
+    revocations.current.set(upload.id, operationId)
+    const result: Share = await call(base + '/' + upload.id + '/cancel', signal, { operationId })
+    if (uploadResolution(result.status) === 'pending') throw new Error('취소 결과를 확인하지 못했어요. 같은 시도를 다시 취소해주세요.')
+    revocations.current.delete(upload.id)
+    await resolvePending(result, upload, signal)
+  }
   const draft = editing
   const shown = detailId ? shares.filter(share => share.id === detailId) : shares
-  const uploadRecovery = pending && <div className="actions"><button type="button" className="button" disabled={busy || disabled} onClick={() => { void run(async signal => { const state: Share = await call(base + '/' + pending.id, signal); if (state.status === 'available') await finish(pending, signal); else if (['revoked', 'expired', 'cancelled', 'failed'].includes(state.status)) { setPending(null); await load(signal); setMessage('이전 업로드가 종료됐어요. 원본으로 새 공유를 만들 수 있어요.') } else setMessage('업로드 상태: ' + (statuses[state.status] ?? state.status)) }) }}>업로드 상태 확인</button><button type="button" className="button" disabled={busy || disabled} onClick={() => { if (window.confirm('이 업로드 시도를 취소할까요?')) void run(signal => revoke(pending.id, signal)) }}>업로드 시도 취소</button></div>
+  const uploadRecovery = pending && <div className="actions"><button type="button" className="button" disabled={busy || disabled} onClick={() => { void run(async signal => { await resolvePending(await call(base + '/' + pending.id, signal), pending, signal) }) }}>업로드 상태 확인</button><button type="button" className="button" disabled={busy || disabled} onClick={() => { if (window.confirm('이 업로드 시도를 취소할까요? 이미 완료됐다면 공유 링크와 코드를 확인해요.')) void run(signal => cancelPending(pending, signal)) }}>업로드 시도 취소</button></div>
   return <section className="pro-shares" aria-label="외부 공유" aria-busy={busy || disabled} data-work-loss={sensitive}>
     <header className="pro-page-header"><div><h2>{route.create ? '외부 공유 만들기' : detailId ? '외부 공유 상세' : '외부 공유'}</h2><p>{route.create ? '파일을 암호화하고 팀 외부의 사람에게 전달하세요.' : detailId ? '접근 링크와 코드를 전달하고 수신 상태를 확인하세요.' : '비회원에게 공유한 파일의 기한과 수신 상태를 확인하세요.'}</p></div>
       <div className="actions">{(detailId || route.create) ? <a className="button" href={proPath(listRoute)} onClick={event => followProLink(event, listRoute, onNavigate)}>공유 목록</a> : <a className="button primary" href={proPath(createRoute)} onClick={event => followProLink(event, createRoute, onNavigate)}>새 외부 공유</a>}
@@ -153,12 +169,13 @@ export function ProShares({ api, orgId, userId, csrf, targetId, route, onNavigat
     </header>
     {error && <Notice error>{error}</Notice>}<p className="pro-status-line" role="status">{busy ? uploading && pending ? `암호문을 업로드하고 있어요. ${progress}%` : '공유 정보를 확인하거나 처리하고 있어요.' : message}</p>
     {route.create ? <>
+      {!acceptNewTransfers && <Notice>{betaClosedMessage}</Notice>}
       <p>기기 등록 없이 비회원에게 보낼 수 있어요. 환경별 외부 공유 권한이 필요해요.</p>
       <fieldset className="plain-fieldset pro-form-panel" disabled={busy || disabled}>
         <legend>새 공유 만들기</legend>
         {!environments.length && !busy && <Notice>공유 가능한 환경이 없어요. Owner에게 외부 공유 권한을 요청해주세요.</Notice>}
         {!!environments.length && <>
-          <label className="pro-form">공유할 환경<select value={environmentId} disabled={!!pending} onChange={e => setEnvironmentId(e.target.value)}>{!environmentId && <option value="" disabled>환경을 선택해주세요</option>}{environments.map(env => <option key={env.id} value={env.id}>{env.project} / {env.name}</option>)}</select></label>
+          <label className="pro-form">공유할 환경<select value={environmentId} disabled={!!pending} onChange={e => setEnvironmentId(e.target.value)}>{!environmentId && <option value="" disabled>환경을 선택해주세요</option>}{environmentId && !environments.some(env => env.id === environmentId) && <option value={environmentId} disabled>선택한 환경을 사용할 수 없어요. 다시 선택해주세요.</option>}{environments.map(env => <option key={env.id} value={env.id}>{env.project} / {env.name}</option>)}</select></label>
           <label className="pro-form">보낼 파일<input type="file" multiple disabled={!!pending} onChange={event => { const selected = Array.from(event.target.files ?? []).map(file => ({ file, path: file.name })); try { validateFiles(selected.map(item => ({ path: item.path, size: item.file.size }))); setFiles(selected); setEditing(null); setError('') } catch (e) { setError(explainError(e)) } event.target.value = '' }} /></label>
           {files.map((file, index) => <div key={index} className="pro-form"><label>배치 경로<input value={file.path} disabled={!!pending} onChange={e => setFiles(current => current.map((item, i) => i === index ? { ...item, path: e.target.value } : item))} /></label>
             {file.path.split('/').at(-1)?.startsWith('.env') && <button className="button" type="button" disabled={!!pending} onClick={() => { void run(async signal => { const source = parseEditableEnv(new Uint8Array(await file.file.arrayBuffer())); signal.throwIfAborted(); setEditing({ index, source, values: source.entries.map(entry => entry.value) }) }) }}>환경변수 편집</button>}
@@ -170,7 +187,7 @@ export function ProShares({ api, orgId, userId, csrf, targetId, route, onNavigat
           <label className="pro-form">보관 기간<select value={days} disabled={!!pending} onChange={e => setDays(Number(e.target.value))}><option value={1}>24시간</option><option value={3}>3일</option><option value={7}>7일</option></select></label>
           <p>조직·프로젝트·환경 이름은 서버에 저장돼요. 파일 이름·배치 경로·내용은 암호화된 묶음 안에만 담겨요.</p>
           <p>업로드 확정부터 이용할 수 있어요. 만료·회수 뒤 저장소 삭제까지 최대 24시간이 더 걸릴 수 있어요.</p>
-          <button type="button" className="button primary" disabled={!files.length || !!draft || !environmentId} onClick={() => { void run(send, true) }}>{pending ? '같은 업로드 재시도' : '암호화해서 외부 공유'}</button>
+          <button type="button" className="button primary" disabled={!acceptNewTransfers || !files.length || !!draft || !environments.some(env => env.id === environmentId)} onClick={() => { void run(send, true) }}>{pending ? '같은 업로드 재시도' : '암호화해서 외부 공유'}</button>
         </>}
         {uploadRecovery}
         <p>공유 코드는 이 탭에서만 다시 볼 수 있어요. 만든 뒤 링크와 코드를 서로 다른 대화 경로로 전달해주세요.</p>

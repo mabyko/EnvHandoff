@@ -28,7 +28,7 @@ async function share(t:TestContext) {
 
 test('external permission alone creates share without device; preview never downloads, token survives ACK; ciphertext is opaque',async t=>{
   const f=await share(t)
-  assert.equal((await f.manage(f.owner,'',f.body)).status,403)
+  assert.equal((await f.manage(f.other,'',f.body)).status,403)
   assert.equal((await f.manage(f.receiver,'',f.body)).status,403)
   assert.equal((await f.db.get('SELECT count(*) AS n FROM devices WHERE user_id=$1',f.sender.id))!.n,0)
   const [one,two]=await Promise.all([f.ok(f.sender,'',f.body),f.ok(f.sender,'',f.body)]);assert.deepEqual(one,two)

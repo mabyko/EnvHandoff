@@ -7,6 +7,7 @@ import { createEnvFile, parseEditableEnv, previewEnvEdit } from '../lib/env.ts'
 import type { EditableEnv } from '../lib/env.ts'
 import { CopyField, Heading, Notice, Steps } from './ui.tsx'
 import { LiveSender } from './live.tsx'
+import { useWorkLoss } from '../lib/work-loss.ts'
 
 type PickedFile = SourceFile & { id: number; selected: boolean }
 type EnvDraft = { id: number; source: EditableEnv; values: string[]; preview: ReturnType<typeof previewEnvEdit> | null; error: string }
@@ -30,6 +31,8 @@ export function SendFlow({ onHome }: { onHome: () => void }) {
   const envEditor = useRef<HTMLDetailsElement>(null)
   const epoch = useRef(0)
   const nextId = useRef(1)
+  const hasWork = !!files.length || !!sealed || busy || !!project || environment !== 'development' || envRows.some(row => !!row.key || !!row.value) || !!envDraft
+  useWorkLoss(hasWork)
   useEffect(() => {
     const operationEpoch = epoch
     const preventFileNavigation = (event: DragEvent) => {
@@ -153,6 +156,7 @@ export function SendFlow({ onHome }: { onHome: () => void }) {
 
   return (
     <>
+      <span hidden data-work-loss={hasWork} />
       <Steps
         labels={['파일 선택', '전달하기']}
         current={step}

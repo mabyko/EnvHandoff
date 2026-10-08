@@ -55,7 +55,7 @@ export class Database {
   async migrate(): Promise<void> {
     await this.transaction(async () => {
       await this.run('CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY)')
-      for (const [index, file] of ['001-initial.sql', '002-security.sql', '003-requests.sql', '004-transfers.sql', '005-shares.sql', '006-deletions.sql', '007-management-recovery.sql', '008-download-audit.sql', '009-beta.sql'].entries()) {
+      for (const [index, file] of ['001-initial.sql', '002-security.sql', '003-requests.sql', '004-transfers.sql', '005-shares.sql', '006-deletions.sql', '007-management-recovery.sql', '008-download-audit.sql', '009-beta.sql', '010-project-permissions.sql', '011-upload-cancellations.sql'].entries()) {
         if (await this.get('SELECT version FROM schema_migrations WHERE version=$1', index + 1)) continue
         await this.run(await readFile(new URL('../sql/' + file, import.meta.url), 'utf8'))
         await this.run('INSERT INTO schema_migrations VALUES ($1)', index + 1)

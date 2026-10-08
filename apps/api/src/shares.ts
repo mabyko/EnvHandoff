@@ -1,3 +1,5 @@
+import { fenceUpload, uploadCancelled } from './upload-cancellations.ts'
+import { invalidateShares } from './lifecycle.ts'
 import { limits } from './limits.ts'
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto'
 import type { Database } from './database.ts'
@@ -16,14 +18,6 @@ type Session = { user_id: string; token_hash: string }
 type Share = { id: string; org_id: string; environment_id: string; creator_id: string; size: number; digest: string; retention_days: number; token_hash: string | null; status: string; created_at: number; write_until: number | null; ended_at: number | null; deleted_at: number | null; available_until: number | null; revoked_at: number | null; acknowledged_at: number | null }
 
 // Called in the same transaction as permission/account mutations. Device changes do not affect shares.
-export async function invalidateShares(db: Database, now: number) {
-  await db.run(`UPDATE external_shares s SET revoked_at=$1,ended_at=$1,token_hash=NULL,
-    status=CASE WHEN status='committed' THEN status ELSE 'cancelled' END
-    WHERE ended_at IS NULL AND NOT EXISTS(SELECT 1 FROM effective_file_permissions p WHERE p.org_id=s.org_id AND p.environment_id=s.environment_id AND p.user_id=s.creator_id AND p.external_share=1)`, now)
-  await db.run("UPDATE external_shares SET ended_at=available_until,token_hash=NULL WHERE ended_at IS NULL AND status='committed' AND available_until<=$1", now)
-  await db.run("UPDATE external_shares SET status='failed',ended_at=$1,token_hash=NULL WHERE ended_at IS NULL AND status IN('reserved','writing') AND created_at<=$2", now, now-60*60_000)
-}
-
 export class Shares {
   private readonly db: Database
   private readonly objects?: Objects
@@ -74,10 +68,10 @@ export class Shares {
     const names = await this.db.get('SELECT e.name AS environment,p.name AS project FROM environments e JOIN projects p ON p.id=e.project_id WHERE e.id=$1',s.environment_id)
     return { ...base, ...names, environmentId:s.environment_id, creatorId:s.creator_id }
   }
-  private async current(session: () => Promise<Session>, auth: Session) {
+  private async current(session: () => Promise<Session>, auth: Session, org: string) {
     if ((await session()).token_hash !== auth.token_hash) throw new HttpError(401,'session_expired')
     await this.db.run('UPDATE sessions SET last_seen=$1 WHERE token_hash=$2',this.clock(),auth.token_hash)
-    await invalidateShares(this.db,this.clock())
+    await invalidateShares(this.db,this.clock(),{organizationId:org})
   }
   private async operation(user: string, operationId: string, input: unknown, apply: () => Promise<string>) {
     const inputHash = hash(JSON.stringify(input))
@@ -92,6 +86,7 @@ export class Shares {
     const shareId=id(body.operationId), environment=id(body.environmentId), size=body.size as number, days=body.retentionDays as number
     if (!Number.isSafeInteger(size) || size<40 || size>16*1024*1024 || ![1,3,7].includes(days) || !validHash(body.digest) || !validHash(body.tokenHash)) throw new HttpError(400,'invalid_upload')
     await this.permission(auth.user_id,org,environment)
+    if (await uploadCancelled(this.db,{userId:auth.user_id,orgId:org,kind:'share',reservationId:shareId})) return {id:shareId,status:'cancelled'}
     const selected = await this.operation(auth.user_id,shareId,[org,'create',environment,size,body.digest,days,body.tokenHash],async () => {
       if (!this.acceptNewTransfers) throw new HttpError(503, 'beta_closed')
       if (await this.db.get('SELECT 1 FROM stored_objects WHERE id=$1',shareId)) throw new HttpError(409,'operation_conflict')
@@ -111,7 +106,7 @@ export class Shares {
   private async upload(request: Request, session: () => Promise<Session>, auth: Session, org: string, shareId: string) {
     if (request.headers.get('content-type')!=='application/octet-stream') throw new HttpError(415,'binary_required')
     const s=await this.db.transaction(async () => {
-      await this.current(session,auth)
+      await this.current(session,auth,org)
       const s=await this.share(shareId,org)
       if (s.creator_id!==auth.user_id) throw new HttpError(403,'creator_required')
       await this.permission(auth.user_id,org,s.environment_id)
@@ -123,7 +118,7 @@ export class Shares {
     try {
       await this.objects!.write(s.id,request.body,s.size,s.digest)
       return await this.db.transaction(async () => {
-        await this.current(session,auth)
+        await this.current(session,auth,org)
         const current=await this.share(s.id,org)
         await this.permission(auth.user_id,org,s.environment_id)
         if (current.status!=='writing' || current.ended_at!==null) throw new HttpError(409,'upload_unavailable')
@@ -136,22 +131,39 @@ export class Shares {
       throw error
     }
   }
+  private async cancel(auth: Session, org: string, shareId: string, body: Record<string, unknown>) {
+    fields(body,['operationId']); id(body.operationId)
+    const existing=await this.db.get<Share>('SELECT * FROM external_shares WHERE id=$1',shareId)
+    if (existing && (existing.org_id!==org || existing.creator_id!==auth.user_id)) throw new HttpError(404,'share_unavailable')
+    if (!existing && !await this.db.get('SELECT 1 FROM memberships m JOIN organizations o ON o.id=m.org_id AND o.active=1 WHERE m.user_id=$1 AND m.org_id=$2',auth.user_id,org)) throw new HttpError(403,'membership_required')
+    // Cancellation never revokes a completed share: its code may only exist in
+    // the caller's pending state after a lost commit response.
+    if (existing && this.state(existing)==='available' && existing.ended_at===null) return this.present(auth.user_id,existing)
+    await fenceUpload(this.db,{userId:auth.user_id,orgId:org,kind:'share',reservationId:shareId},this.clock(),!existing)
+    if (!existing) return {id:shareId,status:'cancelled'}
+    if (['reserved','writing'].includes(existing.status)) {
+      await this.db.run("UPDATE external_shares SET status='cancelled',ended_at=COALESCE(ended_at,$1),token_hash=NULL WHERE id=$2",this.clock(),shareId)
+      await this.event(auth.user_id,existing,'share_upload_cancelled')
+    }
+    return this.present(auth.user_id,await this.share(shareId,org))
+  }
   async handle(request: Request, session: () => Promise<Session>) {
     if (!this.objects) throw new HttpError(503,'storage_unavailable')
-    const route=/^\/organizations\/([^/]+)\/shares(?:\/([^/]+))?(?:\/(content|reissue|revoke))?$/.exec(new URL(request.url).pathname)
+    const route=/^\/organizations\/([^/]+)\/shares(?:\/([^/]+))?(?:\/(content|reissue|revoke|cancel))?$/.exec(new URL(request.url).pathname)
     if (!route) throw new HttpError(404)
     const org=id(route[1]), shareId=route[2] ? id(route[2]) : undefined, action=route[3], auth=await session()
     if (!['GET','POST'].includes(request.method)) throw new HttpError(405)
     if (request.method==='POST' && shareId && action==='content') return this.upload(request,session,auth,org,shareId)
     const body=request.method==='POST' ? await jsonBody(request) : undefined
     return this.db.transaction(async () => {
-      await this.current(session,auth)
+      await this.current(session,auth,org)
       if (!shareId) {
         if (body) return Response.json(await this.create(auth,org,body))
         const owner=await this.owner(auth.user_id,org)
         const rows=await this.db.all<Share>('SELECT * FROM external_shares WHERE org_id=$1 AND ($2 OR creator_id=$3) ORDER BY created_at DESC,id',org,owner,auth.user_id)
         return Response.json({shares:await Promise.all(rows.map(s=>this.present(auth.user_id,s)))})
       }
+      if (action==='cancel' && body) return Response.json(await this.cancel(auth,org,shareId,body))
       const s=await this.share(shareId,org); await this.visible(auth.user_id,s)
       if (!body && !action) return Response.json(await this.present(auth.user_id,s))
       if (!body || !action) throw new HttpError(404)
@@ -195,7 +207,7 @@ export class Shares {
     if (request.method==='POST') fields(await jsonBody(request),[])
     return this.db.transaction(async () => {
       await this.beforePublicAccess()
-      await invalidateShares(this.db,now)
+      await invalidateShares(this.db,now,{shareId})
       const s=await this.share(shareId), token=request.headers.get('x-share-token')
       if (!validHash(token) || !s.token_hash || !timingSafeEqual(Buffer.from(hash(token)),Buffer.from(s.token_hash)) || s.ended_at!==null || this.state(s)!=='available') throw new HttpError(404,'share_unavailable')
       if (!action) return Response.json(this.summary(s))

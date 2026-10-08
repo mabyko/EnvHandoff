@@ -1,6 +1,7 @@
 import { limits } from './limits.ts'
 import { Beta } from './beta.ts'
 import { createHash } from 'node:crypto'
+import { invalidateRequests } from './lifecycle.ts'
 import type { Database } from './database.ts'
 import { githubAccount } from './organizations.ts'
 
@@ -65,7 +66,8 @@ export async function recoverManagement(db: Database, input: Recovery, now = Dat
     const membership = await db.get<{ role: string }>('SELECT role FROM memberships WHERE org_id=$1 AND user_id=$2',input.orgId,target.id)
     if (prior) {
       await db.run("INSERT INTO organization_events(org_id,target_id,event,created_at) VALUES($1,$1,'management_recovery_checked',$2)",input.orgId,now)
-      return { applied: !!input.apply, auditRecorded:true, replayed: true, organizationId:input.orgId,targetUserId:target.id,targetGithubId:input.target.id,targetRole:membership?.role ?? null }
+      return { applied: !!input.apply, auditRecorded:true, replayed: true, organizationId:input.orgId,targetUserId:target.id,targetGithubId:input.target.id,targetRole:membership?.role ?? null,
+        ownerFileAccess: membership?.role === 'owner', restoresDeviceKeys: false }
     }
     const owners = await db.all<{ id: string; github_id: string }>("SELECT u.id,u.github_id FROM memberships m JOIN users u ON u.id=m.user_id WHERE m.org_id=$1 AND m.role='owner' ORDER BY u.github_id",input.orgId)
     if (JSON.stringify(owners.map(owner=>owner.github_id).sort()) !== JSON.stringify(expected)) throw new Error('owner_list_changed')
@@ -82,16 +84,19 @@ export async function recoverManagement(db: Database, input: Recovery, now = Dat
       if (!membership) {
         // Never reactivate dangling grants or team membership when adding a replacement account.
         await db.run('DELETE FROM environment_permissions WHERE user_id=$1 AND environment_id IN (SELECT e.id FROM environments e JOIN projects p ON p.id=e.project_id WHERE p.org_id=$2)',target.id,input.orgId)
+        await db.run('DELETE FROM project_permissions WHERE user_id=$1 AND project_id IN (SELECT id FROM projects WHERE org_id=$2)',target.id,input.orgId)
         await db.run('DELETE FROM team_members WHERE user_id=$1 AND team_id IN (SELECT id FROM teams WHERE org_id=$2)',target.id,input.orgId)
       }
       await db.run("INSERT INTO memberships VALUES($1,$2,'owner') ON CONFLICT(org_id,user_id) DO UPDATE SET role='owner'",input.orgId,target.id)
+      await invalidateRequests(db,now,{organizationId:input.orgId})
       await db.run('INSERT INTO management_recoveries VALUES($1,$2,$3,$4,$5,$6,$7)',input.caseRef,input.orgId,target.id,input.contactRef,inputHash,owners.map(owner=>owner.id),now)
       await db.run("INSERT INTO organization_events(org_id,target_id,event,created_at) VALUES($1,$2,'management_role_recovered',$3)",input.orgId,target.id,now)
     } else {
       await db.run("INSERT INTO organization_events(org_id,target_id,event,created_at) VALUES($1,$1,'management_recovery_previewed',$2)",input.orgId,now)
     }
     return { applied: !!input.apply,auditRecorded:true,replayed:false,organizationId:input.orgId,targetUserId:target.id,targetGithubId:input.target.id,
-      previousOwnerGithubIds:expected,newMembership:!membership,sessionsToInvalidate:sessions,invitationsToCancel:invitations }
+      previousOwnerGithubIds:expected,newMembership:!membership,sessionsToInvalidate:sessions,invitationsToCancel:invitations,
+      ownerFileAccess: true, restoresDeviceKeys: false }
   })
 }
 

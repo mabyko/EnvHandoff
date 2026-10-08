@@ -1,8 +1,9 @@
 import { Beta } from './beta.ts';
+import { METADATA_LIMITS } from '@envhandoff/protocol';
 import { limits } from './limits.ts'
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { Database } from './database.ts';
-import { invalidateRequests } from './requests.ts';
+import { invalidateRequests } from './lifecycle.ts';
 import { HttpError } from './http.ts';
 import type { Deletions } from './deletions.ts';
 const WEEK = 7 * 24 * 60 * 60000;
@@ -28,8 +29,8 @@ function identifier(value: unknown): string {
     throw new HttpError(400, 'invalid_input');
   return value;
 }
-function name(value: unknown): string {
-  if (typeof value !== 'string' || !value.trim() || value.trim().length > 80 || /[\p{Cc}\p{Cf}]/u.test(value))
+function name(value: unknown, maxLength: number = METADATA_LIMITS.project): string {
+  if (typeof value !== 'string' || !value.trim() || value.trim().length > maxLength || /[\p{Cc}\p{Cf}]/u.test(value))
     throw new HttpError(400, 'invalid_name');
   return value.trim();
 }
@@ -75,7 +76,7 @@ export class Organizations {
     };
   }
   private async event(org: string | null, actor: string | null, target: string, event: string): Promise<void> {
-    await invalidateRequests(this.db, this.clock());
+    if (org) await invalidateRequests(this.db, this.clock(), { organizationId: org });
     await this.db.run("INSERT INTO organization_events (org_id,actor_id,target_id,event,created_at) VALUES ($1,$2,$3,$4,$5)", org, actor, target, event, this.clock());
   }
   async membership(userId: string, orgId: string, owner = false): Promise<{
@@ -239,6 +240,7 @@ export class Organizations {
       await this.db.run("DELETE FROM team_members WHERE user_id=$1 AND team_id IN (SELECT id FROM teams WHERE org_id=$2)", targetId, orgId);
       await this.db.run("DELETE FROM memberships WHERE org_id=$1 AND user_id=$2", orgId, targetId);
       await this.db.run("DELETE FROM environment_permissions WHERE user_id=$1 AND environment_id IN (SELECT e.id FROM environments e JOIN projects p ON p.id=e.project_id WHERE p.org_id=$2)", targetId, orgId);
+      await this.db.run('DELETE FROM project_permissions WHERE user_id=$1 AND project_id IN (SELECT id FROM projects WHERE org_id=$2)', targetId, orgId);
       await this.db.run("UPDATE invitations SET status='cancelled' WHERE org_id=$1 AND (issuer_id=$2 OR accepted_by=$3 OR target_id=(SELECT github_id FROM users WHERE id=$4))", orgId, targetId, targetId, targetId);
       await this.event(orgId, userId, targetId, 'member_removed');
     });
@@ -312,35 +314,57 @@ export class Organizations {
   async catalog(userId: string, orgId: string) {
     return this.db.transaction(async () => {
       const owner = (await this.membership(userId, orgId)).role === 'owner';
-      const teams = [];
-      for (const team of await this.db.all<{
-        id: string;
-        name: string;
-        isDefault: number;
-      }>('SELECT id,name,is_default AS "isDefault" FROM teams WHERE org_id=$1 ORDER BY is_default DESC,name', orgId)) {
-        if (!owner && !await this.db.get('SELECT 1 FROM team_members WHERE team_id=$1 AND user_id=$2', team.id, userId))
-          continue;
-        teams.push({ ...team, members: owner ? (await this.db.all('SELECT user_id FROM team_members WHERE team_id=$1', team.id)).map(row => row.user_id as string) : [] });
-      }
-      // ponytail: per-project reads suit the small beta; paginate catalogs before supporting large organizations.
-      const projects = [];
-      for (const project of await this.db.all<{
-        id: string;
-        name: string;
-      }>('SELECT id,name FROM projects WHERE org_id=$1 ORDER BY name', orgId)) {
-        if (!owner && !await this.projectMember(userId, project.id))
-          continue;
-        const environments = [];
-        for (const env of await this.db.all<{
-          id: string;
-          name: string;
-        }>('SELECT id,name FROM environments WHERE project_id=$1 ORDER BY name', project.id)) {
-          environments.push({ ...env, permissions: await this.permissions(userId, project.id, env.id),
-            grants: owner ? await this.db.all('SELECT user_id AS "userId",receive,send,external_share AS "externalShare" FROM environment_permissions WHERE environment_id=$1', env.id) : [] });
+      type Grant = { userId: string; receive: number; send: number; externalShare: number };
+      const teams = await this.db.all<{ id: string; name: string; isDefault: number }>(
+        'SELECT id,name,is_default AS "isDefault" FROM teams WHERE org_id=$1 ORDER BY is_default DESC,name', orgId);
+      const teamMembers = await this.db.all<{ teamId: string; userId: string }>(
+        'SELECT tm.team_id AS "teamId",tm.user_id AS "userId" FROM team_members tm JOIN teams t ON t.id=tm.team_id WHERE t.org_id=$1 AND ($2 OR tm.user_id=$3)', orgId, owner, userId);
+      const projects = await this.db.all<{ id: string; name: string }>(
+        'SELECT id,name FROM projects WHERE org_id=$1 ORDER BY name', orgId);
+      const projectTeams = await this.db.all<{ projectId: string; teamId: string }>(
+        'SELECT pt.project_id AS "projectId",pt.team_id AS "teamId" FROM project_teams pt JOIN projects p ON p.id=pt.project_id JOIN teams t ON t.id=pt.team_id AND t.org_id=p.org_id WHERE p.org_id=$1', orgId);
+      const environments = await this.db.all<{ id: string; name: string; projectId: string }>(
+        'SELECT e.id,e.name,e.project_id AS "projectId" FROM environments e JOIN projects p ON p.id=e.project_id WHERE p.org_id=$1 ORDER BY e.name', orgId);
+      const overrides = await this.db.all<Grant & { environmentId: string }>(
+        'SELECT ep.environment_id AS "environmentId",ep.user_id AS "userId",ep.receive,ep.send,ep.external_share AS "externalShare" FROM environment_permissions ep JOIN environments e ON e.id=ep.environment_id JOIN projects p ON p.id=e.project_id WHERE p.org_id=$1 AND ($2 OR ep.user_id=$3)', orgId, owner, userId);
+      const defaults = owner ? await this.db.all<Grant & { projectId: string }>(
+        'SELECT pp.project_id AS "projectId",pp.user_id AS "userId",pp.receive,pp.send,pp.external_share AS "externalShare" FROM project_permissions pp JOIN projects p ON p.id=pp.project_id WHERE p.org_id=$1', orgId) : [];
+      const effective = await this.db.all<{ environmentId: string; receive: number; send: number; externalShare: number }>(
+        'SELECT environment_id AS "environmentId",receive,send,external_share AS "externalShare" FROM effective_file_permissions WHERE org_id=$1 AND user_id=$2', orgId, userId);
+      function group<T>(rows: T[], key: (row: T) => string) {
+        const grouped = new Map<string, T[]>();
+        for (const row of rows) {
+          const id = key(row), values = grouped.get(id);
+          if (values) values.push(row); else grouped.set(id, [row]);
         }
-        projects.push({ ...project, environments, teamIds: owner ? (await this.db.all('SELECT team_id FROM project_teams WHERE project_id=$1', project.id)).map(row => row.team_id as string) : [] });
+        return grouped;
       }
-      return { role: owner ? 'owner' as const : 'member' as const, teams, projects };
+      const membersByTeam = group(teamMembers, row => row.teamId);
+      const teamsByProject = group(projectTeams, row => row.projectId);
+      const envsByProject = group(environments, row => row.projectId);
+      const overridesByEnv = group(overrides, row => row.environmentId);
+      const defaultsByProject = group(defaults, row => row.projectId);
+      const effectiveByEnv = new Map(effective.map(row => [row.environmentId, row]));
+      const memberTeams = new Set(teamMembers.filter(row => row.userId === userId).map(row => row.teamId));
+      const grant = ({ userId, receive, send, externalShare }: Grant) => ({ userId, receive, send, externalShare });
+      return {
+        role: owner ? 'owner' as const : 'member' as const,
+        teams: teams.filter(team => owner || memberTeams.has(team.id)).map(team => ({ ...team,
+          members: owner ? (membersByTeam.get(team.id) ?? []).map(row => row.userId) : [],
+        })),
+        projects: projects.filter(project => owner || (teamsByProject.get(project.id) ?? []).some(row => memberTeams.has(row.teamId))).map(project => ({ ...project,
+          teamIds: owner ? (teamsByProject.get(project.id) ?? []).map(row => row.teamId) : [],
+          grants: owner ? (defaultsByProject.get(project.id) ?? []).map(grant) : [],
+          environments: (envsByProject.get(project.id) ?? []).map(({ id, name }) => {
+            const rights = effectiveByEnv.get(id), envOverrides = overridesByEnv.get(id) ?? [];
+            return { id, name,
+              permissions: { receive: !!rights?.receive, send: !!rights?.send, externalShare: !!rights?.externalShare },
+              permissionSource: owner ? 'owner' : envOverrides.some(row => row.userId === userId) ? 'environment' : 'project',
+              grants: owner ? envOverrides.map(grant) : [],
+            };
+          }),
+        })),
+      };
     });
   }
   async createTeam(userId: string, orgId: string, value: unknown) {
@@ -406,7 +430,7 @@ export class Organizations {
   }
   async createEnvironment(userId: string, orgId: string, projectId: unknown, value: unknown) {
     return (await this.db.transaction(async () => {
-      const project = (await this.project(userId, orgId, projectId, true)), label = name(value), id = randomUUID();
+      const project = (await this.project(userId, orgId, projectId, true)), label = name(value, METADATA_LIMITS.environment), id = randomUUID();
       if ((await this.db.get("SELECT id FROM environments WHERE project_id=$1 AND name=$2", project.id, label)))
         throw new HttpError(409, 'duplicate_name');
       await this.db.run("INSERT INTO environments VALUES ($1,$2,$3)", id, project.id, label);
@@ -419,17 +443,38 @@ export class Organizations {
       const env = (await this.environment(userId, orgId, environmentId, true));
       if (![receive, send, externalShare].every((value) => typeof value === 'boolean'))
         throw new HttpError(400, 'invalid_permission');
-      if (!(await this.db.get("SELECT 1 FROM memberships m JOIN users u ON u.id=m.user_id WHERE org_id=$1 AND user_id=$2 AND u.disabled=0", orgId, identifier(targetId))))
-        throw new HttpError(404, 'member_not_found');
+      await this.permissionMember(orgId, targetId);
       await this.db.run("INSERT INTO environment_permissions VALUES ($1,$2,$3,$4,$5) ON CONFLICT(environment_id,user_id) DO UPDATE SET receive=excluded.receive,send=excluded.send,external_share=excluded.external_share", env.id, targetId as string, Number(receive), Number(send), Number(externalShare));
       await this.event(orgId, userId, env.id, 'environment_permissions_changed');
+    });
+  }
+  private async permissionMember(orgId: string, targetId: unknown): Promise<void> {
+    const member = await this.db.get("SELECT m.role FROM memberships m JOIN users u ON u.id=m.user_id WHERE m.org_id=$1 AND m.user_id=$2 AND u.disabled=0", orgId, identifier(targetId));
+    if (!member) throw new HttpError(404, 'member_not_found');
+    if (member.role === 'owner') throw new HttpError(409, 'owner_permissions_automatic');
+  }
+  async setProjectPermissions(userId: string, orgId: string, projectId: unknown, targetId: unknown, receive: unknown, send: unknown, externalShare: unknown): Promise<void> {
+    await this.db.transaction(async () => {
+      const project = await this.project(userId, orgId, projectId, true);
+      if (![receive, send, externalShare].every(value => typeof value === 'boolean')) throw new HttpError(400, 'invalid_permission');
+      await this.permissionMember(orgId, targetId);
+      await this.db.run('INSERT INTO project_permissions VALUES($1,$2,$3,$4,$5) ON CONFLICT(project_id,user_id) DO UPDATE SET receive=excluded.receive,send=excluded.send,external_share=excluded.external_share', project.id, targetId, Number(receive), Number(send), Number(externalShare));
+      await this.event(orgId, userId, project.id, 'project_permissions_changed');
+    });
+  }
+  async inheritPermissions(userId: string, orgId: string, environmentId: unknown, targetId: unknown): Promise<void> {
+    await this.db.transaction(async () => {
+      const env = await this.environment(userId, orgId, environmentId, true);
+      await this.permissionMember(orgId, targetId);
+      await this.db.run('DELETE FROM environment_permissions WHERE environment_id=$1 AND user_id=$2', env.id, targetId);
+      await this.event(orgId, userId, env.id, 'environment_permissions_inherited');
     });
   }
   async rename(userId: string, orgId: string, kind: 'teams' | 'projects' | 'environments', id: unknown, value: unknown): Promise<void> {
     await this.db.transaction(async () => {
       await this.membership(userId, orgId, true);
       identifier(id);
-      const label = name(value);
+      const label = name(value, kind === 'environments' ? METADATA_LIMITS.environment : METADATA_LIMITS.project);
       if (!['teams', 'projects', 'environments'].includes(kind))
         throw new HttpError(400, 'invalid_input');
       const parent = kind === 'environments' ? (await this.environment(userId, orgId, id, true)).project_id : orgId;

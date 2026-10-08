@@ -1,3 +1,5 @@
+export const METADATA_LIMITS = { project: 80, environment: 48 } as const
+
 export const RELAY = {
   maxBytes: 16 * 1024 * 1024,
   chunkBytes: 64 * 1024,

@@ -340,9 +340,15 @@ export class AuthApi {
           fields(body, ['name']);
           return (await this.organizations.createEnvironment(auth.user_id, orgId, id, body.name));
         }
-        if (id && kind === 'environments' && action === 'permissions') {
+        if (id && kind === 'environments' && action === 'permissions' && body.inherit === true) {
+          fields(body, ['userId', 'inherit']);
+          await this.organizations.inheritPermissions(auth.user_id, orgId, id, body.userId);
+          return { ok: true };
+        }
+        if (id && (kind === 'environments' || kind === 'projects') && action === 'permissions') {
           fields(body, ['userId', 'receive', 'send', 'externalShare']);
-          await this.organizations.setPermissions(auth.user_id, orgId, id, body.userId, body.receive, body.send, body.externalShare);
+          if (kind === 'projects') await this.organizations.setProjectPermissions(auth.user_id, orgId, id, body.userId, body.receive, body.send, body.externalShare);
+          else await this.organizations.setPermissions(auth.user_id, orgId, id, body.userId, body.receive, body.send, body.externalShare);
           return { ok: true };
         }
         throw new HttpError(404);

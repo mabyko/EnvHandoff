@@ -1,16 +1,21 @@
 import { useEffect, useId, useRef, useState } from 'react'
+import { METADATA_LIMITS } from '@envhandoff/protocol'
 import { limitMessage, subscribeTabReturn } from '../lib/pro-feedback.ts'
 import { Notice } from './ui.tsx'
 import { followProLink, proPath } from '../lib/pro-navigation.ts'
 import type { ProRoute } from '../lib/pro-navigation.ts'
 
 type Flags = { receive: boolean; send: boolean; externalShare: boolean }
-type Environment = { id: string; name: string; permissions: Flags; grants: { userId: string; receive: number; send: number; externalShare: number }[] }
-type Catalog = { role: 'owner' | 'member'; teams: { id: string; name: string; isDefault: number; members: string[] }[]; projects: { id: string; name: string; teamIds: string[]; environments: Environment[] }[] }
+type Grant = { userId: string; receive: number; send: number; externalShare: number }
+type Environment = { id: string; name: string; permissions: Flags; permissionSource: 'owner' | 'project' | 'environment'; grants: Grant[] }
+type Catalog = { role: 'owner' | 'member'; teams: { id: string; name: string; isDefault: number; members: string[] }[]; projects: { id: string; name: string; teamIds: string[]; grants: Grant[]; environments: Environment[] }[] }
 const permissionLabels = { receive: '받기', send: '보내기', externalShare: '외부 공유' } as const
+const permissionSources = { owner: 'Owner 자동 권한', project: '프로젝트 기본값', environment: '환경 예외' } as const
+const grantFlags = (grant?: Grant): Flags => ({ receive: !!grant?.receive, send: !!grant?.send, externalShare: !!grant?.externalShare })
 const errorMessages: Record<string, string> = {
   owner_required: 'Owner만 설정을 변경할 수 있어요. 새로고침해주세요.',
-  duplicate_name: '같은 위치에 이미 사용 중인 이름이에요.', invalid_name: '이름은 공백을 제외해 1~80자로 입력해주세요.',
+  owner_permissions_automatic: 'Owner는 모든 파일 작업 권한을 자동으로 받아요. 설정을 새로고침해주세요.',
+  duplicate_name: '같은 위치에 이미 사용 중인 이름이에요.', invalid_name: '이름을 확인해주세요. 환경 이름은 1~48자, 나머지 이름은 1~80자이며 제어 문자는 사용할 수 없어요.',
   default_team_required: '기본 팀은 삭제할 수 없어요. 이름과 소속은 변경할 수 있어요.',
   organization_inactive: '워크스페이스 참여가 중지됐어요.',
   project_not_found: '프로젝트를 찾을 수 없거나 접근 권한이 없어요. 새로고침해주세요.',
@@ -18,20 +23,36 @@ const errorMessages: Record<string, string> = {
   member_not_found: '현재 참여 중인 멤버가 아니에요. 새로고침해주세요.',
 }
 
-function NameForm({ label, initial = '', save }: { label: string; initial?: string; save: (name: string) => Promise<boolean> }) {
+function NameForm({ label, initial = '', maxLength = METADATA_LIMITS.project, save }: { label: string; initial?: string; maxLength?: number; save: (name: string) => Promise<boolean> }) {
   const id = useId()
   return <form className="pro-form" onSubmit={(event) => {
     event.preventDefault(); const form = event.currentTarget
     void save(String(new FormData(form).get('name'))).then((ok) => { if (ok && !initial) form.reset() })
-  }}><div className="pro-field"><label htmlFor={id}>{label}</label><input id={id} name="name" defaultValue={initial} required maxLength={80} /></div><button type="submit" className="button">{initial ? '이름 저장' : '추가'}</button></form>
+  }}><div className="pro-field"><label htmlFor={id}>{label}</label><input id={id} name="name" defaultValue={initial} required maxLength={maxLength} /></div><button type="submit" className="button">{initial ? '이름 저장' : '추가'}</button></form>
 }
 function DeleteButton({ label, remove }: { label: string; remove: () => Promise<boolean> }) {
   const [confirming, setConfirming] = useState(false)
   return confirming ? <div className="pro-form"><p>{label} 삭제를 진행할까요? 삭제한 설정은 복구할 수 없어요.</p><div className="actions"><button type="button" className="button pro-danger" onClick={() => { void remove() }}>삭제 확인</button><button type="button" className="button" onClick={() => setConfirming(false)}>취소</button></div></div> : <button type="button" className="button pro-danger" onClick={() => setConfirming(true)}>삭제</button>
 }
 
+function PermissionForm({ login, defaults, override, environment = false, connected, save }: {
+  login: string; defaults: Flags; override?: Grant; environment?: boolean; connected: boolean; save: (flags: Flags | null) => Promise<boolean>
+}) {
+  const [inherit, setInherit] = useState(environment && !override)
+  const [flags, setFlags] = useState(override ? grantFlags(override) : defaults)
+  const shown = inherit ? defaults : flags
+  return <form className="pro-permission" aria-label={`${login} ${environment ? '환경 예외' : '프로젝트 기본 권한'}`} onSubmit={event => { event.preventDefault(); void save(inherit ? null : flags) }}>
+    <fieldset className="plain-fieldset"><legend>{login}</legend>
+      {!connected && <p className="help">이 프로젝트에 연결된 팀에 속하지 않아 현재는 파일 권한이 적용되지 않아요.</p>}
+      {environment && <label className="pro-check"><input type="checkbox" checked={inherit} onChange={event => { setInherit(event.target.checked); if (!event.target.checked) setFlags(defaults) }} />프로젝트 기본값 사용</label>}
+      <div className="pro-checks">{Object.entries(permissionLabels).map(([key, label]) => <label className="pro-check" key={key}><input type="checkbox" name={key} disabled={inherit} checked={shown[key as keyof Flags]} onChange={event => setFlags(current => ({ ...current, [key]: event.target.checked }))} />{label}</label>)}</div>
+    </fieldset>
+    <button type="submit" className="button">{login} {environment ? inherit ? '기본값 적용' : '환경 예외 저장' : '프로젝트 권한 저장'}</button>
+  </form>
+}
+
 export function ProCatalog({ api, orgId, csrf, members, route, onNavigate, disabled, onExpired, onTeamsChanged }: {
-  api: string; orgId: string; csrf: string; members: { id: string; login: string }[]; disabled: boolean; onExpired: () => void; onTeamsChanged: () => Promise<void>
+  api: string; orgId: string; csrf: string; members: { id: string; login: string; role: string }[]; disabled: boolean; onExpired: () => void; onTeamsChanged: () => Promise<void>
   route: ProRoute; onNavigate: (route: ProRoute) => void
 }) {
   const [data, setData] = useState<Catalog | null>(null)
@@ -90,10 +111,12 @@ export function ProCatalog({ api, orgId, csrf, members, route, onNavigate, disab
   const owner = data?.role === 'owner'
   const project = route.page === 'projects' && route.id ? data?.projects.find(item => item.id === route.id) : undefined
   const multipleTeams = !!data && (data.teams.length > 1 || data.teams.some(team => !team.isDefault))
+  const fileMembers = members.filter(member => member.role !== 'owner')
+  const connected = (userId: string) => !!project && !!data?.teams.some(team => project.teamIds.includes(team.id) && team.members.includes(userId))
   const projectsRoute: ProRoute = {page:'projects',orgId}
   return <section className="pro-catalog pro-page" aria-busy={busy || disabled} aria-label={route.page === 'team' ? '팀 구성' : '프로젝트와 환경'}>
     {error && <Notice error>{error}</Notice>}
-    <header className="pro-page-header"><div>{route.id && <a className="pro-back" href={proPath(projectsRoute)} onClick={event => followProLink(event,projectsRoute,onNavigate)}>프로젝트 목록</a>}<h2>{route.page === 'team' ? '팀 구성' : project?.name ?? (route.id ? '프로젝트 상세' : '프로젝트')}</h2><p>{route.page === 'team' ? '멤버를 팀으로 묶고 프로젝트 참여 범위를 정하세요.' : route.id ? '환경별 권한을 확인하고 필요한 파일을 요청하세요.' : '팀에서 공유하는 개발 환경을 한곳에서 확인하세요.'}</p></div><button type="button" className="button" disabled={busy || disabled} onClick={() => { void refresh.current() }}>설정 새로고침</button></header>
+    <header className="pro-page-header"><div>{route.id && <a className="pro-back" href={proPath(projectsRoute)} onClick={event => followProLink(event,projectsRoute,onNavigate)}>프로젝트 목록</a>}<h2>{route.page === 'team' ? '팀 구성' : project?.name ?? (route.id ? '프로젝트 상세' : '프로젝트')}</h2><p>{route.page === 'team' ? '멤버를 팀으로 묶고 프로젝트 참여 범위를 정하세요.' : route.id ? '프로젝트 기본 권한과 환경별 예외를 확인하고 파일을 주고받으세요.' : '팀에서 공유하는 개발 환경을 한곳에서 확인하세요.'}</p></div><button type="button" className="button" disabled={busy || disabled} onClick={() => { void refresh.current() }}>설정 새로고침</button></header>
     <p className="pro-status-line" role="status">{busy ? '설정을 확인하고 있어요.' : message}</p>
     {route.page === 'projects' && <>
     <fieldset className="plain-fieldset" disabled={busy || disabled}>
@@ -110,24 +133,32 @@ export function ProCatalog({ api, orgId, csrf, members, route, onNavigate, disab
           </form>}
           <DeleteButton label={`${project.name} 프로젝트와 하위 환경·권한 설정`} remove={async () => {const ok=await mutate(`/projects/${project.id}/remove`, {});if(ok)onNavigate(projectsRoute);return ok}} />
         </details>}
+        {owner && <section className="pro-panel" aria-label="프로젝트 기본 파일 권한">
+          <h3>프로젝트 기본 파일 권한</h3>
+          <p>Owner는 받기·보내기·외부 공유를 모두 사용할 수 있어요. 별도로 자기 권한을 설정할 필요가 없어요.</p>
+          {!!fileMembers.length && <><p>팀원 권한은 여기서 한 번 설정하세요. 새 환경에도 적용되며, 환경에 별도 예외가 있으면 그 설정을 따라요.</p>
+            {fileMembers.map(member => {
+              const grant = project.grants?.find(item => item.userId === member.id)
+              return <PermissionForm key={member.id + JSON.stringify(grant) + connected(member.id)} login={member.login} defaults={grantFlags(grant)} connected={connected(member.id)} save={flags => mutate(`/projects/${project.id}/permissions`, { userId: member.id, ...flags })} />
+            })}</>}
+        </section>}
         {project.environments.length === 0 && <div className="pro-empty-state"><h3>아직 등록된 환경이 없어요</h3><p>{owner ? '아래에서 development, staging처럼 팀에서 쓰는 환경을 추가하세요.' : 'Owner에게 환경 등록과 파일 권한을 요청해주세요.'}</p></div>}
         {project.environments.map((env) => <div className="pro-environment" key={env.id}>
-          <h3>{env.name}</h3><p>내 파일 권한: {Object.entries(permissionLabels).filter(([key]) => env.permissions[key as keyof Flags]).map(([, label]) => label).join(' · ') || '모두 꺼짐'}</p>
+          <h3>{env.name}</h3><p>내 파일 권한: {Object.entries(permissionLabels).filter(([key]) => env.permissions[key as keyof Flags]).map(([, label]) => label).join(' · ') || '모두 꺼짐'} · {permissionSources[env.permissionSource] ?? (owner ? permissionSources.owner : permissionSources.project)}</p>
+          {env.name.length > METADATA_LIMITS.environment && <Notice error>이 환경 이름은 파일 전달에 사용할 수 있는 길이를 넘었어요. {owner ? '환경 설정에서 48자 이하로 바꿔주세요.' : 'Owner에게 환경 이름을 48자 이하로 바꿔달라고 요청해주세요.'}</Notice>}
           <div className="actions">{env.permissions.receive && <button className="button primary" type="button" onClick={() => onNavigate({page:'requests',orgId,create:true,environmentId:env.id})}>파일 요청</button>}{env.permissions.externalShare && <button className="button" type="button" onClick={() => onNavigate({page:'shares',orgId,create:true,environmentId:env.id})}>외부 공유 만들기</button>}</div>
-          {owner && <details><summary>환경 이름과 파일 권한 설정</summary>
-            <NameForm key={env.name} label="환경 이름" initial={env.name} save={(name) => mutate(`/environments/${env.id}/rename`, { name })} />
-            {multipleTeams && <p>권한을 켜도 이 프로젝트에 연결된 팀에 속해야 적용돼요.</p>}
-            {members.map((member) => {
+          {owner && <details><summary>환경 설정·권한 예외</summary>
+            <NameForm key={env.name} label="환경 이름" initial={env.name} maxLength={METADATA_LIMITS.environment} save={(name) => mutate(`/environments/${env.id}/rename`, { name })} />
+            {!!fileMembers.length && <p>이 환경에서만 권한을 다르게 정할 때 기본값 사용을 해제하세요. 예외는 프로젝트 기본 권한이 바뀌어도 유지돼요.</p>}
+            {fileMembers.map((member) => {
               const grant = env.grants.find((item) => item.userId === member.id)
-              return <form className="pro-permission" key={member.id + JSON.stringify(grant)} onSubmit={(event) => {
-                event.preventDefault(); const form = new FormData(event.currentTarget)
-                void mutate(`/environments/${env.id}/permissions`, { userId: member.id, receive: form.has('receive'), send: form.has('send'), externalShare: form.has('externalShare') })
-              }}><fieldset className="plain-fieldset"><legend>{member.login}</legend><div className="pro-checks">{Object.entries(permissionLabels).map(([key, label]) => <label className="pro-check" key={key}><input type="checkbox" name={key} defaultChecked={!!grant?.[key as keyof Flags]} />{label}</label>)}</div></fieldset><button type="submit" className="button">{member.login} 권한 저장</button></form>
+              const defaults = grantFlags(project.grants?.find(item => item.userId === member.id))
+              return <PermissionForm key={member.id + JSON.stringify([grant, defaults]) + connected(member.id)} login={member.login} defaults={defaults} override={grant} environment connected={connected(member.id)} save={flags => mutate(`/environments/${env.id}/permissions`, { userId: member.id, ...(flags ? flags : { inherit: true }) })} />
             })}
             <DeleteButton label={`${env.name} 환경과 권한 설정`} remove={() => mutate(`/environments/${env.id}/remove`, {})} />
           </details>}
         </div>)}
-        {owner && <NameForm label="새 환경 이름" save={(name) => mutate(`/projects/${project.id}/environments`, { name })} />}
+        {owner && <NameForm label="새 환경 이름" maxLength={METADATA_LIMITS.environment} save={(name) => mutate(`/projects/${project.id}/environments`, { name })} />}
       </article>}
       {!route.id && owner && data && <details className="pro-panel" open={data.projects.length === 0}><summary>프로젝트 추가</summary><form className="pro-form" onSubmit={(event) => {
         event.preventDefault(); const form = event.currentTarget, values = new FormData(form)
@@ -137,7 +168,7 @@ export function ProCatalog({ api, orgId, csrf, members, route, onNavigate, disab
         <button type="submit" className="button primary">프로젝트 추가</button>
       </form></details>}
     </fieldset>
-    <Notice>받기·보내기·외부 공유 권한은 각각 독립적이에요. Owner도 파일 작업에는 해당 권한이 필요해요.</Notice>
+    <Notice>Owner는 모든 파일 작업을 할 수 있어요. 팀원은 프로젝트 기본 권한을 따르고, 필요한 환경에서만 예외를 설정해요. 받기·보내기·외부 공유는 각각 독립적이에요.</Notice>
     </>}
     {route.page === 'team' && data && <fieldset className="plain-fieldset pro-panel" disabled={busy || disabled}><legend>팀 구성</legend>
         {!multipleTeams && <p>현재 하나의 팀을 사용하고 있어요. {owner ? '별도 팀이 필요하면 아래에서 추가하세요.' : '팀을 나누려면 Owner에게 요청해주세요.'}</p>}

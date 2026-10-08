@@ -9,6 +9,7 @@ import type { RelayConnection } from '../lib/relay.ts'
 import { CodeInput, Heading, Notice, Steps } from './ui.tsx'
 import { LiveStatus } from './live.tsx'
 import { initialLiveState, updateLive } from '../lib/relay-state.ts'
+import { useWorkLoss } from '../lib/work-loss.ts'
 
 export function ReceiveFlow({
   invitation,
@@ -29,6 +30,8 @@ export function ReceiveFlow({
     invalid ? '연결 링크가 올바르지 않아요. 새 링크를 받거나 공유 파일을 선택해주세요.' : '',
   )
   const [busy, setBusy] = useState(false)
+  const hasWork = !!file || !!incoming || !!code || !!opened || busy || (live && !!invitation)
+  useWorkLoss(hasWork)
   const epoch = useRef(0)
   const connection = useRef<RelayConnection | null>(null)
   useEffect(
@@ -99,6 +102,7 @@ export function ReceiveFlow({
 
   return (
     <>
+      <span hidden data-work-loss={hasWork} />
       <Steps labels={['공유 파일 열기', '파일 다운로드']} current={opened ? 1 : 0} />
       {opened ? (
         <>

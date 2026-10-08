@@ -8,8 +8,8 @@ import { fixture, config, DAY } from './request-fixture.ts'
 test('requests enforce organization, participant, independent permission and device boundaries with minimal closed receipts', async t => {
   const f = await fixture(t)
   const options = await f.ok(f.receiver, '/options?environmentId=' + f.environment.id)
-  assert.deepEqual(options.senders.map((u: { id: string }) => u.id).sort(), [f.sender.id, f.other.id].sort())
-  assert.equal((await f.call(f.owner, '', f.input())).status, 403) // Owner has no file rights.
+  assert.deepEqual(options.senders.map((u: { id: string }) => u.id).sort(), [f.owner.id, f.sender.id, f.other.id].sort())
+  assert.equal((await f.call(f.owner, '', f.input())).status, 403) // Automatic rights do not grant another user's receiving device.
   assert.equal((await f.call(f.receiver, '', { ...f.input(), deviceId: randomUUID() })).status, 403)
   assert.equal((await f.call(f.receiver, '', { ...f.input(), senderId: f.receiver.id })).status, 400)
   await f.db.run('UPDATE users SET disabled=1 WHERE id=$1', f.sender.id)

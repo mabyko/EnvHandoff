@@ -1,6 +1,7 @@
+import { proRequest } from '../lib/pro-api.ts'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { ProTransfer } from './ProTransfer.tsx'
-import { betaClosedMessage, limitMessage, subscribeTabReturn } from '../lib/pro-feedback.ts'
+import { betaClosedMessage, ProRequestError, subscribeTabReturn } from '../lib/pro-feedback.ts'
 import { CopyField, Notice } from './ui.tsx'
 import { followProLink, proPath } from '../lib/pro-navigation.ts'
 import type { ProRoute } from '../lib/pro-navigation.ts'
@@ -25,15 +26,16 @@ const errors: Record<string, string> = {
   operation_conflict: '처리 중인 요청과 내용이 달라요. 목록을 확인하고 다시 시도해주세요.',
 }
 
-export function ProRequests({ api, orgId, userId, csrf, targetId, route, onNavigate, disabled, onExpired }: { api: string; orgId: string; userId: string; csrf: string; targetId?: string; route: ProRoute; onNavigate: (route: ProRoute) => void; disabled: boolean; onExpired: () => void }) {
+export function ProRequests({ api, orgId, userId, csrf, targetId, route, onNavigate, disabled, acceptNewTransfers = true, onExpired }: { api: string; orgId: string; userId: string; csrf: string; targetId?: string; route: ProRoute; onNavigate: (route: ProRoute) => void; disabled: boolean; acceptNewTransfers?: boolean; onExpired: () => void }) {
   const detailId = route.id ?? targetId
   const routeKey = JSON.stringify([detailId, route.create, route.environmentId])
   const currentView = useRef({ id: detailId, create: route.create, environmentId: route.environmentId, key: routeKey })
   useLayoutEffect(() => { currentView.current = { id: detailId, create: route.create, environmentId: route.environmentId, key: routeKey } })
-  const loadedView = useRef(''), appliedEnvironment = useRef(route.environmentId)
+  const loadedView = useRef(''), appliedEnvironment = useRef(route.environmentId), senderEnvironment = useRef('')
   const [items, setItems] = useState<Item[]>([]), [environments, setEnvironments] = useState<Environment[]>([])
   const [environmentId, setEnvironmentId] = useState(route.environmentId ?? ''), [senders, setSenders] = useState<Sender[]>([]), [senderId, setSenderId] = useState('')
   const [busy, setBusy] = useState(true), [choosing, setChoosing] = useState(false), [error, setError] = useState(''), [message, setMessage] = useState('')
+  const [accessUnavailable, setAccessUnavailable] = useState(false)
   const lifetime = useRef<AbortController | null>(null), running = useRef<AbortController | null>(null)
   const operations = useRef(new Map<string, string>()), expired = useRef(onExpired)
   useLayoutEffect(() => { expired.current = onExpired })
@@ -41,12 +43,10 @@ export function ProRequests({ api, orgId, userId, csrf, targetId, route, onNavig
   const listRoute: ProRoute = { page: 'requests', orgId }, createRoute: ProRoute = { ...listRoute, create: true }
 
   async function call(path: string, body?: Record<string, unknown>, signal = lifetime.current!.signal) {
-    const response = await fetch(api + path, { method: body ? 'POST' : 'GET', credentials: 'include', signal: AbortSignal.any([signal, AbortSignal.timeout(15_000)]),
-      headers: body ? { 'content-type': 'application/json', 'x-csrf-token': csrf } : {}, body: body ? JSON.stringify(body) : undefined })
-    if (response.status === 401) { expired.current(); throw new Error('로그인이 만료됐어요.') }
+    const response = await proRequest(api + path, { csrf, body, errors, onExpired: () => expired.current(),
+      signal: AbortSignal.any([signal, AbortSignal.timeout(15_000)]) })
     const value = await response.json().catch(() => ({}))
     signal.throwIfAborted()
-    if (!response.ok) throw new Error(response.status === 429 ? limitMessage(value.error as string, response.headers.get('retry-after')) : errors[value.error as string] ?? '처리 결과를 확인하지 못했어요. 새로고침 후 다시 시도해주세요.')
     return value
   }
   async function load() {
@@ -61,17 +61,24 @@ export function ProRequests({ api, orgId, userId, csrf, targetId, route, onNavig
         appliedEnvironment.current = view.environmentId
         setEnvironmentId(current => {
           const requested = environmentChanged ? view.environmentId ?? '' : current
-          return available.some(env => env.id === requested) ? requested : view.environmentId ? '' : available[0]?.id ?? ''
+          return requested || available[0]?.id || ''
         })
-        if (view.environmentId && !available.some(env => env.id === view.environmentId)) throw new Error('선택한 환경에 받기 권한이 없어요. 다른 환경을 선택하거나 Owner에게 권한을 요청해주세요.')
+        if (view.environmentId && !available.some(env => env.id === view.environmentId)) setError('선택한 환경에 받기 권한이 없어요. 다른 환경을 선택하거나 Owner에게 권한을 요청해주세요.')
       } else {
         const result = await call(base + '/requests' + (view.id ? '/' + view.id : ''))
         if (signal.aborted || view.key !== currentView.current.key) return
-        if (view.id && result.id !== view.id) throw new Error('링크의 요청을 확인할 수 없어요.')
+        if (view.id && result.id !== view.id) throw new ProRequestError('링크의 요청을 확인할 수 없어요.', 404)
         setItems(view.id ? [result] : result.requests)
       }
+      setAccessUnavailable(false)
     } catch (e) {
-      if (!signal.aborted && view.key === currentView.current.key) { if (view.create) { setEnvironments([]); setSenders([]) } else setItems([]) }
+      if (!signal.aborted && view.key === currentView.current.key) {
+        setAccessUnavailable(true)
+        // Keep local transfer work on network/server errors, but discard it after confirmed loss of access.
+        if (e instanceof ProRequestError && [401, 403, 404, 410].includes(e.status)) {
+          if (view.create) { setEnvironments([]); setSenders([]) } else setItems([])
+        }
+      }
       throw e
     }
   }
@@ -94,9 +101,11 @@ export function ProRequests({ api, orgId, userId, csrf, targetId, route, onNavig
   useEffect(() => { if (!busy && loadedView.current !== routeKey) refresh.current() }, [routeKey, busy])
   useEffect(() => {
     const controller = new AbortController()
-    setSenders([]); setSenderId(''); setChoosing(!!environmentId && !!route.create)
+    const environmentChanged = senderEnvironment.current !== environmentId
+    senderEnvironment.current = environmentId
+    setSenders([]); if (environmentChanged) setSenderId(''); setChoosing(!!environmentId && !!route.create)
     if (environmentId && route.create) void call(base + '/requests/options?environmentId=' + environmentId, undefined, AbortSignal.any([controller.signal, lifetime.current!.signal]))
-      .then(value => { if (!controller.signal.aborted) { setSenders(value.senders); setSenderId(value.senders[0]?.id ?? '') } })
+      .then(value => { if (!controller.signal.aborted) { setSenders(value.senders); setSenderId(current => current || value.senders[0]?.id || '') } })
       .catch(e => { if (!controller.signal.aborted && !lifetime.current?.signal.aborted) setError(e instanceof Error ? e.message : '송신자를 불러오지 못했어요.') })
       .finally(() => { if (!controller.signal.aborted) setChoosing(false) })
     return () => controller.abort()
@@ -105,6 +114,7 @@ export function ProRequests({ api, orgId, userId, csrf, targetId, route, onNavig
   }, [api, orgId, csrf, environmentId, environments, route.create])
 
   async function mutate(path: string, body: Record<string, unknown>) {
+    if (path === base + '/requests' && !acceptNewTransfers) throw new Error(betaClosedMessage)
     const signal = lifetime.current!.signal, key = JSON.stringify([path, body])
     const operationId = operations.current.get(key) ?? crypto.randomUUID(); operations.current.set(key, operationId)
     const result: Item = await call(path, { ...body, operationId })
@@ -120,9 +130,11 @@ export function ProRequests({ api, orgId, userId, csrf, targetId, route, onNavig
       <div className="actions">{(detailId || route.create) ? <a className="button" href={proPath(listRoute)} onClick={event => followProLink(event, listRoute, onNavigate)}>요청 목록</a> : <a className="button primary" href={proPath(createRoute)} onClick={event => followProLink(event, createRoute, onNavigate)}>새 파일 요청</a>}
         <button className="button" type="button" disabled={busy || disabled} onClick={() => refresh.current()}>새로고침</button></div>
     </header>
+    {route.create && !acceptNewTransfers && <Notice>{betaClosedMessage}</Notice>}
     {error && <Notice error>{error}</Notice>}
+    {accessUnavailable && !!shown.length && !route.create && <Notice>현재 요청 상태를 확인하지 못해 작업을 잠갔어요. 선택한 파일은 유지되며, 새로고침에 성공하면 계속할 수 있어요.</Notice>}
     <p className="pro-status-line" role="status">{busy ? '요청을 확인하고 있어요.' : choosing ? '요청 가능한 멤버를 확인하고 있어요.' : message}</p>
-    {route.create ? <fieldset className="plain-fieldset pro-form-panel" disabled={busy || disabled}>
+    {route.create ? <fieldset className="plain-fieldset pro-form-panel" disabled={busy || disabled || accessUnavailable}>
       <legend>팀원에게 파일 요청</legend>
       <p>처음 받는 브라우저라면 <a href={proPath({page:'settings',orgId})} onClick={event => followProLink(event,{page:'settings',orgId},onNavigate)}>내 기기 등록·승인</a>을 먼저 완료해주세요.</p>
       {environments.length > 0 ? <form className="pro-form" onSubmit={event => { event.preventDefault(); void run(async () => {
@@ -133,12 +145,12 @@ export function ProRequests({ api, orgId, userId, csrf, targetId, route, onNavig
         if (!lifetime.current?.signal.aborted) onNavigate({ page: 'requests', orgId, id: result.id })
       }) }}>
         <div className="pro-field"><label htmlFor="request-environment">요청할 환경</label><select id="request-environment" value={environmentId} required onChange={e => { setEnvironmentId(e.target.value); setSenders([]); setSenderId('') }}>
-          {!environmentId && <option value="" disabled>환경을 선택해주세요</option>}{environments.map(env => <option value={env.id} key={env.id}>{env.label}</option>)}
+          {!environmentId && <option value="" disabled>환경을 선택해주세요</option>}{environmentId && !environments.some(env => env.id === environmentId) && <option value={environmentId} disabled>선택한 환경을 사용할 수 없어요. 다시 선택해주세요.</option>}{environments.map(env => <option value={env.id} key={env.id}>{env.label}</option>)}
         </select></div>
-        <div className="pro-field"><label htmlFor="request-sender">요청할 멤버</label><select id="request-sender" value={senderId} onChange={e => setSenderId(e.target.value)} disabled={choosing || !senders.length} required>{senders.map(sender => <option value={sender.id} key={sender.id}>{sender.login}</option>)}</select></div>
+        <div className="pro-field"><label htmlFor="request-sender">요청할 멤버</label><select id="request-sender" value={senderId} onChange={e => setSenderId(e.target.value)} disabled={choosing || !senders.length} required>{senderId && !senders.some(sender => sender.id === senderId) && <option value={senderId} disabled>선택한 멤버에게 요청할 수 없어요. 다시 선택해주세요.</option>}{senders.map(sender => <option value={sender.id} key={sender.id}>{sender.login}</option>)}</select></div>
         {!choosing && !senders.length && <p>이 환경에서 보내기 권한이 있는 다른 멤버가 없어요.</p>}
         <p>파일 보유 여부는 상대에게 확인해주세요. 요청은 7일 동안 유효하며, 이 브라우저의 기기로 고정돼요.</p>
-        <button className="button primary" disabled={choosing || !senderId || !environmentId} type="submit">파일 요청</button>
+        <button className="button primary" disabled={!acceptNewTransfers || choosing || !senders.some(sender => sender.id === senderId) || !environments.some(env => env.id === environmentId)} type="submit">파일 요청</button>
       </form> : !busy && <Notice>받기 권한이 있는 환경이 없어요. Owner에게 권한을 요청해주세요.</Notice>}
     </fieldset> : <>
       {!detailId && <p>진행 중인 요청부터 최근 100개까지 표시해요. 요청을 열어 승인하거나 파일을 주고받을 수 있어요.</p>}
@@ -153,11 +165,11 @@ export function ProRequests({ api, orgId, userId, csrf, targetId, route, onNavig
           {item.transfer && <p>전달: {item.transfer.status === 'available' ? '다운로드 가능' : item.transfer.status === 'revoked' ? '회수됨' : '만료됨'} · {new Date(item.transfer.expiresAt).toLocaleString()}까지 · {item.transfer.acknowledgedAt ? '수신 확인됨' : '수신 확인 전'}</p>}
           {detailId ? <>
             <details><summary>요청 식별 정보</summary><CopyField label="요청 상세 링크 (로그인 필요)" value={location.origin + proPath(destination)} /><p className="device-id">{item.id}</p>{item.receiverDeviceId && <p className="device-id">수신 기기: {item.receiverDeviceId}</p>}</details>
-            <fieldset className="plain-fieldset" disabled={busy || disabled}><legend>요청 처리</legend><div className="actions">
+            <fieldset className="plain-fieldset" disabled={busy || disabled || accessUnavailable}><legend>요청 처리</legend><div className="actions">
               {item.status === 'pending' && item.direction === 'incoming' && <><button className="button primary" type="button" onClick={() => { void run(async () => { await mutate(base + '/requests/' + item.id + '/approve', {}) }) }}>승인</button><button className="button" type="button" onClick={() => { if (window.confirm('이 파일 요청을 거절할까요?')) void run(async () => { await mutate(base + '/requests/' + item.id + '/reject', {}) }) }}>거절</button></>}
               {['pending', 'approved'].includes(item.status) && <button className="button pro-danger" type="button" onClick={() => { if (window.confirm('이 요청을 취소할까요? 다시 받으려면 새 요청이 필요해요.')) void run(async () => { await mutate(base + '/requests/' + item.id + '/cancel', {}) }) }}>요청 취소</button>}
             </div>
-            {((item.status === 'approved' && item.direction === 'incoming') || (item.transfer?.status === 'available' && item.direction === 'outgoing')) && <ProTransfer key={item.id + (item.transfer?.status ?? item.status)} api={api} orgId={orgId} requestId={item.id} userId={userId} csrf={csrf} sending={item.status === 'approved'} project={item.project ?? ''} environment={item.environment ?? ''} onDone={load} onExpired={onExpired} onNavigate={onNavigate} />}
+            {((item.status === 'approved' && item.direction === 'incoming') || (item.transfer?.status === 'available' && item.direction === 'outgoing')) && <ProTransfer acceptNewTransfers={acceptNewTransfers} key={item.id + (item.transfer?.status ?? item.status)} api={api} orgId={orgId} requestId={item.id} userId={userId} csrf={csrf} sending={item.status === 'approved'} project={item.project ?? ''} environment={item.environment ?? ''} onDone={load} onExpired={onExpired} onNavigate={onNavigate} />}
             {item.transfer?.status === 'available' && <button className="button" type="button" onClick={() => { if (window.confirm('전달을 회수할까요? 이후 다운로드를 차단하며 이미 받은 사본은 지워지지 않아요.')) void run(async () => { await mutate(base + '/requests/' + item.id + '/transfer/revoke', {}) }) }}>전달 회수</button>}
             </fieldset>
           </> : <a className="button" href={proPath(destination)} onClick={event => followProLink(event, destination, onNavigate)}>요청 열기</a>}

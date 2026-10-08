@@ -1,5 +1,5 @@
 import { limits } from './limits.ts'
-import { invalidateRequests } from './requests.ts';
+import { invalidateRequests } from './lifecycle.ts';
 import type { Database } from './database.ts';
 import { deviceHash, deviceId, encryptDeviceChallenge, identityFingerprint, importDevicePublicKey, verifyDeviceProof, DEVICE_CHALLENGE_MS } from '@envhandoff/protocol/device-proof';
 import type { DeviceAction, DeviceChallenge, DeviceIdentity, EncryptedDeviceChallenge } from '@envhandoff/protocol/device-proof';
@@ -141,7 +141,7 @@ export class DeviceRegistry {
         await this.db.run("UPDATE devices SET status = $1 WHERE id = $2", challenge.action === 'approve' ? 'active' : 'revoked', challenge.target.deviceId);
       }
       await this.db.run("INSERT INTO device_proofs VALUES ($1, $2, $3, $4, $5)", challenge.id, auth.userId, challenge.target.deviceId, proof, now);
-      await invalidateRequests(this.db, now);
+      await invalidateRequests(this.db, now, { userId: auth.userId });
       await this.event(auth.userId, challenge.target.deviceId, challenge.action, now);
       return (await this.get(auth, challenge.target.deviceId))!;
     }));

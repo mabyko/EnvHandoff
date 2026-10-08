@@ -1,8 +1,9 @@
+import { fenceUpload, uploadCancelled } from './upload-cancellations.ts'
 import { limits } from './limits.ts'
 import { randomUUID } from 'node:crypto'
 import type { Database } from './database.ts'
 import { fields, HttpError, jsonBody } from './http.ts'
-import { invalidateRequests } from './requests.ts'
+import { invalidateRequests, invalidateTransfers } from './lifecycle.ts'
 import { Objects } from './objects.ts'
 import { auditDownloadDenied } from './download-audit.ts'
 import { deviceId, deviceHash, encryptDeviceChallenge, verifyDeviceProof, DEVICE_CHALLENGE_MS } from '@envhandoff/protocol/device-proof'
@@ -14,22 +15,6 @@ type Session = { user_id: string; token_hash: string }
 type RequestRow = { id: string; org_id: string; environment_id: string; receiver_id: string; sender_id: string; receiver_device_id: string; status: string; expires_at: number }
 type Upload = { id: string; request_id: string; org_id: string; sender_id: string; sender_device_id: string; project_id: string; size: number; digest: string; retention_days: number; status: string; created_at: number; available_until: number | null; revoked_at: number | null; acknowledged_at: number | null; ended_at: number | null; deleted_at: number | null; sender_identity: string; receiver_identity: string }
 
-export async function invalidateTransfers(db: Database, now: number) {
-  await db.run(`UPDATE uploads u SET revoked_at=$1,ended_at=$1 WHERE status='committed' AND ended_at IS NULL AND NOT EXISTS (
-    SELECT 1 FROM file_requests r
-    JOIN effective_file_permissions rp ON rp.org_id=r.org_id AND rp.environment_id=r.environment_id AND rp.user_id=r.receiver_id AND rp.receive=1
-    JOIN effective_file_permissions sp ON sp.org_id=r.org_id AND sp.environment_id=r.environment_id AND sp.user_id=r.sender_id AND sp.send=1
-    JOIN devices rd ON rd.id=r.receiver_device_id AND rd.user_id=r.receiver_id AND rd.status='active'
-    JOIN devices sd ON sd.id=u.sender_device_id AND sd.user_id=r.sender_id AND sd.status='active'
-    WHERE r.id=u.request_id
-  )`, now)
-  await db.run("UPDATE uploads SET ended_at=available_until WHERE status='committed' AND ended_at IS NULL AND available_until <= $1", now)
-  await db.run(`UPDATE uploads u SET status='cancelled',ended_at=$1 WHERE status IN ('reserved','writing') AND (
-    NOT EXISTS(SELECT 1 FROM file_requests r WHERE r.id=u.request_id AND r.status='approved')
-    OR NOT EXISTS(SELECT 1 FROM devices d WHERE d.id=u.sender_device_id AND d.user_id=u.sender_id AND d.status='active'))`, now)
-  await db.run("UPDATE uploads SET status='failed',ended_at=$1 WHERE status IN ('reserved','writing') AND created_at <= $2", now, now - 60 * 60_000)
-  await db.run("UPDATE file_requests r SET ended_at=u.ended_at FROM uploads u WHERE u.request_id=r.id AND u.status='committed' AND r.status='fulfilled' AND u.ended_at IS NOT NULL AND r.ended_at IS NULL")
-}
 export function transferState(u: Upload, now: number) { return u.revoked_at !== null ? 'revoked' : u.available_until !== null && u.available_until <= now ? 'expired' : u.status === 'committed' ? 'available' : u.status }
 
 export class Transfers {
@@ -60,10 +45,10 @@ export class Transfers {
       await this.db.run('DELETE FROM uploads WHERE deleted_at IS NOT NULL AND ended_at <= $1', this.clock() - 30 * DAY)
     })
   }
-  private async current(session: () => Promise<Session>, auth: Session) {
+  private async current(session: () => Promise<Session>, auth: Session, org: string) {
     if ((await session()).token_hash !== auth.token_hash) throw new HttpError(401, 'session_expired')
     await this.db.run('UPDATE sessions SET last_seen=$1 WHERE token_hash=$2', this.clock(), auth.token_hash)
-    await invalidateRequests(this.db, this.clock())
+    await invalidateRequests(this.db, this.clock(), {organizationId:org})
   }
   private async request(orgId: string, requestId: string): Promise<RequestRow> {
     const row = await this.db.get<RequestRow>('SELECT * FROM file_requests WHERE id=$1 AND org_id=$2', requestId, orgId)
@@ -114,6 +99,7 @@ export class Transfers {
     const sender = await this.sender(auth, r, senderId)
     const size = body.size as number, digest = body.digest as string, days = body.retentionDays as number
     if (!Number.isSafeInteger(size) || size < 174 || size > MAX || typeof digest !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(digest) || Buffer.from(digest, 'base64url').toString('base64url') !== digest || ![1,3,7].includes(days)) throw new HttpError(400, 'invalid_upload')
+    if (await uploadCancelled(this.db,{userId:auth.user_id,orgId:r.org_id,kind:'team',reservationId:uploadId,requestId:r.id})) return {id:uploadId,status:'cancelled'}
     const prior = await this.db.get<Upload>('SELECT * FROM uploads WHERE id=$1', uploadId)
     if (prior) {
       if (prior.request_id !== r.id || prior.sender_device_id !== senderId || prior.size !== size || prior.digest !== digest || prior.retention_days !== days) throw new HttpError(409, 'operation_conflict')
@@ -132,6 +118,20 @@ export class Transfers {
     await this.db.run(`INSERT INTO uploads(id,request_id,org_id,sender_id,sender_device_id,project_id,size,digest,retention_days,status,created_at,sender_identity,receiver_identity)
       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'reserved',$10,$11,$12)`, uploadId,r.id,r.org_id,auth.user_id,senderId,env!.project_id,size,digest,days,this.clock(),JSON.stringify(sender),JSON.stringify(receiver))
     return this.summary(await this.upload(r, uploadId))
+  }
+  private async cancel(auth: Session, r: RequestRow, uploadId: string, body: Record<string, unknown>) {
+    fields(body,['operationId']); id(body.operationId)
+    if (auth.user_id!==r.sender_id) throw new HttpError(403,'sender_required')
+    const existing=await this.db.get<Upload>('SELECT * FROM uploads WHERE id=$1',uploadId)
+    if (existing && (existing.request_id!==r.id || existing.sender_id!==auth.user_id)) throw new HttpError(404,'transfer_unavailable')
+    if (existing && transferState(existing,this.clock())==='available' && existing.ended_at===null) return this.summary(existing)
+    await fenceUpload(this.db,{userId:auth.user_id,orgId:r.org_id,kind:'team',reservationId:uploadId,requestId:r.id},this.clock(),!existing)
+    if (!existing) return {id:uploadId,status:'cancelled'}
+    if (['reserved','writing'].includes(existing.status)) {
+      await this.db.run("UPDATE uploads SET status='cancelled',ended_at=COALESCE(ended_at,$1) WHERE id=$2",this.clock(),uploadId)
+      await this.event(auth,existing,'upload_cancelled')
+    }
+    return this.summary(await this.upload(r,uploadId))
   }
   private async challenge(auth: Session, r: RequestRow, u: Upload, body: Record<string, unknown>) {
     fields(body, ['action','deviceId'])
@@ -169,7 +169,7 @@ export class Transfers {
   private async content(request: Request, session: () => Promise<Session>, auth: Session, org: string, requestId: string, uploadId: string) {
     if (request.headers.get('content-type') !== 'application/octet-stream') throw new HttpError(415, 'binary_required')
     const u = await this.db.transaction(async () => {
-      await this.current(session, auth)
+      await this.current(session, auth, org)
       const r = await this.request(org, requestId), u = await this.upload(r, uploadId)
       if (u.status !== 'reserved') throw new HttpError(409, 'upload_unavailable')
       await this.proof(auth,r,u,'upload',request.headers.get('x-device-challenge'),request.headers.get('x-device-proof'))
@@ -179,7 +179,7 @@ export class Transfers {
     try {
       await this.objects!.write(u.id, request.body, u.size, u.digest)
       return await this.db.transaction(async () => {
-        await this.current(session, auth)
+        await this.current(session, auth, org)
         const r = await this.request(org,requestId), current = await this.upload(r,u.id)
         await this.access(auth,r,current,'upload')
         if (current.status !== 'writing') throw new HttpError(409, 'upload_unavailable')
@@ -208,7 +208,7 @@ export class Transfers {
     if (request.method === 'POST' && kind === 'uploads' && uploadId && action === 'content') return this.content(request,session,auth,org,requestId,uploadId)
     const body = request.method === 'POST' ? await jsonBody(request) : undefined
     return this.db.transaction(async () => {
-      await this.current(session,auth)
+      await this.current(session,auth,org)
       const r = await this.request(org,requestId)
       await this.participant(auth,r,action === 'revoke')
       if (kind === 'uploads' && !uploadId && body && !action) return Response.json(await this.prepare(auth,r,body))
@@ -218,6 +218,7 @@ export class Transfers {
         const pendingUpload = await this.db.get("SELECT id,status FROM uploads WHERE request_id=$1 AND status IN ('reserved','writing')", r.id)
         return Response.json({ pendingUpload, requestId:r.id,organizationId:r.org_id,projectId:env!.project_id,environmentId:r.environment_id,senderUserId:r.sender_id,recipientUserId:r.receiver_id,recipientDeviceId:r.receiver_device_id,receiver:await this.identity(r.receiver_id,r.receiver_device_id),sessionHash:await deviceHash(auth.token_hash) })
       }
+      if (body && action==='cancel' && kind==='uploads' && uploadId) return Response.json(await this.cancel(auth,r,uploadId,body))
       const u = await this.upload(r,uploadId)
       if (!body && !action) {
         if (kind === 'uploads') await this.sender(auth,r)
@@ -226,19 +227,11 @@ export class Transfers {
       }
       if (!body) throw new HttpError(404)
       if (action === 'challenge') return Response.json(await this.challenge(auth,r,u,body))
-      if (action === 'cancel' && kind === 'uploads') {
-        fields(body,['operationId']); id(body.operationId); await this.sender(auth,r)
-        if (u.status === 'committed') throw new HttpError(409, 'upload_unavailable')
-        return Response.json(await this.mutation(auth,r,u,'cancel',body,async () => {
-          await this.db.run("UPDATE uploads SET status='cancelled',ended_at=COALESCE(ended_at,$1) WHERE id=$2",this.clock(),u.id)
-          return { ...this.summary(u),status:'cancelled' }
-        }))
-      }
       if (action === 'revoke' && kind === 'transfer') {
         fields(body,['operationId']); id(body.operationId)
         return Response.json(await this.mutation(auth,r,u,'revoke',body,async () => {
           await this.db.run('UPDATE uploads SET revoked_at=COALESCE(revoked_at,$1),ended_at=COALESCE(ended_at,$1) WHERE id=$2',this.clock(),u.id)
-          await invalidateTransfers(this.db,this.clock())
+          await invalidateTransfers(this.db,this.clock(),{requestId:r.id})
           await this.event(auth,u,'transfer_revoked')
           return { ...this.summary(u),status:'revoked' }
         }))

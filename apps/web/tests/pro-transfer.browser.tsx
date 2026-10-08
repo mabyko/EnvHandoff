@@ -5,7 +5,7 @@ import { deviceIdentity, identityFingerprint } from '@envhandoff/protocol/device
 import { createLocalDevice, deleteLocalDevice, pinPeerIdentity } from '../src/lib/device-keys.ts'
 import { ProTransfer } from '../src/components/ProTransfer.tsx'
 
-export async function verifyTransferCancellation() {
+export async function verifyTransferCancellation(rejectReservation = false) {
   const userId = crypto.randomUUID(), recipientId = crypto.randomUUID(), orgId = crypto.randomUUID(), requestId = crypto.randomUUID()
   const host = document.createElement('div'); document.body.append(host)
   const root = createRoot(host), originalFetch = window.fetch
@@ -32,6 +32,7 @@ export async function verifyTransferCancellation() {
         receiver: peer, projectId: crypto.randomUUID(), environmentId: crypto.randomUUID(), sessionHash: 'public-test' })
       if (path === base + '/uploads') {
         state.reserves++
+        if (rejectReservation) return Response.json({error:'storage_limit'},{status:429})
         return new Promise<Response>((_resolve, reject) => {
           const signal = init!.signal!
           if (signal.aborted) reject(signal.reason)
@@ -41,7 +42,7 @@ export async function verifyTransferCancellation() {
       if (path.startsWith(base + '/uploads/') && path.endsWith('/cancel')) {
         state.cancellations.push(JSON.parse(init!.body as string).operationId)
         await until(() => !state.holdCancellation)
-        return state.failCancellation ? Response.json({ error: 'storage_unavailable' }, { status: 503 }) : Response.json({ ok: true })
+        return state.failCancellation ? Response.json({ error: 'storage_unavailable' }, { status: 503 }) : Response.json({ status: 'cancelled' })
       }
       throw new Error('Unexpected test request: ' + path)
     }
@@ -51,6 +52,12 @@ export async function verifyTransferCancellation() {
     const files = new DataTransfer(); files.items.add(new File(['PUBLIC_TEST=not-a-secret\n'], '.env'))
     const input = host.querySelector<HTMLInputElement>('input[type="file"]')!; input.files = files.files; input.dispatchEvent(new Event('change', { bubbles: true }))
     await until(() => !button('암호화해서 업로드').disabled)
+    if (rejectReservation) {
+      button('암호화해서 업로드').click(); await until(() => state.reserves === 1 && ready())
+      check(!input.disabled && !button('업로드 시도 취소'), 'Rejected team reservation must unlock originals without retaining a nonexistent upload')
+      check(host.querySelector<HTMLInputElement>('input:not([type="file"])')?.value === '.env', 'Rejected reservation must preserve the source path')
+      rejectReservation = false; state.reserves = 0
+    }
     button('암호화해서 업로드').click(); await until(() => state.reserves === 1 && !!button('업로드 시도 취소'))
     const cancel = button('업로드 시도 취소'); cancel.click(); cancel.click(); cancel.click()
     await until(() => !!button('취소 확인 중…'))
@@ -68,3 +75,5 @@ export async function verifyTransferCancellation() {
     await Promise.all([deleteLocalDevice(userId), deleteLocalDevice(recipientId)])
   }
 }
+
+export const verifyTransferReservationRecovery = () => verifyTransferCancellation(true)

@@ -4,7 +4,7 @@ import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Database } from './database.ts'
 import { HttpError } from './http.ts'
-import { invalidateRequests } from './requests.ts'
+import { invalidateRequests } from './lifecycle.ts'
 
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 type Deletion={kind:'user'|'organization';id:string;deletedAt:number}
@@ -14,6 +14,7 @@ export async function eraseOrganization(db:Database,id:string,at:number,now=Date
   const existing=await db.get('SELECT 1 FROM organizations WHERE id=$1 AND active=1',id)
   await db.run("UPDATE organizations SET active=0,name='Deleted organization' WHERE id=$1",id)
   await db.run('DELETE FROM invitations WHERE org_id=$1',id)
+  await db.run('DELETE FROM upload_cancellations WHERE org_id=$1',id)
   await db.run('DELETE FROM environment_permissions WHERE environment_id IN (SELECT e.id FROM environments e JOIN projects p ON p.id=e.project_id WHERE p.org_id=$1)',id)
   await db.run('DELETE FROM environments WHERE project_id IN (SELECT id FROM projects WHERE org_id=$1)',id)
   await db.run('DELETE FROM project_teams WHERE project_id IN (SELECT id FROM projects WHERE org_id=$1)',id)
@@ -23,14 +24,14 @@ export async function eraseOrganization(db:Database,id:string,at:number,now=Date
   await db.run('DELETE FROM memberships WHERE org_id=$1',id)
   await db.run('DELETE FROM management_recovery_contacts WHERE org_id=$1',id)
   await db.run('DELETE FROM management_recoveries WHERE org_id=$1',id)
-  await invalidateRequests(db,now)
+  await invalidateRequests(db,now,{organizationId:id})
   if(existing)await db.run("INSERT INTO organization_events(org_id,target_id,event,created_at) VALUES($1,$1,'organization_deleted',$2)",id,at)
 }
 
 export async function eraseUser(db:Database,id:string,at:number,now=Date.now()) {
   const existing=await db.get('SELECT github_id FROM users WHERE id=$1',id)
   await db.run('UPDATE users SET disabled=1 WHERE id=$1',id)
-  await invalidateRequests(db,now)
+  await invalidateRequests(db,now,{userId:id})
   await db.run('DELETE FROM invitations WHERE issuer_id=$1 OR accepted_by=$1 OR target_id=(SELECT github_id FROM users WHERE id=$1)',id)
   await db.run('DELETE FROM oauth_flows WHERE previous_session IN(SELECT token_hash FROM sessions WHERE user_id=$1)',id)
   await db.run('DELETE FROM sessions WHERE user_id=$1',id)
@@ -102,16 +103,30 @@ export class Deletions {
   }
   async sync(db:Database,now=Date.now()) {
     try{return await db.transaction(async()=>{
-      // ponytail: scan the small-beta deletion ledger on each request; index immutable entries when its size makes this measurable.
+      // Validate every immutable disk record, even when its deletion was already applied.
       const {ledgerId,entries}=await this.entries()
       for(const file of ['ledger.json',...entries.map(entry=>entry.kind+'-'+entry.id+'.json')])if(!this.durable.has(file)){await this.persist(file);this.durable.add(file)}
       const bound=await db.get<{ledger_id:string}>('SELECT ledger_id FROM deletion_ledger_state WHERE singleton=1')
       if(bound && bound.ledger_id!==ledgerId)throw unavailable()
-      const known=await db.all<{kind:string;target_id:string;deleted_at:number}>('SELECT kind,target_id,deleted_at FROM deletion_records')
+      const known=await db.all<{kind:string;target_id:string;deleted_at:number;restored:boolean}>(`SELECT d.kind,d.target_id,d.deleted_at,
+        CASE WHEN d.kind='user' THEN EXISTS(SELECT 1 FROM users u WHERE u.id=d.target_id)
+          ELSE EXISTS(SELECT 1 FROM organizations o WHERE o.id=d.target_id AND o.active=1)
+            OR EXISTS(SELECT 1 FROM memberships m WHERE m.org_id=d.target_id)
+            OR EXISTS(SELECT 1 FROM teams t WHERE t.org_id=d.target_id)
+            OR EXISTS(SELECT 1 FROM projects p WHERE p.org_id=d.target_id)
+            OR EXISTS(SELECT 1 FROM invitations i WHERE i.org_id=d.target_id)
+            OR EXISTS(SELECT 1 FROM upload_cancellations c WHERE c.org_id=d.target_id)
+            OR EXISTS(SELECT 1 FROM management_recovery_contacts c WHERE c.org_id=d.target_id)
+            OR EXISTS(SELECT 1 FROM management_recoveries r WHERE r.org_id=d.target_id)
+          END AS restored FROM deletion_records d`)
       const indexed=new Map(entries.map(entry=>[entry.kind+':'+entry.id,entry.deletedAt]))
       for(const row of known)if(indexed.get(row.kind+':'+row.target_id)!==row.deleted_at)throw unavailable()
       if(!bound)await db.run('INSERT INTO deletion_ledger_state VALUES(1,$1)',ledgerId)
+      // Read markers inside the same transaction as erasure: a rollback or older DB
+      // snapshot removes the marker too. Never cache this applied set in memory.
+      const applied=new Set(known.filter(row=>!row.restored).map(row=>row.kind+':'+row.target_id))
       for(const entry of entries) {
+        if(applied.has(entry.kind+':'+entry.id))continue
         if(entry.kind==='user')await eraseUser(db,entry.id,entry.deletedAt,now)
         else await eraseOrganization(db,entry.id,entry.deletedAt,now)
         await db.run('INSERT INTO deletion_records VALUES($1,$2,$3) ON CONFLICT(kind,target_id) DO NOTHING',entry.kind,entry.id,entry.deletedAt)
