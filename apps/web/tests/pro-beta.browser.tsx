@@ -81,7 +81,10 @@ export async function verifyBetaFlow() {
     host.querySelector<HTMLElement>('.pro-switcher summary')!.click(); click('새 워크스페이스 만들기')
     input(host,'new-workspace-name','두 번째 팀'); await new Promise(resolve => setTimeout(resolve,20))
     host.querySelector<HTMLFormElement>('dialog form')!.requestSubmit()
-    await until(() => qa.state.owned === 2 && !host.querySelector('dialog[open]'))
+    // Creation closes the dialog before the following workspace-list fetch is
+    // rendered. The mock counter alone does not mean the switcher is ready.
+    await until(() => qa.state.owned === 2 && !host.querySelector('dialog[open]')
+      && !host.querySelector('[aria-busy="true"]') && host.querySelectorAll('.pro-switcher-options > a').length === 2)
     host.querySelector<HTMLElement>('.pro-switcher summary')!.click()
     const create = [...host.querySelectorAll<HTMLButtonElement>('button')].find(el => el.textContent === '새 워크스페이스 만들기')!
     check(create.disabled,'Third workspace action must be disabled')
