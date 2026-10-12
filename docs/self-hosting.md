@@ -18,7 +18,7 @@
 
 ## 공통 준비
 
-웹을 빌드할 컴퓨터에 Git, Node.js **24.21.0**, pnpm **12.3.4**가 필요하다. Pro 서버에는 Docker Engine과 `docker compose`가 필요하며 Node·pnpm은 API 이미지에 포함돼 있다.
+웹을 빌드할 컴퓨터에 Git, Node.js **24.21.0**, pnpm **12.12.0**가 필요하다. Pro 서버에는 Docker Engine과 `docker compose`가 필요하며 Node·pnpm은 API 이미지에 포함돼 있다.
 
 아래 예제의 `app.example.com`, `api.example.com`은 자신이 소유한 도메인으로 바꾼다. Pro는 웹과 API가 **HTTPS의 같은 site 하위 도메인**이어야 한다. 예를 들어 `app.your-domain.com`과 `api.your-domain.com`을 사용한다. 서로 다른 도메인이나 `workers.dev` 웹 주소와 별도 API 도메인을 섞으면 세션 쿠키가 동작하지 않을 수 있다.
 

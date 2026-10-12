@@ -1,5 +1,5 @@
 FROM node:24.21.0-bookworm-slim AS base
-RUN npm install --global pnpm@12.3.4
+RUN npm install --global pnpm@12.12.0
 WORKDIR /app
 
 FROM base AS dependencies

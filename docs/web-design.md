@@ -52,7 +52,7 @@ fixtures/
 docs/
 ```
 
-Turborepo + pnpm workspaces로 시작한다. Node.js 24.21.0과 pnpm 12.3.4는 `mise.toml`, Turborepo 2.10.12는 루트 `package.json`에 고정했다. 프로젝트마다 실행·검사·빌드 명령과 의존성을 선언하고, 루트에서 Turborepo로 실행한다. JS/TS 의존성 잠금 파일은 공유하되 후속 네이티브 앱의 빌드 방식은 착수 시 정한다. 공통 패키지는 내부 의존성으로 연결하며 npm 배포를 전제로 하지 않는다. [pnpm workspaces](https://pnpm.io/workspaces)
+Turborepo + pnpm workspaces로 시작한다. Node.js 24.21.0과 pnpm 12.12.0은 `mise.toml`, Turborepo 2.10.12는 루트 `package.json`에 고정했다. 프로젝트마다 실행·검사·빌드 명령과 의존성을 선언하고, 루트에서 Turborepo로 실행한다. JS/TS 의존성 잠금 파일은 공유하되 후속 네이티브 앱의 빌드 방식은 착수 시 정한다. 공통 패키지는 내부 의존성으로 연결하며 npm 배포를 전제로 하지 않는다. [pnpm workspaces](https://pnpm.io/workspaces)
 
 | 도구 | 맡는 일 | 현재 선택 |
 |---|---|---|
