@@ -81,6 +81,7 @@ export async function verifyProPages() {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
     if (!url.startsWith(api)) return originalFetch(input, init)
     const path = url.slice(api.length), method = init?.method ?? 'GET'
+    if (path === '/security') return Response.json({ devices: [] })
     if (path.endsWith('/catalog')) return Response.json(catalog)
     if (path.includes('/requests/options?')) return Response.json({ senders: [{ id: userId, login: 'sender' }] })
     if (path.endsWith('/requests')) return Response.json({ requests: [request(firstId), request(secondId)] })
@@ -115,7 +116,7 @@ export async function verifyProPages() {
     await until(() => ready() && container.querySelectorAll('.pro-list article').length === 2)
     check(!container.querySelector('form'), 'Request list must not show the creation form')
     check(!container.querySelector('[aria-label="파일 전달"]'), 'Request list must not mount transfer editors')
-    click('요청 열기')
+    click('진행 상태 확인')
     await until(() => ready() && route.id === firstId && !!container.querySelector('.pro-detail'))
     check(container.querySelectorAll('article').length === 1 && !container.textContent!.includes('Second environment'), 'Request detail must show only its target')
     route = { page: 'requests', orgId, create: true, environmentId }; render()
@@ -133,6 +134,8 @@ export async function verifyProPages() {
     click('암호화해서 외부 공유'); click('암호화해서 외부 공유')
     await until(() => ready() && route.id === createdId && !!field('다른 경로로 전달할 공유 코드'))
     const code = field('다른 경로로 전달할 공유 코드')!.value
+    check(container.querySelectorAll('.task-card').length === 2 && !container.querySelector<HTMLDetailsElement>('.share-options')?.open, 'Share handoff must show two steps with management collapsed')
+    check(field('다른 경로로 전달할 공유 코드')!.type === 'password' && !field('다른 경로로 전달할 공유 코드')!.closest('details'), 'Share code stays masked and available outside advanced management')
     check(creations === 1, 'Rapid repeated clicks must create only one encrypted share')
     check(code.length === 43 && container.querySelectorAll('article').length === 1, 'Creation must navigate to only the new detail without losing its code')
     click('공유 목록')

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
   ArrowRightLeft,
   ArrowUpRight,
@@ -18,49 +18,96 @@ import type { Invitation } from '@envhandoff/protocol'
 
 type Route = { view: 'external'; id?: string; token?: string } | { view: 'home' | 'send' | 'pro' } | { view: 'receive'; invitation?: Invitation; invalid?: boolean }
 
-export default function App() {
-  const [route, setRoute] = useState<Route>(() => {
-    if (location.pathname.startsWith('/receive/')) return { view: 'external', ...readExternalShare(location.pathname, location.hash) }
-    if (location.pathname === '/pro' || location.pathname.startsWith('/pro/')) return { view: 'pro' }
-    if (!location.hash.startsWith('#receive')) return { view: 'home' }
+function readRoute(): Route {
+  if (location.pathname.startsWith('/receive/')) return { view: 'external', ...readExternalShare(location.pathname, location.hash) }
+  if (location.pathname === '/pro' || location.pathname.startsWith('/pro/')) return { view: 'pro' }
+  if (location.hash.startsWith('#receive')) {
     const invitation = readInvitation(location.hash)
     return { view: 'receive', invitation: invitation ?? undefined, invalid: !invitation }
-  })
+  }
+  if (location.pathname === '/send') return { view: 'send' }
+  if (location.pathname === '/receive') return { view: 'receive' }
+  return { view: 'home' }
+}
+
+export default function App() {
+  const [route, setRoute] = useState<Route>(readRoute)
   const [dark, setDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches)
   const [arrival, setArrival] = useState(0)
+  const currentRoute = useRef(route), currentURL = useRef(location.pathname + location.search)
+  const historyIndex = useRef(Number.isSafeInteger(history.state?.envhandoffFreeIndex) ? history.state.envhandoffFreeIndex : 0)
+  const restoring = useRef(false)
+  useLayoutEffect(() => { currentRoute.current = route }, [route])
   useLayoutEffect(() => {
-    const clearFragment = () => history.replaceState(null, '', `${location.pathname}${location.search}`)
+    const state = () => ({ ...history.state, envhandoffFreeIndex: historyIndex.current })
+    const clearFragment = () => history.replaceState(currentRoute.current.view === 'pro' ? history.state : state(), '', `${location.pathname}${location.search}`)
     const receiveLink = () => {
-      if (location.pathname.startsWith('/receive/')) {
-        const invitation = readExternalShare(location.pathname, location.hash)
-        clearFragment()
-        if (!confirmWorkLoss()) return
-        setRoute({ view: 'external', ...invitation })
-        setArrival(value => value + 1)
+      let next: Route
+      if (location.pathname.startsWith('/receive/') && location.hash.startsWith('#token=')) {
+        next = { view: 'external', ...readExternalShare(location.pathname, location.hash) }
+      } else {
+        if (location.pathname !== '/' || !location.hash.startsWith('#receive')) return
+        const invitation = readInvitation(location.hash)
+        next = { view: 'receive', invitation: invitation ?? undefined, invalid: !invitation }
+      }
+      clearFragment()
+      if (!confirmWorkLoss()) { history.replaceState(state(), '', currentURL.current); return }
+      historyIndex.current++
+      currentURL.current = location.pathname + location.search
+      history.replaceState(state(), '', currentURL.current)
+      setRoute(next); setArrival(value => value + 1)
+    }
+    const acceptLocation = () => {
+      historyIndex.current = Number.isSafeInteger(history.state?.envhandoffFreeIndex) ? history.state.envhandoffFreeIndex : 0
+      currentURL.current = location.pathname + location.search
+      setRoute(readRoute()); setArrival(value => value + 1)
+      window.scrollTo({ top: 0 })
+    }
+    const onPop = () => {
+      if (currentRoute.current.view === 'pro') return
+      if (restoring.current) { restoring.current = false; return }
+      if (location.hash.startsWith('#receive') || location.pathname.startsWith('/receive/') && location.hash.startsWith('#token=')) return
+      const nextIndex = history.state?.envhandoffFreeIndex
+      if (location.pathname + location.search === currentURL.current) {
+        historyIndex.current = Number.isSafeInteger(nextIndex) ? nextIndex : historyIndex.current + 1
+        history.replaceState(state(), '', location.href)
         return
       }
-      if (location.pathname !== '/' || !location.hash.startsWith('#receive')) return
-      const invitation = readInvitation(location.hash)
-      clearFragment()
-      if (!confirmWorkLoss()) return
-      setRoute({ view: 'receive', invitation: invitation ?? undefined, invalid: !invitation })
-      setArrival((value) => value + 1)
+      if (!confirmWorkLoss()) {
+        if (Number.isSafeInteger(nextIndex) && nextIndex !== historyIndex.current) {
+          restoring.current = true
+          history.go(historyIndex.current - nextIndex)
+        } else history.pushState(state(), '', currentURL.current)
+        return
+      }
+      acceptLocation()
     }
     if (location.hash) clearFragment()
+    else if (currentRoute.current.view !== 'pro') history.replaceState(state(), '', currentURL.current)
     window.addEventListener('hashchange', receiveLink)
-    return () => window.removeEventListener('hashchange', receiveLink)
+    window.addEventListener('popstate', onPop)
+    window.addEventListener('envhandoff:free-navigation', acceptLocation)
+    return () => {
+      window.removeEventListener('hashchange', receiveLink)
+      window.removeEventListener('popstate', onPop)
+      window.removeEventListener('envhandoff:free-navigation', acceptLocation)
+    }
   }, [])
   useEffect(() => {
     document.documentElement.dataset.theme = dark ? 'dark' : 'light'
   }, [dark])
   const navigate = (view: 'home' | 'send' | 'receive') => {
+    if (currentRoute.current.view === view) return
+    if (restoring.current || !confirmWorkLoss()) return
+    const path = view === 'home' ? '/' : '/' + view
+    history.pushState({ ...history.state, envhandoffFreeIndex: ++historyIndex.current }, '', path)
+    currentURL.current = path
     setRoute({ view })
     window.scrollTo({ top: 0 })
   }
   const home = () => {
-    if (!confirmWorkLoss()) return
-    if (route.view === 'pro') location.assign('/')
-    else { history.replaceState(null, '', '/'); navigate('home') }
+    if (route.view === 'pro') { if (confirmWorkLoss()) location.assign('/') }
+    else navigate('home')
   }
 
   return (

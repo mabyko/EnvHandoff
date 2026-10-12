@@ -67,6 +67,7 @@ export function ProLogin() {
       }
       historyIndex.current = Number.isSafeInteger(nextIndex) ? nextIndex : 0
       setRoute(next)
+      if (!next) window.dispatchEvent(new Event('envhandoff:free-navigation'))
     }
     window.addEventListener('popstate', onPop)
     return () => window.removeEventListener('popstate', onPop)

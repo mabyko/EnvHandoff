@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { METADATA_LIMITS } from '@envhandoff/protocol'
 import { limitMessage, subscribeTabReturn } from '../lib/pro-feedback.ts'
-import { Notice } from './ui.tsx'
+import { CopyField, Notice } from './ui.tsx'
 import { followProLink, proPath } from '../lib/pro-navigation.ts'
 import type { ProRoute } from '../lib/pro-navigation.ts'
 
@@ -121,7 +121,7 @@ export function ProCatalog({ api, orgId, csrf, members, route, onNavigate, disab
     {route.page === 'projects' && <>
     <fieldset className="plain-fieldset" disabled={busy || disabled}>
       <legend className="sr-only">프로젝트와 환경</legend>
-      {data?.projects.length === 0 && <div className="pro-empty-state"><h3>{owner ? '첫 프로젝트를 등록해보세요' : '아직 연결된 프로젝트가 없어요'}</h3><p>{owner ? '아래에서 프로젝트를 만든 뒤 개발·운영 환경과 파일 권한을 설정하세요.' : 'Owner에게 팀 연결을 요청해주세요.'}</p></div>}
+      {data?.projects.length === 0 && <div className="pro-empty-state"><h3>{owner ? '첫 프로젝트를 등록해보세요' : '아직 연결된 프로젝트가 없어요'}</h3><p>{owner ? '아래에서 프로젝트를 만든 뒤 개발·운영 환경과 파일 권한을 설정하세요.' : 'Owner에게 팀 연결을 요청해주세요.'}</p>{!owner && <CopyField label="Owner에게 보낼 안내" value="워크스페이스에 참여했지만 연결된 프로젝트가 없어요. 제 팀 소속과 프로젝트 참여 범위를 확인해주세요." />}</div>}
       {!route.id && <div className="pro-project-grid">{data?.projects.map(item => <a className="pro-project-card" key={item.id} href={proPath({...projectsRoute,id:item.id})} onClick={event => followProLink(event,{...projectsRoute,id:item.id},onNavigate)}><h3>{item.name}</h3><p>환경 {item.environments.length}개</p><span>프로젝트 열기</span></a>)}</div>}
       {route.id && data && !project && <Notice error>프로젝트를 찾을 수 없거나 접근 권한이 없어요. 목록에서 다시 선택해주세요.</Notice>}
       {project && <article className="pro-project" key={project.id}>
@@ -142,11 +142,12 @@ export function ProCatalog({ api, orgId, csrf, members, route, onNavigate, disab
               return <PermissionForm key={member.id + JSON.stringify(grant) + connected(member.id)} login={member.login} defaults={grantFlags(grant)} connected={connected(member.id)} save={flags => mutate(`/projects/${project.id}/permissions`, { userId: member.id, ...flags })} />
             })}</>}
         </section>}
-        {project.environments.length === 0 && <div className="pro-empty-state"><h3>아직 등록된 환경이 없어요</h3><p>{owner ? '아래에서 development, staging처럼 팀에서 쓰는 환경을 추가하세요.' : 'Owner에게 환경 등록과 파일 권한을 요청해주세요.'}</p></div>}
+        {project.environments.length === 0 && <div className="pro-empty-state"><h3>아직 등록된 환경이 없어요</h3><p>{owner ? '아래에서 development, staging처럼 팀에서 쓰는 환경을 추가하세요.' : 'Owner에게 환경 등록과 파일 권한을 요청해주세요.'}</p>{!owner && <CopyField label="Owner에게 보낼 안내" value={`${project.name}에 등록된 환경이 없어요. 필요한 환경을 등록하고 제 받기 권한을 확인해주세요.`} />}</div>}
         {project.environments.map((env) => <div className="pro-environment" key={env.id}>
           <h3>{env.name}</h3><p>내 파일 권한: {Object.entries(permissionLabels).filter(([key]) => env.permissions[key as keyof Flags]).map(([, label]) => label).join(' · ') || '모두 꺼짐'} · {permissionSources[env.permissionSource] ?? (owner ? permissionSources.owner : permissionSources.project)}</p>
           {env.name.length > METADATA_LIMITS.environment && <Notice error>이 환경 이름은 파일 전달에 사용할 수 있는 길이를 넘었어요. {owner ? '환경 설정에서 48자 이하로 바꿔주세요.' : 'Owner에게 환경 이름을 48자 이하로 바꿔달라고 요청해주세요.'}</Notice>}
           <div className="actions">{env.permissions.receive && <button className="button primary" type="button" onClick={() => onNavigate({page:'requests',orgId,create:true,environmentId:env.id})}>파일 요청</button>}{env.permissions.externalShare && <button className="button" type="button" onClick={() => onNavigate({page:'shares',orgId,create:true,environmentId:env.id})}>외부 공유 만들기</button>}</div>
+          {!owner && !env.permissions.receive && <Notice>이 환경의 받기 권한이 없어 파일을 요청할 수 없어요.<CopyField label="Owner에게 보낼 안내" value={`${project.name} / ${env.name}의 파일을 요청하려는데 받기 권한이 없어요. 제 프로젝트 기본 받기 권한과 이 환경의 권한 예외를 확인해주세요.`} /></Notice>}
           {owner && <details><summary>환경 설정·권한 예외</summary>
             <NameForm key={env.name} label="환경 이름" initial={env.name} maxLength={METADATA_LIMITS.environment} save={(name) => mutate(`/environments/${env.id}/rename`, { name })} />
             {!!fileMembers.length && <p>이 환경에서만 권한을 다르게 정할 때 기본값 사용을 해제하세요. 예외는 프로젝트 기본 권한이 바뀌어도 유지돼요.</p>}

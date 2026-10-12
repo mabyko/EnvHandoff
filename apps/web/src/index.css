@@ -724,6 +724,8 @@ input[type='radio'] {
   display: grid;
   gap: 12px;
 }
+.share-options + .method-options { margin-top: 24px; }
+.method-options > legend { margin-bottom: 12px; font-size: 14px; font-weight: 600; }
 .method-option {
   display: flex;
   align-items: flex-start;
@@ -782,7 +784,7 @@ input[type='radio'] {
   color: var(--accent);
   margin-top: 2px;
 }
-.task-card h2 {
+.task-card h2, .task-card h4 {
   font-size: 16px;
   margin-bottom: 4px;
 }
