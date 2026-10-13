@@ -3,6 +3,7 @@ import { createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { ProShares } from '../src/components/ProShares.tsx'
 import { ProRequests } from '../src/components/ProRequests.tsx'
+import { createLocalDevice, deleteLocalDevice } from '../src/lib/device-keys.ts'
 
 export async function verifyShareReservationRecovery() {
   const host = document.createElement('div'); document.body.append(host)
@@ -50,6 +51,7 @@ export async function verifyPausedRequests() {
   const host = document.createElement('div'); document.body.append(host)
   const root = createRoot(host), originalFetch = window.fetch
   const orgId = crypto.randomUUID(), userId = crypto.randomUUID(), environmentId = crypto.randomUUID()
+  const device = await createLocalDevice(userId, crypto.randomUUID())
   let acceptNewTransfers = false
   const until = async (condition: () => boolean) => {
     const end = Date.now() + 5000
@@ -58,16 +60,19 @@ export async function verifyPausedRequests() {
   const render = () => root.render(createElement(ProRequests, { api: '/__paused-request', orgId, userId, csrf: 'test-only', route: { page: 'requests', orgId, create: true }, onNavigate() {}, disabled: false, acceptNewTransfers, onExpired() {} }))
   window.fetch = async (input, init) => {
     if (init?.method === 'POST') throw new Error('Paused request must not POST')
+    if (String(input).endsWith('/security')) return Response.json({ devices: [{ identity: { deviceId: device.deviceId }, status: 'active' }] })
     if (String(input).endsWith('/catalog')) return Response.json({ projects: [{ name: 'QA', environments: [{ id: environmentId, name: 'development', permissions: { receive: true } }] }] })
     if (String(input).includes('/requests/options?')) return Response.json({ senders: [{ id: crypto.randomUUID(), login: 'qa-sender' }] })
     throw new Error('Unexpected paused request')
   }
   try {
-    render(); await until(() => !!host.querySelector('form button[type="submit"]') && !host.querySelector('[aria-busy="true"]') && !!host.querySelector('#request-sender option'))
+    render(); await until(() => !!host.querySelector('form button[type="submit"]') && !host.querySelector('[aria-busy="true"]') && host.querySelector<HTMLSelectElement>('#request-sender')?.disabled === false)
     const button = host.querySelector<HTMLButtonElement>('form button[type="submit"]')!
+    const sender = host.querySelector<HTMLSelectElement>('#request-sender')!
+    sender.value = sender.options[1]!.value; sender.dispatchEvent(new Event('change', { bubbles: true }))
     if (!button.disabled || !host.textContent?.includes('일시 중지')) throw new Error('Paused requests must explain the cause and disable creation')
     button.click()
     acceptNewTransfers = true; render(); await until(() => !button.disabled)
     return { passed: true, checks: ['paused creation disabled', 'resume enables creation'] }
-  } finally { root.unmount(); host.remove(); window.fetch = originalFetch }
+  } finally { root.unmount(); host.remove(); window.fetch = originalFetch; await deleteLocalDevice(userId) }
 }

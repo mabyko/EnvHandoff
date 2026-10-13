@@ -25,6 +25,7 @@ export async function verifyRequestSenderRefresh() {
   const ready = () => !host.querySelector('[aria-busy="true"]') && !!host.querySelector('#request-sender') && !host.querySelector<HTMLSelectElement>('#request-sender')!.disabled
   window.fetch = async (input, init) => {
     if (!String(input).startsWith('/__refresh-qa')) return originalFetch(input, init)
+    if (String(input).endsWith('/security')) return Response.json({ devices: [] })
     if (String(input).includes('/options?')) { options++; return Response.json({ senders }) }
     return Response.json({ projects: [{ name: 'QA', environments: [{ id: environmentId, name: 'dev', permissions: { receive: true } }] }] })
   }
@@ -53,6 +54,7 @@ export async function verifyShareEnvironmentRefresh(page: 'shares' | 'requests' 
   const ready = () => !!host.querySelector('select') && !host.querySelector('[aria-busy="true"]')
   window.fetch = async (input, init) => {
     if (!String(input).startsWith('/__refresh-qa')) return originalFetch(input, init)
+    if (String(input).endsWith('/security')) return Response.json({ devices: [] })
     if (String(input).includes('/options?')) return Response.json({ senders: [{ id: crypto.randomUUID(), login: 'sender' }] })
     reads++
     return Response.json({ projects: [{ name: 'QA', environments: ids.map(id => ({ id, name: id === first ? 'dev' : 'production', permissions: { externalShare: true, receive: true } })) }] })
@@ -102,8 +104,7 @@ export async function verifyRequestRefreshPreservesUpload() {
       return originalFetch(input, init)
     }
     root.render(createElement(ProRequests, { api, orgId, userId, csrf: 'test-only', disabled: false, route: { page: 'requests', orgId, id: requestId }, onNavigate: () => {}, onExpired: () => {} }))
-    await until(() => !!button('상대 기기 확인') && ready())
-    button('상대 기기 확인').click(); await until(() => !!host.querySelector('input[type="file"]') && ready())
+    await until(() => !!host.querySelector('input[type="file"]') && ready())
     const files = new DataTransfer(); files.items.add(new File(['PUBLIC_TEST=not-a-secret\n'], '.env'))
     const input = host.querySelector<HTMLInputElement>('input[type="file"]')!; input.files = files.files; input.dispatchEvent(new Event('change', { bubbles: true }))
     await until(() => !!host.querySelector('[data-work-loss="true"]'))

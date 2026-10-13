@@ -97,7 +97,7 @@ v3 Pro 베타에는 GitHub 로그인·팀 권한·비동기 암호화 전달·�
 
 ## 개발 시작
 
-Node.js 24.21.0과 pnpm 12.3.4를 사용한다.
+Node.js 24.21.0과 pnpm 12.12.0을 사용한다.
 
 ```sh
 mise install

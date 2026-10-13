@@ -3,14 +3,14 @@ import { betaClosedMessage, reservationRejected, uploadEncrypted } from '../lib/
 import { proRequest, uploadResolution } from '../lib/pro-api.ts'
 import { followProLink, proPath } from '../lib/pro-navigation.ts'
 import type { ProRoute } from '../lib/pro-navigation.ts'
-import { Notice } from './ui.tsx'
+import { CopyField, Notice } from './ui.tsx'
 import { OpenedFiles } from './ReceiveFlow.tsx'
 import { loadLocalDevice, pinPeerIdentity, trustedPeerEncryptionKey } from '../lib/device-keys.ts'
 import { openTeamBundle, sealTeamBundle } from '../lib/team-crypto.ts'
 import type { TeamBinding } from '../lib/team-crypto.ts'
 import { explainError as bundleError, validateFiles } from '../lib/bundle.ts'
 import type { OpenedBundle, SourceFile } from '../lib/bundle.ts'
-import { deviceIdentity, deviceHash, answerDeviceChallenge } from '@envhandoff/protocol/device-proof'
+import { deviceIdentity, deviceHash, answerDeviceChallenge, identityFingerprint } from '@envhandoff/protocol/device-proof'
 import type { DeviceIdentity, EncryptedDeviceChallenge } from '@envhandoff/protocol/device-proof'
 import { parseEditableEnv, previewEnvEdit } from '../lib/env.ts'
 
@@ -20,17 +20,23 @@ const errors: Record<string,string> = { beta_closed:betaClosedMessage, device_re
 type Context = { pendingUpload?: {id:string;status:string}; sessionHash:string; sender?:DeviceIdentity; receiver:DeviceIdentity; binding?:TeamBinding; organizationId?:string; projectId?:string; environmentId?:string; requestId?:string; senderUserId?:string; recipientUserId?:string; recipientDeviceId?:string; id?:string; status?:string; size?:number; digest?:string }
 type Pending = { id:string; bytes:ArrayBuffer; digest:string; days:number; deviceId:string }
 
-export function ProTransfer({ api,orgId,requestId,userId,csrf,sending,project,environment,acceptNewTransfers=true,onDone,onExpired,onNavigate }: { api:string;orgId:string;requestId:string;userId:string;csrf:string;sending:boolean;project:string;environment:string;acceptNewTransfers?:boolean;onDone:()=>Promise<void>;onExpired:()=>void;onNavigate:(route:ProRoute)=>void }) {
+export function ProTransfer({ api,orgId,requestId,userId,csrf,sending,project,environment,peerLabel,acceptNewTransfers=true,onDone,onExpired,onNavigate }: { api:string;orgId:string;requestId:string;userId:string;csrf:string;sending:boolean;project:string;environment:string;peerLabel?:string;acceptNewTransfers?:boolean;onDone:()=>Promise<void>;onExpired:()=>void;onNavigate:(route:ProRoute)=>void }) {
  const [context,setContext]=useState<Context|null>(null),[trusted,setTrusted]=useState(false),[fingerprint,setFingerprint]=useState('')
  const [files,setFiles]=useState<SourceFile[]>([]),[days,setDays]=useState(1),[opened,setOpened]=useState<OpenedBundle|null>(null)
  const [pending,setPending]=useState<Pending|null>(null),[busy,setBusy]=useState(false),[progress,setProgress]=useState(0),[error,setError]=useState(''),[message,setMessage]=useState('')
+ const [localFingerprint,setLocalFingerprint]=useState(''),[retryEnvironment,setRetryEnvironment]=useState<string>(),[pendingAck,setPendingAck]=useState<Context|null>(null)
  const [editing,setEditing]=useState<{index:number;source:ReturnType<typeof parseEditableEnv>;values:string[]}|null>(null)
  const lifetime=useRef<AbortController|null>(null),work=useRef<AbortController|null>(null)
  const cancellation=useRef<AbortController|null>(null),[cancelling,setCancelling]=useState(false),[operation,setOperation]=useState('')
  const cancellations=useRef(new Map<string,string>())
  const base=`/organizations/${orgId}/requests/${requestId}`
  const peer=context && (sending?context.receiver:context.sender)
- useEffect(()=>{const controller=new AbortController();lifetime.current=controller;return()=>{controller.abort();work.current?.abort();cancellation.current?.abort()}},[])
+ useEffect(()=>{
+  const controller=new AbortController();lifetime.current=controller;void run(inspect,'기기와 전달 상태 확인 중…')
+  return()=>{controller.abort();work.current?.abort();work.current=null;cancellation.current?.abort();cancellation.current=null}
+  // The parent scopes this screen to the current account/session/request; inspection must not clear local work on rerenders.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+ },[])
  useEffect(()=>{if(!files.length&&!opened&&!pending)return;const warn=(e:BeforeUnloadEvent)=>{e.preventDefault();e.returnValue=''};window.addEventListener('beforeunload',warn);return()=>window.removeEventListener('beforeunload',warn)},[files,opened,pending])
  async function call(path:string,body?:Record<string,unknown>,signal=lifetime.current!.signal) {
   return proRequest(api+base+path,{csrf,signal,body,errors,onExpired})
@@ -41,14 +47,16 @@ export function ProTransfer({ api,orgId,requestId,userId,csrf,sending,project,en
   const controller=new AbortController();work.current=controller;setBusy(true);setOperation(label);setError('');setMessage('')
   const signal=AbortSignal.any([controller.signal,lifetime.current!.signal])
   try{await action(signal)}catch(e){if(!signal.aborted)setError(explainError(e))}
-  finally{if(work.current===controller)work.current=null;if(!lifetime.current?.signal.aborted)setBusy(false)}
+  finally{if(work.current===controller){work.current=null;if(!lifetime.current?.signal.aborted)setBusy(false)}}
  }
  async function inspect(signal:AbortSignal) {
-  setOpened(null);setTrusted(false)
+  setOpened(null);setPendingAck(null);setTrusted(false);setContext(null);setLocalFingerprint('');setRetryEnvironment(undefined)
   const value:Context=await (await call('/transfer',undefined,signal)).json()
   if(value.status && value.status!=='available')throw new Error('만료되거나 회수된 전달이에요.')
   if(sending && (value.organizationId!==orgId||value.requestId!==requestId||value.senderUserId!==userId))throw new Error('요청 정보를 확인해주세요.')
   if(!sending && (value.binding?.organizationId!==orgId||value.binding.requestId!==requestId||value.binding.recipientUserId!==userId))throw new Error('수신 요청 정보를 확인해주세요.')
+  signal.throwIfAborted()
+  setRetryEnvironment(sending?value.environmentId:value.binding?.environmentId)
   const local=await loadLocalDevice(userId)
   if(!local)throw new Error(sending?'설정에서 이 브라우저의 기기를 먼저 등록해주세요.':'이 요청을 만든 원래 브라우저 기기에 키가 있어요. 원래 기기에서 열거나 새 요청으로 다시 받아주세요.')
   if(!sending && local.deviceId!==value.binding!.recipientDeviceId)throw new Error('이 요청을 만든 원래 브라우저 기기에서 열어주세요. 새 기기는 새 요청이 필요해요.')
@@ -58,8 +66,9 @@ export function ProTransfer({ api,orgId,requestId,userId,csrf,sending,project,en
   if(!other||other.userId!==expectedUser||other.deviceId!==expectedDevice)throw new Error('상대 기기 정보가 요청과 달라요.')
   let known=false
   try{await trustedPeerEncryptionKey(userId,other);known=true}catch{ /* An explicit fingerprint check is required. */ }
+  const ownFingerprint=await identityFingerprint(await deviceIdentity(userId,local.deviceId,local.keys.publicKey,local.signingKeys.publicKey))
   if(signal.aborted)return
-  setContext(value);setTrusted(known)
+  setContext(value);setTrusted(known);setLocalFingerprint(ownFingerprint)
  }
  async function prove(action:'upload'|'download'|'ack',info:Context,upload:Pending|undefined,signal:AbortSignal) {
   const local=await loadLocalDevice(userId)
@@ -126,7 +135,7 @@ export function ProTransfer({ api,orgId,requestId,userId,csrf,sending,project,en
  }
  async function receive(signal:AbortSignal) {
   if(!context||!peer)throw new Error('상대 기기를 먼저 확인해주세요.')
-  setOpened(null)
+  setOpened(null);setPendingAck(null)
   const local=await loadLocalDevice(userId);if(!local)throw new Error('기기 키가 없어요.')
   const key=await trustedPeerEncryptionKey(userId,peer)
   const info:Context=await (await call('/transfer',undefined,signal)).json()
@@ -140,24 +149,37 @@ export function ProTransfer({ api,orgId,requestId,userId,csrf,sending,project,en
   if(await deviceHash(bytes)!==info.digest)throw new Error('전달 파일이 변경됐어요.')
   const bundle=await openTeamBundle(bytes.buffer,info.binding!,local.keys,key)
   if(signal.aborted)return
-  setOpened(bundle)
-  try{await call('/transfer/ack',{...await prove('ack',info,undefined,signal),operationId:crypto.randomUUID()},signal);if(!signal.aborted){setMessage('파일 검사를 통과했고 수신 확인을 남겼어요.');await onDone()}}
-  catch(e){if(!signal.aborted)setMessage('파일은 열었지만 수신 확인을 저장하지 못했어요. 파일을 다시 열면 재시도해요.');throw e}
+  setOpened(bundle);setPendingAck(info)
+  await acknowledge(info,signal)
+ }
+ async function acknowledge(openedInfo:Context,signal:AbortSignal) {
+  try {
+   const info:Context=await(await call('/transfer',undefined,signal)).json()
+   if(info.status!=='available'||JSON.stringify(info.binding)!==JSON.stringify(openedInfo.binding)||JSON.stringify(info.sender)!==JSON.stringify(openedInfo.sender)||info.digest!==openedInfo.digest||info.size!==openedInfo.size)throw new Error('전달 상태나 기기가 바뀌었어요. 수신 확인을 남길 수 없어요.')
+   await trustedPeerEncryptionKey(userId,info.sender!)
+   await call('/transfer/ack',{...await prove('ack',info,undefined,signal),operationId:crypto.randomUUID()},signal)
+   if(signal.aborted)return
+   setPendingAck(null);setMessage('파일 검사를 통과했고 수신 확인을 남겼어요.')
+  } catch(e){if(!signal.aborted)setMessage('파일은 열려 있어요. 수신 확인 다시 보내기로 기록만 재시도하세요.');throw e}
+  await onDone()
  }
  const editingSource=editing
+ const retryRoute:ProRoute={page:'requests',orgId,create:true,...(retryEnvironment?{environmentId:retryEnvironment}:{})}
  return <section className="pro-transfer" aria-label={sending?'파일 전달':'전달 파일 열기'} aria-busy={busy||cancelling} data-work-loss={!!files.length || !!opened || !!pending}>
   {sending&&!acceptNewTransfers&&<Notice>{betaClosedMessage}</Notice>}
   {error&&<Notice error>{error}</Notice>}{message&&<p role="status">{message}</p>}
   <fieldset disabled={busy||cancelling} className="plain-fieldset pro-panel">
    <legend>{sending?'암호화해서 보내기':'내 기기로 파일 열기'}</legend>
-   <p className="help">{sending?'상대 기기를 확인한 뒤 보낼 파일을 선택하세요.':'상대 기기를 확인하고 이 브라우저에서 파일을 열어보세요.'}</p>
-   <div className="actions"><button type="button" className={context?'button':'button primary'} onClick={()=>{void run(inspect,'상대 기기 확인 중…')}}>상대 기기 확인</button><a className="text-button" href={proPath({page:'settings',orgId})} onClick={event=>followProLink(event,{page:'settings',orgId},onNavigate)}>내 기기 등록·관리</a></div>
-   {!sending&&<p>새 기기로는 과거 파일을 열 수 없어요. 원래 브라우저에서 열거나 <a href={proPath({page:'requests',orgId,create:true})} onClick={event=>followProLink(event,{page:'requests',orgId,create:true},onNavigate)}>새 파일 요청</a>으로 다시 받아주세요.</p>}
-   {peer&&<><p>상대 계정: {peer.userId}<br/>상대 기기: {peer.deviceId}</p>
+   <p>{peerLabel?`${peerLabel}${sending?'에게 보낼 파일을 준비하세요.':'님이 보낸 파일을 받을 차례예요.'}`:sending?'내가 파일을 준비할 차례예요.':'내 기기로 파일을 받을 차례예요.'}</p>
+   {!context&&<button type="button" className="button" onClick={()=>{void run(inspect,'기기와 전달 상태 확인 중…')}}>기기·전달 상태 다시 확인</button>}
+   {!sending&&<p>이 요청을 만든 브라우저에서 열어주세요. 새 기기라면 <a href={proPath(retryRoute)} onClick={event=>followProLink(event,retryRoute,onNavigate)}>새 파일 요청</a>으로 다시 받을 수 있어요.</p>}
+   {peer&&<>
     {!trusted?<form className="pro-form" onSubmit={e=>{e.preventDefault();void run(async signal=>{await pinPeerIdentity(userId,peer,fingerprint.trim());if(!signal.aborted){setTrusted(true);setFingerprint('')}})}}>
+     {localFingerprint&&<CopyField label="상대에게 보낼 내 기기 지문" value={localFingerprint}/>}
      <label>별도 대화로 받은 상대 기기 지문<input value={fingerprint} onChange={e=>setFingerprint(e.target.value)} required maxLength={43} autoComplete="off" spellCheck={false}/></label>
-     <p className="help">알고 있는 연락 경로에서 상대의 계정·기기·지문을 대조해주세요.</p><button className="button primary" type="submit">지문 대조 후 저장</button>
+     <p className="help">알고 있는 연락 경로로 내 지문을 보내고, 상대가 그 기기 화면에서 보낸 지문을 입력하세요. 계정과 기기가 맞는지도 확인해주세요.</p><button className="button primary" type="submit">지문 대조 후 저장</button>
     </form>:<p>이 브라우저에 확인한 상대 기기가 저장돼 있어요.</p>}</>}
+   <details><summary>기기 확인 정보·설정</summary>{peer&&<p>상대 계정: {peer.userId}<br/>상대 기기: {peer.deviceId}</p>}{trusted&&localFingerprint&&<CopyField label="상대에게 보낼 내 기기 지문" value={localFingerprint}/>}<div className="actions">{context&&<button type="button" className="button" onClick={()=>{void run(inspect,'기기와 전달 상태 확인 중…')}}>기기·전달 상태 다시 확인</button>}<a className="text-button" href={proPath({page:'settings',orgId})} onClick={event=>followProLink(event,{page:'settings',orgId},onNavigate)}>내 기기 등록·관리</a></div></details>
    {context?.pendingUpload&&!pending&&<><p>이 요청에 이전 업로드가 남아 있어요. 파일을 잃었다면 이전 시도를 취소한 뒤 다시 선택해주세요.</p><button className="button" type="button" onClick={()=>{if(window.confirm('다른 탭에서 진행 중인 업로드도 중단돼요. 이전 업로드 시도를 취소할까요?'))void run(async signal=>{const result=await cancelUpload(context.pendingUpload!.id,signal);if(uploadResolution(result.status)==='complete')await onDone();else await inspect(signal)})}}>이전 업로드 취소</button></>}
    {trusted&&sending&&<>
     <label className="pro-form">보낼 파일<input type="file" multiple disabled={!!pending} onChange={e=>{const selected=Array.from(e.target.files??[]).map(file=>({file,path:file.name}));try{validateFiles(selected.map(x=>({path:x.path,size:x.file.size})));setFiles(selected);setEditing(null)}catch(error){setError(explainError(error))}e.target.value=''}}/></label>
@@ -174,12 +196,13 @@ export function ProTransfer({ api,orgId,requestId,userId,csrf,sending,project,en
     <button className="button primary" type="button" disabled={!acceptNewTransfers||!files.length||!!editing} onClick={()=>{void run(send,'암호화·업로드 처리 중…')}}>{pending?'같은 업로드 재시도':'암호화해서 업로드'}</button>
    </>}
    {trusted&&!sending&&<p>수신 확인은 이 브라우저가 파일 검사를 마쳤다는 보고예요. 파일 저장이나 프로젝트 적용 여부를 보장하지 않아요.</p>}
-   {trusted&&!sending&&<button className="button primary" type="button" onClick={()=>{void run(receive,'파일 다운로드·검사 중…')}}>파일 다운로드·검사</button>}
-   {pending&&<button className="button" type="button" onClick={()=>{void run(async signal=>{const value=await(await call('/uploads/'+pending.id,undefined,signal)).json();if(signal.aborted)return;if(uploadResolution(value.status)==='complete'){setFiles([]);setPending(null);await onDone()}else if(uploadResolution(value.status)==='ended'){setPending(null);setProgress(0);setMessage('이전 업로드는 종료됐어요. 새로 업로드할 수 있어요.')}else setMessage(value.status==='writing'?'서버가 파일을 저장하고 있어요. 완료 응답을 기다리거나 잠시 후 상태를 다시 확인해주세요.':'업로드 대기 중이에요. 같은 업로드를 재시도할 수 있어요.')})}}>업로드 상태 확인</button>}
+   {trusted&&!sending&&!opened&&<button className="button primary" type="button" onClick={()=>{void run(receive,'파일 다운로드·검사 중…')}}>파일 다운로드·검사</button>}
+   {pendingAck&&opened&&<button className="button primary" type="button" onClick={()=>{void run(signal=>acknowledge(pendingAck,signal),'수신 확인 기록 중…')}}>수신 확인 다시 보내기</button>}
+   {pending&&<button className="button" type="button" onClick={()=>{void run(async signal=>{const value=await(await call('/uploads/'+pending.id,undefined,signal)).json();if(signal.aborted)return;if(uploadResolution(value.status)==='complete'){setFiles([]);setPending(null);await onDone()}else if(uploadResolution(value.status)==='ended'){setPending(null);setProgress(0);setMessage('이전 업로드는 종료됐어요. 새로 업로드할 수 있어요.')}else setMessage(value.status==='writing'?'서버가 파일을 저장하고 있어요. 완료 응답을 기다리거나 잠시 후 상태를 다시 확인해주세요.':'업로드 대기 중이에요. 같은 업로드를 재시도할 수 있어요.')})}}>결과 확인</button>}
   </fieldset>
   <p className="pro-operation-status" role="status">{cancelling?'업로드 취소 확인 중…':busy?operation:''}</p>
   {busy&&sending&&operation==='암호화·업로드 처리 중…'&&progress>0&&<progress max={100} value={progress} aria-label="파일 업로드 진행률"/>}
-  {pending&&<button className="button destructive" type="button" disabled={cancelling} onClick={()=>{void stopUpload()}}>{cancelling?'취소 확인 중…':'업로드 시도 취소'}</button>}
-  {opened&&<><OpenedFiles bundle={opened}/><button className="button" type="button" onClick={()=>setOpened(null)}>열어둔 파일 닫기</button></>}
+  {pending&&<button className="button destructive" type="button" disabled={cancelling} onClick={()=>{void stopUpload()}}>{cancelling?'취소 확인 중…':'업로드 중단 — 요청 유지'}</button>}
+  {opened&&<><OpenedFiles bundle={opened}/><button className="button" type="button" disabled={busy} onClick={()=>{setOpened(null);setPendingAck(null)}}>열어둔 파일 닫기</button></>}
  </section>
 }

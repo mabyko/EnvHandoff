@@ -47,28 +47,27 @@ export async function verifyTransferCancellation(rejectReservation = false) {
       throw new Error('Unexpected test request: ' + path)
     }
     root.render(createElement(ProTransfer, { api, orgId, requestId, userId, csrf: 'test-only', sending: true, project: 'QA', environment: 'development', onDone: async () => {}, onExpired: () => { throw new Error('Unexpected expiry') }, onNavigate: () => {} }))
-    await until(() => !!button('상대 기기 확인'))
-    button('상대 기기 확인').click(); await until(() => !!host.querySelector('input[type="file"]') && ready())
+    await until(() => !!host.querySelector('input[type="file"]') && ready())
     const files = new DataTransfer(); files.items.add(new File(['PUBLIC_TEST=not-a-secret\n'], '.env'))
     const input = host.querySelector<HTMLInputElement>('input[type="file"]')!; input.files = files.files; input.dispatchEvent(new Event('change', { bubbles: true }))
     await until(() => !button('암호화해서 업로드').disabled)
     if (rejectReservation) {
       button('암호화해서 업로드').click(); await until(() => state.reserves === 1 && ready())
-      check(!input.disabled && !button('업로드 시도 취소'), 'Rejected team reservation must unlock originals without retaining a nonexistent upload')
-      check(host.querySelector<HTMLInputElement>('input:not([type="file"])')?.value === '.env', 'Rejected reservation must preserve the source path')
+      check(!input.disabled && !button('업로드 중단 — 요청 유지'), 'Rejected team reservation must unlock originals without retaining a nonexistent upload')
+      check(host.querySelector<HTMLInputElement>('input:not([type="file"]):not([readonly])')?.value === '.env', 'Rejected reservation must preserve the source path')
       rejectReservation = false; state.reserves = 0
     }
-    button('암호화해서 업로드').click(); await until(() => state.reserves === 1 && !!button('업로드 시도 취소'))
-    const cancel = button('업로드 시도 취소'); cancel.click(); cancel.click(); cancel.click()
+    button('암호화해서 업로드').click(); await until(() => state.reserves === 1 && !!button('업로드 중단 — 요청 유지'))
+    const cancel = button('업로드 중단 — 요청 유지'); cancel.click(); cancel.click(); cancel.click()
     await until(() => !!button('취소 확인 중…'))
     check(state.cancellations.length === 1 && button('취소 확인 중…').disabled, 'Rapid cancellation must send one request and disable retries while pending')
     button('같은 업로드 재시도').click(); check(state.reserves === 1, 'Upload must stay blocked while cancellation is pending')
     state.holdCancellation = false; await until(ready)
-    check(!!button('업로드 시도 취소') && host.textContent?.includes('파일 저장소가 아직 준비되지 않았어요.'), 'Failed cancellation must retain the encrypted upload and explain retry')
-    state.failCancellation = false; state.holdCancellation = true; button('업로드 시도 취소').click(); await until(() => !!button('취소 확인 중…'))
+    check(!!button('업로드 중단 — 요청 유지') && host.textContent?.includes('파일 저장소가 아직 준비되지 않았어요.'), 'Failed cancellation must retain the encrypted upload and explain retry')
+    state.failCancellation = false; state.holdCancellation = true; button('업로드 중단 — 요청 유지').click(); await until(() => !!button('취소 확인 중…'))
     state.holdCancellation = false; await until(ready)
     check(state.cancellations.length === 2 && state.cancellations[0] === state.cancellations[1], 'Cancellation retries must reuse the same operation ID')
-    check(!button('업로드 시도 취소') && host.textContent?.includes('업로드 시도를 취소했어요.'), 'Confirmed cancellation must clear the pending upload')
+    check(!button('업로드 중단 — 요청 유지') && host.textContent?.includes('업로드 시도를 취소했어요.'), 'Confirmed cancellation must clear the pending upload')
     return { passed: true, checks: ['rapid cancel single request', 'upload blocked during cancel', 'failure preserves encrypted retry', 'idempotent cancellation retry'] }
   } finally {
     state.holdCancellation = false; root.unmount(); host.remove(); window.fetch = originalFetch

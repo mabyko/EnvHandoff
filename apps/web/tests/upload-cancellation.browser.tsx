@@ -55,7 +55,6 @@ async function verifyCancellationRecovery(kind: 'share' | 'team') {
       throw new Error('Unexpected recovery request '+path)
     }
     render()
-    if(kind==='team'){await until(()=>!!button('상대 기기 확인'));button('상대 기기 확인')!.click()}
     await until(()=>!!host.querySelector('input[type="file"]')&&idle())
     const file=host.querySelector<HTMLInputElement>('input[type="file"]')!,data=new DataTransfer()
     data.items.add(new File(['PUBLIC_FIXTURE=not-a-secret\n'],'.env'));file.files=data.files;file.dispatchEvent(new Event('change',{bubbles:true}))
@@ -64,25 +63,25 @@ async function verifyCancellationRecovery(kind: 'share' | 'team') {
     check(file.matches(':disabled'),'Unknown reservation outcome retains encrypted attempt')
     sendButton().click();await until(()=>reserves===2&&idle()&&!!button('같은 업로드 재시도')&&!button('같은 업로드 재시도')!.matches(':disabled'))
     check(ids[0]===ids[1]&&file.matches(':disabled'),'A rejected retry must not abandon the uncertain first reservation')
-    button('업로드 상태 확인')!.click();await until(()=>queries===1&&idle())
+    button(kind==='share'?'업로드 상태 확인':'결과 확인')!.click();await until(()=>queries===1&&idle())
     check(file.matches(':disabled'),'404 must not unlock a potentially delayed reservation')
     pause=true;render();await until(()=>sendButton().disabled)
-    button('업로드 시도 취소')!.click();await until(()=>cancellations===1&&idle()&&host.textContent?.includes('파일 저장소가 아직 준비되지 않았어요.')===true)
-    check(file.matches(':disabled')&&!!button('업로드 시도 취소'),'Unknown cancellation result retains originals and retry state')
-    button('업로드 시도 취소')!.click();await until(()=>cancellations===2&&idle())
+    button(kind==='share'?'업로드 시도 취소':'업로드 중단 — 요청 유지')!.click();await until(()=>cancellations===1&&idle()&&host.textContent?.includes('파일 저장소가 아직 준비되지 않았어요.')===true)
+    check(file.matches(':disabled')&&!!button(kind==='share'?'업로드 시도 취소':'업로드 중단 — 요청 유지'),'Unknown cancellation result retains originals and retry state')
+    button(kind==='share'?'업로드 시도 취소':'업로드 중단 — 요청 유지')!.click();await until(()=>cancellations===2&&idle())
     check(cancellationIds[0]===cancellationIds[1],'Cancellation retries reuse operation ID')
-    check(!file.matches(':disabled')&&!button('업로드 시도 취소'),'Authoritative cancellation unlocks source even when beta is paused')
+    check(!file.matches(':disabled')&&!button(kind==='share'?'업로드 시도 취소':'업로드 중단 — 요청 유지'),'Authoritative cancellation unlocks source even when beta is paused')
     check([...host.querySelectorAll<HTMLInputElement>('input')].some(input=>input.value==='.env'),'Original placement path survives cancellation')
     pause=false;render();await until(()=>!sendButton().disabled)
     sendButton().click();await until(()=>reserves===3&&idle())
     check(ids[2]!==ids[0],'Confirmed cancellation permits a fresh encrypted reservation')
-    cancellationStatus='available';button('업로드 시도 취소')!.click()
+    cancellationStatus='available';button(kind==='share'?'업로드 시도 취소':'업로드 중단 — 요청 유지')!.click()
     await until(()=>cancellations===3&&idle()&&(kind==='share'?!!route.id:completed))
     if(kind==='share'){
       await until(()=>host.textContent?.includes('공유 코드')===true)
       check([...host.querySelectorAll<HTMLInputElement>('input')].some(input=>input.readOnly&&input.value.length>10&&!input.value.startsWith('http')),'Already committed share retains its only local code')
       check(host.textContent?.includes('상대에게 전달할 접근 링크'),'Already committed share restores link instead of revoking')
-    }else check(!button('업로드 시도 취소')&&completed,'Already committed team upload completes rather than becoming a new upload')
+    }else check(!button(kind==='share'?'업로드 시도 취소':'업로드 중단 — 요청 유지')&&completed,'Already committed team upload completes rather than becoming a new upload')
     return {passed:true,checks:['unknown → rejected retry → 404 retains attempt','failed cancellation retries same operation','authoritative fence unlocks originals during beta pause','committed cancellation preserves delivery']}
   } finally {
     root.unmount();host.remove();window.fetch=originalFetch;window.confirm=originalConfirm

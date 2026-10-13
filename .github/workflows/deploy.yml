@@ -64,7 +64,7 @@ jobs:
         with:
           node-version: 24.21.0
           package-manager-cache: false
-      - run: npm install --global pnpm@12.3.4 openship@0.8.0
+      - run: npm install --global pnpm@12.12.0 openship@0.8.0
       - run: pnpm install --frozen-lockfile
       - name: Check both deployment targets are configured
         env:

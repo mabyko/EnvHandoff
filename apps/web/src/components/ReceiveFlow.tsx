@@ -6,7 +6,7 @@ import type { OpenedBundle } from '../lib/bundle.ts'
 import { downloadFile, formatSize, previewText } from '../lib/files.ts'
 import { connectRelay } from '../lib/relay.ts'
 import type { RelayConnection } from '../lib/relay.ts'
-import { CodeInput, Heading, Notice, Steps } from './ui.tsx'
+import { CodeInput, CopyField, Heading, Notice, Steps } from './ui.tsx'
 import { LiveStatus } from './live.tsx'
 import { initialLiveState, updateLive } from '../lib/relay-state.ts'
 import { useWorkLoss } from '../lib/work-loss.ts'
@@ -223,6 +223,7 @@ export function OpenedFiles({ bundle }: { bundle: OpenedBundle }) {
                     {formatSize(file.bytes.byteLength)}
                     {requested.includes(file.path) ? ' · 다운로드 요청함' : ''}
                   </p>
+                  <p className="help">다운로드 파일 이름: <code>{file.path.split('/').at(-1)}</code></p>
                 </div>
                 <div className="file-actions">
                   <button
@@ -250,6 +251,10 @@ export function OpenedFiles({ bundle }: { bundle: OpenedBundle }) {
                   </button>
                 </div>
               </div>
+              <CopyField value={file.path} label="Git 저장소 루트 기준 배치 경로" />
+              {bundle.files.some(other => other.path !== file.path && other.path.split('/').at(-1) === file.path.split('/').at(-1)) && (
+                <Notice>다른 경로에도 같은 파일 이름이 있어요. 다운로드할 때마다 저장 결과를 확인하고 표시된 경로로 옮겨주세요. 브라우저가 이름에 숫자를 붙일 수도 있어요.</Notice>
+              )}
               {preview === file.path && (
                 <div className="preview">
                   {content ? (

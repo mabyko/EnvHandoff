@@ -205,13 +205,19 @@ export function ProShares({ api, orgId, userId, csrf, targetId, route, onNavigat
           {detailId ? <>
             <p>수신 확인은 파일 검사를 마쳤다는 보고예요. 받는 사람의 신원이나 파일 저장·프로젝트 적용을 증명하지 않아요.</p>
             <details><summary>팀 내부 관리 링크</summary><CopyField label="공유 상세 링크 (로그인 필요)" value={location.origin + proPath(destination)} /><p className="device-id">{share.id}</p></details>
-            <fieldset className="plain-fieldset" disabled={busy || disabled}><legend>공유 관리</legend>
-              {share.status === 'available' && secrets[share.id] && <>{reissues.has(share.id) ? <Notice>링크 재발급 결과를 확인하지 못했어요. 같은 작업을 재시도해주세요.</Notice> : <CopyField label="상대에게 전달할 접근 링크" value={`${location.origin}/receive/${share.id}#token=${secrets[share.id].token}`} />}{secrets[share.id].code ? <CopyField label="다른 경로로 전달할 공유 코드" value={secrets[share.id].code!} secret /> : <Notice>이 탭에는 코드가 없어요. 링크 재발급으로 코드는 복원되지 않아요.</Notice>}</>}
+            <fieldset className="plain-fieldset" disabled={busy || disabled}><legend>파일 전달하기</legend>
+              {share.status === 'available' && secrets[share.id] && <>
+                <section className="task-card"><span className="task-number" aria-hidden="true">1</span><div><h4>접근 링크 전달하기</h4><p>받는 사람에게 이 링크를 보내주세요. 로그인 없이 열 수 있어요.</p>{reissues.has(share.id) ? <Notice>링크 재발급 결과를 확인하지 못했어요. 아래 공유 관리에서 같은 작업을 재시도해주세요.</Notice> : <CopyField label="상대에게 전달할 접근 링크" value={`${location.origin}/receive/${share.id}#token=${secrets[share.id].token}`} />}</div></section>
+                <section className="task-card"><span className="task-number" aria-hidden="true">2</span><div><h4>공유 코드는 따로 전달하기</h4><p>링크를 보낸 곳과 다른 대화 경로로 코드를 보내주세요.</p>{secrets[share.id].code ? <CopyField label="다른 경로로 전달할 공유 코드" value={secrets[share.id].code!} secret /> : <Notice>이 탭에는 코드가 없어요. 링크 재발급으로 코드는 복원되지 않아요.</Notice>}</div></section>
+              </>}
               {share.status === 'available' && !secrets[share.id] && <Notice>링크·코드는 서버에서 다시 읽을 수 없어요. 생성자는 링크를 재발급할 수 있지만 코드는 복구되지 않아요.</Notice>}
               {share.status === 'available' && <p>다른 화면으로 이동하거나 새로고침·로그아웃하기 전에 링크와 코드를 전달해주세요. 코드를 잃으면 원본으로 새 공유를 만들고 기존 공유를 회수해주세요.</p>}
+              <details className="share-options"><summary>공유 관리 · 링크 재발급과 회수</summary>
+              <p>링크 재발급은 기존 링크를 무효화해요. 공유 코드와 이용 기한은 그대로이며, 잃어버린 코드를 복원하지 않아요. 회수해도 이미 받은 로컬 사본은 지워지지 않아요.</p>
               <div className="actions">{share.canReissue && <button className="button" type="button" onClick={() => { if (reissues.has(share.id) || window.confirm('기존 링크가 즉시 무효화돼요. 코드는 그대로 유지하고 링크를 재발급할까요?')) void run(signal => reissue(share, signal)) }}>{reissues.has(share.id) ? '같은 링크 재발급 재시도' : '링크 재발급'}</button>}
                 {share.canRevoke && <button className="button pro-danger" type="button" onClick={() => { if (window.confirm('공유를 회수할까요? 이미 내려받은 사본은 지워지지 않아요.')) void run(signal => revoke(share.id, signal)) }}>공유 회수</button>}
               </div>
+              </details>
               {pending?.id === share.id && uploadRecovery}
               {['reserved', 'writing', 'uploading'].includes(share.status) && !pending && <Notice>이 탭에는 업로드할 파일과 코드가 없어요. 이전 시도를 회수한 뒤 원본으로 새 공유를 만들어주세요.</Notice>}
             </fieldset>

@@ -97,7 +97,7 @@ See [bundle format v1](docs/bundle-format-v1.md) for the file format and securit
 
 ## Getting started
 
-Use Node.js 24.21.0 and pnpm 12.3.4.
+Use Node.js 24.21.0 and pnpm 12.12.0.
 
 ```sh
 mise install

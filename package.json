@@ -2,7 +2,7 @@
   "name": "envhandoff",
   "version": "0.0.7",
   "private": true,
-  "packageManager": "pnpm@12.3.4",
+  "packageManager": "pnpm@12.12.0",
   "engines": {
     "node": ">=24.21.0 <25"
   },

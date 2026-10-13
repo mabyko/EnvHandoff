@@ -265,7 +265,7 @@ CI로 묶을 때의 순서는 **검사 → 호환 가능한 API 배포 → 웹 �
 
 로컬에서도 **`pnpm check`**로 전체 검증을 수행한다. 로컬 PostgreSQL의 전용 `envhandoff_test` DB를 준비하고 API·웹·relay 테스트와 lint·타입·빌드를 확인한 뒤 push한다. PR 설명에 검증한 커밋·명령·결과를 기록하고, 실행 코드나 의존성을 수정했다면 해당 검사를 다시 수행한다. DB 준비는 [API 개발 안내](../apps/api/README.md)를 따른다.
 
-CI는 `main`·`release`·`release/**` 대상 PR과 `main`·`release/**` push에 전체 `pnpm check`를 실행한다. Node.js 24.21.0·pnpm 12.3.4와 전용 임시 PostgreSQL 18 테스트 DB를 사용하며 운영 DB·배포 비밀키에 접근하거나 배포하지 않는다. main에 적용한 전체 CI와 v0.0.5 병합 SHA의 검증 성공을 확인했다. 다음 후보도 실제 main SHA의 전체 검증 성공을 확인한 뒤 준비한다. 기존 필수 검사 이름은 보호 규칙 호환을 위해 유지한다.
+CI는 `main`·`release`·`release/**` 대상 PR과 `main`·`release/**` push에 전체 `pnpm check`를 실행한다. Node.js 24.21.0·pnpm 12.12.0과 전용 임시 PostgreSQL 18 테스트 DB를 사용하며 운영 DB·배포 비밀키에 접근하거나 배포하지 않는다. main에 적용한 전체 CI와 v0.0.5 병합 SHA의 검증 성공을 확인했다. 다음 후보도 실제 main SHA의 전체 검증 성공을 확인한 뒤 준비한다. 기존 필수 검사 이름은 보호 규칙 호환을 위해 유지한다.
 
 2026-10-01 확인한 운영 연결은 다음과 같다.
 

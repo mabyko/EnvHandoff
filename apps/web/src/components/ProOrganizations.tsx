@@ -7,6 +7,7 @@ import { limitMessage, subscribeTabReturn } from '../lib/pro-feedback.ts'
 import { CopyField, Notice } from './ui.tsx'
 import { invitationToken } from '../lib/invitation.ts'
 import { ProRequests } from './ProRequests.tsx'
+import type { RequestDraft } from './ProRequests.tsx'
 import { ProCatalog } from './ProCatalog.tsx'
 import { ProShares } from './ProShares.tsx'
 import { followProLink, proPath } from '../lib/pro-navigation.ts'
@@ -71,12 +72,14 @@ export function ProOrganizations({ api, userId, csrf, initialToken, route, onNav
   const [busy, setBusy] = useState(true)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
+  const [requestDraft, setRequestDraft] = useState<(RequestDraft & { orgId: string }) | null>(null)
   const [removing, setRemoving] = useState<{ id: string; login: string } | null>(null)
   const [change, setChange] = useState<{ question: string; path: string; body: Record<string, unknown> } | null>(null)
   const createFirst = !detail && !preview && !inviteInput.trim() && beta?.active && beta.owned < beta.workspaceLimit
   function onNavigate(next: ProRoute) { setError(''); setMessage(''); navigate(next) }
   const inviteTeamId = detail?.teams.find((team) => team.id === teamId)?.id ?? detail?.teams[0]?.id ?? ''
   const nav = (page: ProRoute['page']): ProRoute => ({ page, ...(selected ? { orgId: selected } : {}) })
+  if (requestDraft && (route.orgId !== requestDraft.orgId || (route.page !== 'settings' && !(route.page === 'requests' && route.create)))) setRequestDraft(null)
   const workspaceRoute = (orgId: string): ProRoute => orgId === selected ? { ...route, orgId } : { page: route.page === 'start' ? 'requests' : route.page, orgId }
   const expired = useRef(onExpired)
   useEffect(() => { expired.current = onExpired }, [onExpired])
@@ -200,9 +203,10 @@ export function ProOrganizations({ api, userId, csrf, initialToken, route, onNav
         {preview && <form className="pro-form" onSubmit={(event) => { event.preventDefault(); void run(async () => {
           const result = await call('/organizations/invitations/accept', { token: invitationToken(inviteInput, location.origin), ...(preview.kind === 'owner' ? { name: workspaceName } : {}) })
           try { sessionStorage.removeItem('envhandoff-invitation') } catch { /* No persistent auth state is stored here. */ }
-          onAccepted(); setPreview(null); setInviteInput(''); onNavigate({page:'requests',orgId:result.id})
+          onAccepted(); setPreview(null); setInviteInput(''); onNavigate({page:preview.accepted ? 'requests' : 'projects',orgId:result.id})
         }) }}>
           <div className="pro-confirm"><h4>초대 내용을 확인해주세요</h4><p>{preview.kind === 'owner' ? '새 워크스페이스를 개설하는 초대예요.' : `${preview.organization}에 참여하는 초대예요.`}</p><p className="help">초대받은 GitHub 계정: {preview.login}{preview.team ? ` · 팀: ${preview.team}` : ''}</p></div>
+          {!preview.accepted && <p className="help">참여 후 프로젝트와 환경을 선택해 시작하세요. 초대 수락만으로 파일 권한이나 상대 기기 신뢰가 생기지는 않아요.</p>}
           {preview.kind === 'owner' && !preview.accepted && <div className="pro-field"><label htmlFor="workspace-name">워크스페이스 이름</label><input id="workspace-name" value={workspaceName} required maxLength={80} onChange={(event) => setWorkspaceName(event.target.value)} /></div>}
           <button type="submit" className="button primary" disabled={preview.kind === 'owner' && !preview.accepted && !workspaceName.trim()}>{busy ? '참여하는 중…' : preview.accepted ? '워크스페이스 열기' : '초대 수락'}</button>
         </form>}
@@ -213,7 +217,7 @@ export function ProOrganizations({ api, userId, csrf, initialToken, route, onNav
       </div></section>}
       {!busy && !detail && !['settings','start','beta'].includes(route.page) && <div className="pro-empty"><h3>{route.orgId ? '워크스페이스에 접근할 수 없어요' : '참여 중인 워크스페이스가 없어요'}</h3><p>{route.orgId ? '현재 계정과 참여 권한을 확인하거나 다른 워크스페이스를 선택해주세요.' : '팀 Owner에게 초대를 요청하거나 Pro Beta를 활성화해 내 워크스페이스를 만들어보세요.'}</p>{route.page !== 'start' && <a className="button primary" href={proPath({page:'start'})} onClick={event => followProLink(event, {page:'start'}, onNavigate)}>초대 링크로 참여</a>}</div>}
       {organizations.some((org) => !org.active) && <Notice>참여가 중지된 워크스페이스가 있어요. 운영자에게 문의해주세요.</Notice>}
-      {route.page === 'settings' && settings}
+      {route.page === 'settings' && <>{requestDraft && requestDraft.orgId === route.orgId && <Notice>기기 등록·승인을 마친 뒤 요청 작성으로 돌아가세요. 선택한 환경과 멤버를 이 탭에 유지하고 있어요.<a className="button primary" href={proPath({page:'requests',orgId:requestDraft.orgId,create:true,...(requestDraft.environmentId ? {environmentId:requestDraft.environmentId} : {})})} onClick={event => followProLink(event,{page:'requests',orgId:requestDraft.orgId,create:true,...(requestDraft.environmentId ? {environmentId:requestDraft.environmentId} : {})},onNavigate)}>요청 작성으로 돌아가기</a></Notice>}{settings}</>}
       {route.page === 'beta' && beta && <ProBeta status={beta} busy={busy || locked} call={call} run={run} onActivated={setBeta} onCreate={openCreate} onSettings={() => onNavigate(nav('settings'))} />}
         {detail && (!route.orgId || detail.id === route.orgId) && <>
           {route.page === 'team' && <section className="pro-page"><header className="pro-page-header"><div><h2>멤버 · 팀</h2><p>{detail.name} · {detail.members.length}명의 멤버</p></div>{detail.role === 'owner' && <button className="button primary" disabled={busy || locked} onClick={() => { if(memberInvite.current) { memberInvite.current.open = true; memberInvite.current.querySelector('input')?.focus() } }}>워크스페이스에 멤버 초대</button>}</header><fieldset className="plain-fieldset pro-panel" disabled={busy || locked}><legend>멤버</legend>
@@ -239,7 +243,7 @@ export function ProOrganizations({ api, userId, csrf, initialToken, route, onNav
             <details className="pro-danger"><summary>워크스페이스 삭제</summary><p>이 조직의 멤버 관계와 파일 접근을 종료해요. 계정·기기·다른 워크스페이스는 유지돼요.</p><button className="button pro-danger-action" type="button" onClick={() => {setRemoving(null);setChange({question:`${detail.name} 워크스페이스를 삭제할까요? 되돌릴 수 없어요.`,path:'/remove',body:{}})}}>워크스페이스 삭제</button></details>
           </>}
           </fieldset></section>}
-          {route.page === 'requests' && <ProRequests key={'requests:' + detail.id + userId + csrf} route={route} onNavigate={onNavigate} api={api} orgId={detail.id} userId={userId} csrf={csrf} acceptNewTransfers={acceptNewTransfers} disabled={busy || locked} onExpired={onExpired} />}
+          {route.page === 'requests' && <ProRequests key={'requests:' + detail.id + userId + csrf} route={route} onNavigate={onNavigate} api={api} orgId={detail.id} userId={userId} csrf={csrf} acceptNewTransfers={acceptNewTransfers} disabled={busy || locked} onExpired={onExpired} draft={requestDraft?.orgId === detail.id ? requestDraft : undefined} onPrepareDevice={draft => { setRequestDraft({...draft,orgId:detail.id}); onNavigate(nav('settings')) }} onRequestCreated={() => setRequestDraft(null)} />}
           {route.page === 'shares' && <ProShares key={'shares:' + detail.id + userId + csrf} route={route} onNavigate={onNavigate} api={api} orgId={detail.id} userId={userId} csrf={csrf} acceptNewTransfers={acceptNewTransfers} disabled={busy || locked} onExpired={onExpired} />}
           {(route.page === 'projects' || route.page === 'team') && <ProCatalog key={detail.id+':'+route.page} api={api} orgId={detail.id} csrf={csrf} members={detail.members} route={route} onNavigate={onNavigate} disabled={busy || locked} onExpired={onExpired} onTeamsChanged={async () => {
             const updated: Detail = await call('/organizations/' + detail.id)

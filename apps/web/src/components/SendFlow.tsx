@@ -323,7 +323,7 @@ export function SendFlow({ onHome }: { onHome: () => void }) {
               </section>
             )}
             <details className="share-options">
-              <summary>공유 설정 <span>이름 · 환경 · 전달 방식</span></summary>
+              <summary>공유 설정 <span>이름 · 환경</span></summary>
               <div className="fields two-columns">
                 <div className="field">
                   <label htmlFor="project">프로젝트 표시명</label>
@@ -355,40 +355,40 @@ export function SendFlow({ onHome }: { onHome: () => void }) {
                   <p className="help">예: development, staging</p>
                 </div>
               </div>
-              <fieldset className="method-options" disabled={busy}>
-                <legend className="sr-only">공유 방식</legend>
-                <label className={`method-option ${method === 'file' ? 'selected' : ''}`}>
-                  <input
-                    type="radio"
-                    name="method"
-                    value="file"
-                    checked={method === 'file'}
-                    onChange={() => setMethod('file')}
-                  />
-                  <File aria-hidden="true" />
-                  <span>
-                    <strong>공유 파일로 전달 <span className="tag">기본</span></strong>
-                    <small>암호화 파일을 내려받아 AirDrop이나 메신저로 보내요.</small>
-                    <span className="tag">서로 접속 시간이 달라도 괜찮아요</span>
-                  </span>
-                </label>
-                <label className={`method-option ${method === 'live' ? 'selected' : ''}`}>
-                  <input
-                    type="radio"
-                    name="method"
-                    value="live"
-                    checked={method === 'live'}
-                    onChange={() => setMethod('live')}
-                  />
-                  <Radio aria-hidden="true" />
-                  <span>
-                    <strong>실시간으로 전달</strong>
-                    <small>연결 링크를 보내고, 상대를 확인한 뒤 바로 전달해요.</small>
-                    <span className="tag">두 사람 모두 이 화면을 열어두세요</span>
-                  </span>
-                </label>
-              </fieldset>
             </details>
+            <fieldset className="method-options" disabled={busy}>
+              <legend>전달 방식</legend>
+              <label className={`method-option ${method === 'file' ? 'selected' : ''}`}>
+                <input
+                  type="radio"
+                  name="method"
+                  value="file"
+                  checked={method === 'file'}
+                  onChange={() => setMethod('file')}
+                />
+                <File aria-hidden="true" />
+                <span>
+                  <strong>공유 파일로 전달 <span className="tag">기본</span></strong>
+                  <small>암호화 파일을 내려받아 AirDrop이나 메신저로 보내요.</small>
+                  <span className="tag">서로 접속 시간이 달라도 괜찮아요</span>
+                </span>
+              </label>
+              <label className={`method-option ${method === 'live' ? 'selected' : ''}`}>
+                <input
+                  type="radio"
+                  name="method"
+                  value="live"
+                  checked={method === 'live'}
+                  onChange={() => setMethod('live')}
+                />
+                <Radio aria-hidden="true" />
+                <span>
+                  <strong>실시간으로 전달</strong>
+                  <small>연결 링크를 보내고, 상대를 확인한 뒤 바로 전달해요.</small>
+                  <span className="tag">두 사람 모두 이 화면을 열어두세요</span>
+                </span>
+              </label>
+            </fieldset>
             <details className="env-editor" ref={envEditor}>
               <summary>환경변수 직접 입력</summary>
               <p className="help" id="env-help">
