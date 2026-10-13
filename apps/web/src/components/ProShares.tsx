@@ -1,7 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { Upload } from 'lucide-react'
 import { betaClosedMessage, reservationRejected, subscribeTabReturn, uploadEncrypted } from '../lib/pro-feedback.ts'
 import { proRequest, uploadResolution } from '../lib/pro-api.ts'
 import { CopyField, Notice } from './ui.tsx'
+import { formatTime } from '../lib/files.ts'
 import { createBundle, explainError, validateFiles } from '../lib/bundle.ts'
 import type { SourceFile } from '../lib/bundle.ts'
 import { followProLink, proPath } from '../lib/pro-navigation.ts'
@@ -17,14 +19,14 @@ type Pending = Secret & { id: string; bytes: ArrayBuffer; digest: string; tokenH
 const statuses: Record<string, string> = { reserved: '업로드 대기', writing: '서버 저장 중', uploading: '업로드 중', available: '공유 중', revoked: '회수됨', expired: '만료됨', cancelled: '취소됨', failed: '업로드 실패' }
 const errors: Record<string, string> = { beta_closed: betaClosedMessage, share_unavailable: '공유를 확인할 수 없어요. 목록을 다시 확인해주세요.', file_permission_required: '외부 공유 권한이 없어요. Owner에게 권한을 요청해주세요.', creator_required: '공유를 만든 사람만 링크를 재발급할 수 있어요.', storage_limit: '워크스페이스 저장 용량 또는 동시 업로드 한도에 도달했어요.', request_rate_limit: '생성 한도에 도달했어요. 10분 뒤 다시 시도해주세요.', operation_conflict: '이 작업의 내용이 달라요. 업로드 상태를 확인해주세요.', upload_in_progress: '업로드 처리 중이에요. 상태를 확인한 뒤 다시 시도해주세요.', storage_unavailable: '파일 저장소가 아직 준비되지 않았어요.' }
 
-export function ProShares({ api, orgId, userId, csrf, targetId, route, onNavigate, disabled, acceptNewTransfers = true, onExpired }: { api: string; orgId: string; userId: string; csrf: string; targetId?: string; route: ProRoute; onNavigate: (route: ProRoute) => void; disabled: boolean; acceptNewTransfers?: boolean; onExpired: () => void }) {
+export function ProShares({ api, orgId, userId, csrf, targetId, route, onNavigate, initialFiles, disabled, acceptNewTransfers = true, onExpired }: { api: string; orgId: string; userId: string; csrf: string; targetId?: string; route: ProRoute; onNavigate: (route: ProRoute) => void; initialFiles?: SourceFile[]; disabled: boolean; acceptNewTransfers?: boolean; onExpired: () => void }) {
   const detailId = route.id ?? targetId
   const routeKey = JSON.stringify([detailId, route.create, route.environmentId])
   const currentView = useRef({ id: detailId, create: route.create, environmentId: route.environmentId, key: routeKey })
   useLayoutEffect(() => { currentView.current = { id: detailId, create: route.create, environmentId: route.environmentId, key: routeKey } })
   const loadedView = useRef(''), appliedEnvironment = useRef(route.environmentId)
   const [shares, setShares] = useState<Share[]>([]), [environments, setEnvironments] = useState<Environment[]>([])
-  const [environmentId, setEnvironmentId] = useState(route.environmentId ?? ''), [files, setFiles] = useState<SourceFile[]>([]), [days, setDays] = useState(1)
+  const [environmentId, setEnvironmentId] = useState(route.environmentId ?? ''), [files, setFiles] = useState<SourceFile[]>(() => initialFiles?.map(item => ({ ...item })) ?? []), [days, setDays] = useState(1)
   const [pending, setPending] = useState<Pending | null>(null), [secrets, setSecrets] = useState<Record<string, Secret>>({})
   const [editing, setEditing] = useState<{ index: number; source: ReturnType<typeof parseEditableEnv>; values: string[] } | null>(null)
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [message, setMessage] = useState('')
@@ -163,56 +165,59 @@ export function ProShares({ api, orgId, userId, csrf, targetId, route, onNavigat
   const shown = detailId ? shares.filter(share => share.id === detailId) : shares
   const uploadRecovery = pending && <div className="actions"><button type="button" className="button" disabled={busy || disabled} onClick={() => { void run(async signal => { await resolvePending(await call(base + '/' + pending.id, signal), pending, signal) }) }}>업로드 상태 확인</button><button type="button" className="button" disabled={busy || disabled} onClick={() => { if (window.confirm('이 업로드 시도를 취소할까요? 이미 완료됐다면 공유 링크와 코드를 확인해요.')) void run(signal => cancelPending(pending, signal)) }}>업로드 시도 취소</button></div>
   return <section className="pro-shares" aria-label="외부 공유" aria-busy={busy || disabled} data-work-loss={sensitive}>
-    <header className="pro-page-header"><div><h2>{route.create ? '외부 공유 만들기' : detailId ? '외부 공유 상세' : '외부 공유'}</h2><p>{route.create ? '파일을 암호화하고 팀 외부의 사람에게 전달하세요.' : detailId ? '접근 링크와 코드를 전달하고 수신 상태를 확인하세요.' : '비회원에게 공유한 파일의 기한과 수신 상태를 확인하세요.'}</p></div>
-      <div className="actions">{(detailId || route.create) ? <a className="button" href={proPath(listRoute)} onClick={event => followProLink(event, listRoute, onNavigate)}>공유 목록</a> : <a className="button primary" href={proPath(createRoute)} onClick={event => followProLink(event, createRoute, onNavigate)}>새 외부 공유</a>}
+    <header className="pro-page-header"><div><h2>{route.create ? '링크로 파일 공유' : detailId ? '공유 링크 상세' : '공유 링크'}</h2><p>{route.create ? '선택한 파일을 새로 암호화해 로그인 없이 받을 수 있는 링크를 만들어요.' : detailId ? '접근 링크와 코드를 전달하고 수신 상태를 확인하세요.' : '프로젝트 파일에서 만든 링크의 기한과 수신 상태를 확인하세요.'}</p></div>
+      <div className="actions">{(detailId || route.create) ? <a className="button" href={proPath(listRoute)} onClick={event => followProLink(event, listRoute, onNavigate)}>공유 목록</a> : <><a className="button primary" href={proPath({page:'projects',orgId})} onClick={event => followProLink(event,{page:'projects',orgId},onNavigate)}>프로젝트에서 파일 선택</a><a className="button" href={proPath(createRoute)} onClick={event => followProLink(event,createRoute,onNavigate)}>일회성 파일 공유</a></>}
         <button className="button" type="button" disabled={busy || disabled} onClick={() => refresh.current()}>새로고침</button></div>
     </header>
     {error && <Notice error>{error}</Notice>}<p className="pro-status-line" role="status">{busy ? uploading && pending ? `암호문을 업로드하고 있어요. ${progress}%` : '공유 정보를 확인하거나 처리하고 있어요.' : message}</p>
     {route.create ? <>
       {!acceptNewTransfers && <Notice>{betaClosedMessage}</Notice>}
-      <p>기기 등록 없이 비회원에게 보낼 수 있어요. 환경별 외부 공유 권한이 필요해요.</p>
+      {initialFiles?.length ? <p className="pro-setup-note">프로젝트에서 선택한 파일 {files.length}개를 공유해요. 받는 사람이 사용할 경로를 확인해주세요.</p> : <p className="help">한 번 보낼 파일을 선택하세요. 팀이 계속 사용할 파일은 프로젝트에서 게시할 수 있어요.</p>}
       <fieldset className="plain-fieldset pro-form-panel" disabled={busy || disabled}>
-        <legend>새 공유 만들기</legend>
+        <legend className="sr-only">공유할 파일</legend>
         {!environments.length && !busy && <Notice>공유 가능한 환경이 없어요. Owner에게 외부 공유 권한을 요청해주세요.</Notice>}
         {!!environments.length && <>
-          <label className="pro-form">공유할 환경<select value={environmentId} disabled={!!pending} onChange={e => setEnvironmentId(e.target.value)}>{!environmentId && <option value="" disabled>환경을 선택해주세요</option>}{environmentId && !environments.some(env => env.id === environmentId) && <option value={environmentId} disabled>선택한 환경을 사용할 수 없어요. 다시 선택해주세요.</option>}{environments.map(env => <option key={env.id} value={env.id}>{env.project} / {env.name}</option>)}</select></label>
-          <label className="pro-form">보낼 파일<input type="file" multiple disabled={!!pending} onChange={event => { const selected = Array.from(event.target.files ?? []).map(file => ({ file, path: file.name })); try { validateFiles(selected.map(item => ({ path: item.path, size: item.file.size }))); setFiles(selected); setEditing(null); setError('') } catch (e) { setError(explainError(e)) } event.target.value = '' }} /></label>
-          {files.map((file, index) => <div key={index} className="pro-form"><label>배치 경로<input value={file.path} disabled={!!pending} onChange={e => setFiles(current => current.map((item, i) => i === index ? { ...item, path: e.target.value } : item))} /></label>
+          <div className="pro-flow-layout"><div className="pro-form">
+          {!initialFiles?.length && <label className={'file-picker' + (files.length ? ' compact' : '')}><Upload aria-hidden="true" /><strong>{files.length ? '다른 파일로 변경' : '보낼 파일 선택'}</strong><span>{files.length ? `선택한 파일 ${files.length}개` : '.env 같은 설정 파일을 여러 개 고를 수 있어요'}</span><input type="file" multiple disabled={!!pending} onChange={event => { const selected = Array.from(event.target.files ?? []).map(file => ({ file, path: file.name })); if (!selected.length) return; try { validateFiles(selected.map(item => ({ path: item.path, size: item.file.size }))); setFiles(selected); setEditing(null); setError('') } catch (e) { setError(explainError(e)) } event.target.value = '' }} /></label>}
+          {!!files.length && <p className="help">받는 사람의 Git 저장소 최상위 폴더 기준 경로를 입력하세요. 예: apps/api/.env</p>}
+          {files.map((file, index) => <div key={index} className="pro-file-row"><label className="pro-field">{file.file.name}을 넣을 위치<input value={file.path} placeholder="예: apps/api/.env" disabled={!!pending} onChange={e => setFiles(current => current.map((item, i) => i === index ? { ...item, path: e.target.value } : item))} /></label>
             {file.path.split('/').at(-1)?.startsWith('.env') && <button className="button" type="button" disabled={!!pending} onClick={() => { void run(async signal => { const source = parseEditableEnv(new Uint8Array(await file.file.arrayBuffer())); signal.throwIfAborted(); setEditing({ index, source, values: source.entries.map(entry => entry.value) }) }) }}>환경변수 편집</button>}
           </div>)}
           {draft && <form className="pro-form" onSubmit={event => { event.preventDefault(); try { const preview = previewEnvEdit(draft.source, draft.values); if (!window.confirm('수정한 값을 보낼 파일에 적용할까요?')) return; setFiles(current => current.map((file, i) => i === draft.index ? { ...file, file: new File([preview.text], file.file.name) } : file)); setEditing(null) } catch (e) { setError(explainError(e)) } }}>
             {draft.source.entries.map((entry, index) => <label key={index}>{entry.key}<input value={draft.values[index]} autoComplete="off" spellCheck={false} onChange={e => setEditing({ ...draft, values: draft.values.map((value, i) => i === index ? e.target.value : value) })} /></label>)}
             <button type="submit" className="button">수정본 적용</button><button type="button" className="button" onClick={() => setEditing(null)}>편집 취소</button>
           </form>}
-          <label className="pro-form">보관 기간<select value={days} disabled={!!pending} onChange={e => setDays(Number(e.target.value))}><option value={1}>24시간</option><option value={3}>3일</option><option value={7}>7일</option></select></label>
-          <p>조직·프로젝트·환경 이름은 서버에 저장돼요. 파일 이름·배치 경로·내용은 암호화된 묶음 안에만 담겨요.</p>
-          <p>업로드 확정부터 이용할 수 있어요. 만료·회수 뒤 저장소 삭제까지 최대 24시간이 더 걸릴 수 있어요.</p>
-          <button type="button" className="button primary" disabled={!acceptNewTransfers || !files.length || !!draft || !environments.some(env => env.id === environmentId)} onClick={() => { void run(send, true) }}>{pending ? '같은 업로드 재시도' : '암호화해서 외부 공유'}</button>
+          </div><aside className="pro-form" aria-label="공유 옵션"><h3>공유 옵션</h3>
+          <label className="pro-field">공유할 환경<select value={environmentId} disabled={!!pending} onChange={e => setEnvironmentId(e.target.value)}>{!environmentId && <option value="" disabled>환경을 선택해주세요</option>}{environmentId && !environments.some(env => env.id === environmentId) && <option value={environmentId} disabled>선택한 환경을 사용할 수 없어요. 다시 선택해주세요.</option>}{environments.map(env => <option key={env.id} value={env.id}>{env.project} / {env.name}</option>)}</select></label>
+          <label className="pro-field">보관 기간<select value={days} disabled={!!pending} onChange={e => setDays(Number(e.target.value))}><option value={1}>24시간</option><option value={3}>3일</option><option value={7}>7일</option></select></label>
+          <p className="help">로그인·기기 등록 없이 받을 수 있어요. 링크와 코드는 다른 대화 경로로 전달해주세요.</p>
+          <button type="button" className="button primary wide" disabled={!acceptNewTransfers || !files.length || !!draft || !environments.some(env => env.id === environmentId)} onClick={() => { void run(send, true) }}>{pending ? '같은 업로드 재시도' : '암호화해서 외부 공유'}</button>
+          <details className="pro-settings-section"><summary>암호화와 보관 안내</summary><p>조직·프로젝트·환경 이름은 서버에 저장돼요. 파일 이름·배치 경로·내용은 암호화된 묶음 안에만 담겨요.</p><p>선택한 기간은 업로드 확정부터 시작해요. 만료·회수 뒤 저장소 삭제까지 최대 24시간이 더 걸릴 수 있어요.</p><p>게시 파일과는 별도의 새 공유 코드로 암호화해요. 공유 코드는 이 탭에서만 다시 볼 수 있어요.</p></details>
+          </aside></div>
         </>}
         {uploadRecovery}
-        <p>공유 코드는 이 탭에서만 다시 볼 수 있어요. 만든 뒤 링크와 코드를 서로 다른 대화 경로로 전달해주세요.</p>
       </fieldset>
     </> : <>
-      {!detailId && <p>링크와 공유 코드로 비회원에게 전달한 파일이에요. 공유를 열어 수신 상태를 확인하거나 회수할 수 있어요.</p>}
       {(pending || files.length > 0) && <Notice>이 탭에 작성 중인 공유가 있어요. <a href={proPath(createRoute)} onClick={event => followProLink(event, createRoute, onNavigate)}>작성 화면으로 돌아가기</a></Notice>}
-      {!busy && !shown.length && !error && <div className="pro-empty-state"><h3>{detailId ? '공유를 찾을 수 없어요' : '아직 외부에 공유한 파일이 없어요'}</h3><p>{detailId ? '원래 링크와 현재 계정을 확인해주세요.' : '새 외부 공유를 눌러 파일과 보관 기간을 선택하세요.'}</p></div>}
+      {!busy && !shown.length && !error && <div className="pro-empty-state"><h3>{detailId ? '공유를 찾을 수 없어요' : '아직 공유 링크가 없어요'}</h3><p>{detailId ? '원래 링크와 현재 계정을 확인해주세요.' : '프로젝트에서 파일을 선택하거나 일회성 파일 공유를 만들어보세요.'}</p></div>}
       <div className={detailId ? 'pro-detail' : 'pro-list'}>{shown.map(share => {
         const destination: ProRoute = { page: 'shares', orgId, id: share.id }
-        return <article key={share.id} className="pro-project" aria-label={share.project ? `${share.project} ${share.environment} 공유` : '종료된 공유'}>
-          <h3>{detailId ? (share.project ? `${share.project} / ${share.environment}` : '종료된 공유') : <a href={proPath(destination)} onClick={event => followProLink(event, destination, onNavigate)}>{share.project ? `${share.project} / ${share.environment}` : '종료된 공유'}</a>}</h3>
-          <p className="pro-item-meta"><strong className="pro-badge" data-status={share.status}>{statuses[share.status] ?? share.status}</strong> {new Date(share.createdAt).toLocaleString('ko-KR')}{share.expiresAt ? ` · ${new Date(share.expiresAt).toLocaleString('ko-KR')}까지` : ''}</p>
-          <p>{share.acknowledgedAt ? `수신 확인: ${new Date(share.acknowledgedAt).toLocaleString('ko-KR')}` : '수신 확인 전'}</p>
-          {detailId ? <>
-            <p>수신 확인은 파일 검사를 마쳤다는 보고예요. 받는 사람의 신원이나 파일 저장·프로젝트 적용을 증명하지 않아요.</p>
-            <details><summary>팀 내부 관리 링크</summary><CopyField label="공유 상세 링크 (로그인 필요)" value={location.origin + proPath(destination)} /><p className="device-id">{share.id}</p></details>
+        return <article key={share.id} className={detailId ? 'pro-share-detail' : 'pro-task-row'} aria-label={share.project ? `${share.project} ${share.environment} 공유` : '종료된 공유'}><div className="pro-task-content">
+          <div className="pro-row-title"><h3>{detailId ? (share.project ? `${share.project} / ${share.environment}` : '종료된 공유') : <a href={proPath(destination)} onClick={event => followProLink(event, destination, onNavigate)}>{share.project ? `${share.project} / ${share.environment}` : '종료된 공유'}</a>}</h3>
+          <strong className="pro-badge" data-status={share.status}>{statuses[share.status] ?? share.status}</strong></div>
+          <p className="pro-item-meta"><span>{formatTime(share.createdAt)} 생성</span>{share.expiresAt && <span>{formatTime(share.expiresAt)}까지</span>}<span>{share.acknowledgedAt ? `수신 확인 ${formatTime(share.acknowledgedAt)}` : '수신 확인 전'}</span></p>
+          </div>{detailId ? <>
             <fieldset className="plain-fieldset" disabled={busy || disabled}><legend>파일 전달하기</legend>
               {share.status === 'available' && secrets[share.id] && <>
-                <section className="task-card"><span className="task-number" aria-hidden="true">1</span><div><h4>접근 링크 전달하기</h4><p>받는 사람에게 이 링크를 보내주세요. 로그인 없이 열 수 있어요.</p>{reissues.has(share.id) ? <Notice>링크 재발급 결과를 확인하지 못했어요. 아래 공유 관리에서 같은 작업을 재시도해주세요.</Notice> : <CopyField label="상대에게 전달할 접근 링크" value={`${location.origin}/receive/${share.id}#token=${secrets[share.id].token}`} />}</div></section>
-                <section className="task-card"><span className="task-number" aria-hidden="true">2</span><div><h4>공유 코드는 따로 전달하기</h4><p>링크를 보낸 곳과 다른 대화 경로로 코드를 보내주세요.</p>{secrets[share.id].code ? <CopyField label="다른 경로로 전달할 공유 코드" value={secrets[share.id].code!} secret /> : <Notice>이 탭에는 코드가 없어요. 링크 재발급으로 코드는 복원되지 않아요.</Notice>}</div></section>
+                <section className="pro-delivery-row"><h4>접근 링크 전달하기</h4><p className="help">받는 사람에게 이 링크를 보내주세요.</p>{reissues.has(share.id) ? <Notice>링크 재발급 결과를 확인하지 못했어요. 아래 공유 관리에서 같은 작업을 재시도해주세요.</Notice> : <CopyField label="상대에게 전달할 접근 링크" value={`${location.origin}/receive/${share.id}#token=${secrets[share.id].token}`} />}</section>
+                <section className="pro-delivery-row"><h4>공유 코드는 따로 전달하기</h4><p className="help">링크를 보낸 곳과 다른 대화 경로로 보내주세요.</p>{secrets[share.id].code ? <CopyField label="다른 경로로 전달할 공유 코드" value={secrets[share.id].code!} secret /> : <Notice>이 탭에는 코드가 없어요. 링크 재발급으로 코드는 복원되지 않아요.</Notice>}</section>
               </>}
               {share.status === 'available' && !secrets[share.id] && <Notice>링크·코드는 서버에서 다시 읽을 수 없어요. 생성자는 링크를 재발급할 수 있지만 코드는 복구되지 않아요.</Notice>}
-              {share.status === 'available' && <p>다른 화면으로 이동하거나 새로고침·로그아웃하기 전에 링크와 코드를 전달해주세요. 코드를 잃으면 원본으로 새 공유를 만들고 기존 공유를 회수해주세요.</p>}
-              <details className="share-options"><summary>공유 관리 · 링크 재발급과 회수</summary>
+              {share.status === 'available' && <p className="pro-setup-note">페이지를 떠나기 전에 링크와 코드를 전달해주세요. 이 탭을 닫으면 코드를 다시 볼 수 없어요.</p>}
+              <details className="share-options pro-settings-section"><summary>공유 관리 · 링크 재발급과 회수</summary>
+              <CopyField label="공유 상세 링크 (로그인 필요)" value={location.origin + proPath(destination)} /><p className="device-id">공유 ID: {share.id}</p>
+              <p>수신 확인은 파일 검사를 마쳤다는 보고예요. 받는 사람의 신원이나 파일 저장·프로젝트 적용을 증명하지 않아요.</p>
+              <p>코드를 잃으면 원본으로 새 공유를 만들고 기존 공유를 회수해주세요.</p>
               <p>링크 재발급은 기존 링크를 무효화해요. 공유 코드와 이용 기한은 그대로이며, 잃어버린 코드를 복원하지 않아요. 회수해도 이미 받은 로컬 사본은 지워지지 않아요.</p>
               <div className="actions">{share.canReissue && <button className="button" type="button" onClick={() => { if (reissues.has(share.id) || window.confirm('기존 링크가 즉시 무효화돼요. 코드는 그대로 유지하고 링크를 재발급할까요?')) void run(signal => reissue(share, signal)) }}>{reissues.has(share.id) ? '같은 링크 재발급 재시도' : '링크 재발급'}</button>}
                 {share.canRevoke && <button className="button pro-danger" type="button" onClick={() => { if (window.confirm('공유를 회수할까요? 이미 내려받은 사본은 지워지지 않아요.')) void run(signal => revoke(share.id, signal)) }}>공유 회수</button>}

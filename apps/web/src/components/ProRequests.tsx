@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { ProTransfer } from './ProTransfer.tsx'
 import { betaClosedMessage, ProRequestError, subscribeTabReturn } from '../lib/pro-feedback.ts'
 import { CopyField, Notice, Steps } from './ui.tsx'
+import { formatTime } from '../lib/files.ts'
 import { followProLink, proPath } from '../lib/pro-navigation.ts'
 import type { ProRoute } from '../lib/pro-navigation.ts'
 import { loadLocalDevice } from '../lib/device-keys.ts'
@@ -166,45 +167,48 @@ export function ProRequests({ api, orgId, userId, csrf, targetId, route, onNavig
         const result = await mutate(base + '/requests', { environmentId, senderId, deviceId: device.deviceId })
         if (!lifetime.current?.signal.aborted) { onRequestCreated?.(); onNavigate({ page: 'requests', orgId, id: result.id }) }
       }) }}>
-        <div className="pro-field"><label htmlFor="request-environment">요청할 환경</label><select id="request-environment" value={environmentId} required onChange={e => { setEnvironmentId(e.target.value); setSenders([]); setSenderId('') }}>
+        <div className="pro-form-grid"><div className="pro-field"><label htmlFor="request-environment">요청할 환경</label><select id="request-environment" value={environmentId} required onChange={e => { setEnvironmentId(e.target.value); setSenders([]); setSenderId('') }}>
           {!environmentId && <option value="" disabled>환경을 선택해주세요</option>}{environmentId && !environments.some(env => env.id === environmentId) && <option value={environmentId} disabled>선택한 환경을 사용할 수 없어요. 다시 선택해주세요.</option>}{environments.map(env => <option value={env.id} key={env.id}>{env.label}</option>)}
         </select></div>
-        <div className="pro-field"><label htmlFor="request-sender">요청할 멤버</label><select id="request-sender" value={senderId} onChange={e => setSenderId(e.target.value)} disabled={choosing || !senders.length} required><option value="" disabled>파일을 가진 멤버를 선택해주세요</option>{senderId && !senders.some(sender => sender.id === senderId) && <option value={senderId} disabled>선택한 멤버에게 요청할 수 없어요. 다시 선택해주세요.</option>}{senders.map(sender => <option value={sender.id} key={sender.id}>{sender.login}</option>)}</select></div>
+        <div className="pro-field"><label htmlFor="request-sender">요청할 멤버</label><select id="request-sender" value={senderId} onChange={e => setSenderId(e.target.value)} disabled={choosing || !senders.length} required><option value="" disabled>파일을 가진 멤버를 선택해주세요</option>{senderId && !senders.some(sender => sender.id === senderId) && <option value={senderId} disabled>선택한 멤버에게 요청할 수 없어요. 다시 선택해주세요.</option>}{senders.map(sender => <option value={sender.id} key={sender.id}>{sender.login}</option>)}</select></div></div>
         {!choosing && !senders.length && <Notice>이 환경에서 보내기 권한이 있는 다른 멤버가 없어요.<CopyField label="Owner에게 보낼 안내" value={`${environments.find(env => env.id === environmentId)?.label ?? '선택한 환경'}에서 파일을 요청하려는데 보내기 가능한 다른 멤버가 없어요. 파일을 가진 팀원의 프로젝트 참여와 보내기 권한을 확인해주세요.`} /></Notice>}
-        <p>파일 보유 여부는 상대에게 확인해주세요. 요청은 7일 동안 유효하며, 이 브라우저의 기기로 고정돼요.</p>
+        <p className="help">파일 보유 여부는 상대에게 확인해주세요. 요청은 7일 동안 유효하며, 이 브라우저에서 받을 수 있어요.</p>
         <button className="button primary" disabled={!acceptNewTransfers || deviceStatus !== 'active' || choosing || !senders.some(sender => sender.id === senderId) || !environments.some(env => env.id === environmentId)} type="submit">파일 요청</button>
       </form> : !busy && !accessUnavailable && <Notice>받기 권한이 있는 환경이 없어요. 프로젝트 참여와 받기 권한을 Owner에게 확인해주세요.<CopyField label="Owner에게 보낼 안내" value="워크스페이스에 참여했지만 파일을 요청할 수 있는 환경이 없어요. 제 팀의 프로젝트 연결, 환경 등록, 프로젝트 기본 받기 권한과 환경별 예외를 확인해주세요." /><a className="button" href={proPath({page:'projects',orgId})} onClick={event => followProLink(event,{page:'projects',orgId},onNavigate)}>프로젝트 확인</a></Notice>}
     </fieldset> : <>
-      {!detailId && <p>진행 중인 요청부터 최근 100개까지 표시해요. 요청을 열어 승인하거나 파일을 주고받을 수 있어요.</p>}
       {!busy && !shown.length && !error && <div className="pro-empty-state"><h3>{detailId ? '요청을 찾을 수 없어요' : '아직 주고받은 요청이 없어요'}</h3><p>{detailId ? '원래 링크와 현재 계정을 확인해주세요.' : '새 파일 요청을 눌러 필요한 환경과 팀원을 선택하세요.'}</p></div>}
       {(detailId ? ['상세'] : requestGroups).map(group => {
         const grouped = detailId ? shown : shown.filter(item => requestTask(item).group === group)
         if (!grouped.length) return null
-        return <section key={group} aria-label={detailId ? '요청 상세 내용' : group}>{!detailId && <h3>{group} · {grouped.length}건</h3>}<div className={detailId ? 'pro-detail' : 'pro-list'}>{grouped.map(item => {
+        return <section key={group} className="pro-group" aria-label={detailId ? '요청 상세 내용' : group}>{!detailId && <h3 className="pro-group-label">{group} <span className="pro-count">{grouped.length}건</span></h3>}<div className={detailId ? 'pro-detail' : 'pro-list'}>{grouped.map(item => {
         const destination: ProRoute = { page: 'requests', orgId, id: item.id }
         const task = requestTask(item)
-        return <article className="pro-project" key={item.id}>
-          <h3>{detailId ? (item.project ? item.project + ' / ' + item.environment : '종료된 요청') : <a href={proPath(destination)} onClick={event => followProLink(event, destination, onNavigate)}>{item.project ? item.project + ' / ' + item.environment : item.status === 'fulfilled' ? '전달된 요청' : '종료된 요청'}</a>}</h3>
-          <p className="pro-item-meta">{item.direction === 'incoming' ? '받은 요청' : item.direction === 'outgoing' ? '내가 보낸 요청' : '관리 중인 요청'} <strong className="pro-badge" data-status={item.status}>{statuses[item.status] ?? '상태 확인 필요'}</strong></p>
-          {item.sender && <p>요청한 사람 {item.receiver} · 파일 보낼 사람 {item.sender}</p>}
-          <p>{task.hint}</p>
-          <p className="pro-item-meta">요청일 {new Date(item.createdAt).toLocaleString('ko-KR')} · 요청 기한 {new Date(item.expiresAt).toLocaleString('ko-KR')}</p>
-          {item.transfer && <p>전달: {item.transfer.status === 'available' ? '다운로드 가능' : item.transfer.status === 'revoked' ? '회수됨' : '만료됨'} · {new Date(item.transfer.expiresAt).toLocaleString()}까지 · {item.transfer.acknowledgedAt ? '수신 확인됨' : '수신 확인 전'}</p>}
-          {detailId ? <>
+        return <article className={detailId ? 'pro-request-detail' : 'pro-task-row'} key={item.id}>
+          <div className="pro-task-content">
+          <div className="pro-row-title"><h3>{detailId ? (item.project ? item.project + ' / ' + item.environment : '종료된 요청') : <a href={proPath(destination)} onClick={event => followProLink(event, destination, onNavigate)}>{item.project ? item.project + ' / ' + item.environment : item.status === 'fulfilled' ? '전달된 요청' : '종료된 요청'}</a>}</h3>
+          <strong className="pro-badge" data-status={item.status}>{statuses[item.status] ?? '상태 확인 필요'}</strong></div>
+          <p className="pro-item-meta"><span>{item.direction === 'incoming' ? '받은 요청' : item.direction === 'outgoing' ? '내가 보낸 요청' : '관리 중인 요청'}</span>{item.sender && <span>{item.receiver} → {item.sender}</span>}{detailId && <span>요청일 {formatTime(item.createdAt)}</span>}<span>기한 {formatTime(item.expiresAt)}</span></p>
+          <p className="help">{task.hint}</p>
+          {item.transfer && <p className="pro-item-meta"><span>전달 {item.transfer.status === 'available' ? '다운로드 가능' : item.transfer.status === 'revoked' ? '회수됨' : '만료됨'}</span><span>{formatTime(item.transfer.expiresAt)}까지</span><span>{item.transfer.acknowledgedAt ? '수신 확인됨' : '수신 확인 전'}</span></p>}
+          </div>{detailId ? <>
             {task.step >= 0 && <Steps labels={['요청', '승인', '파일 준비', '받기']} current={task.step} />}
             {task.group === '상대 대기' && <CopyField label="팀원에게 전달할 요청 상세 링크 (로그인 필요)" value={location.origin + proPath(destination)} />}
-            <details><summary>요청 식별 정보</summary>{task.group !== '상대 대기' && <CopyField label="요청 상세 링크 (로그인 필요)" value={location.origin + proPath(destination)} />}<p className="device-id">{item.id}</p>{item.receiverDeviceId && <p className="device-id">수신 기기: {item.receiverDeviceId}</p>}</details>
             <fieldset className="plain-fieldset" disabled={busy || disabled || accessUnavailable}><legend>요청 처리</legend><div className="actions">
               {item.status === 'pending' && item.direction === 'incoming' && <><button className="button primary" type="button" onClick={() => { void run(async () => { await mutate(base + '/requests/' + item.id + '/approve', {}) }) }}>승인</button><button className="button" type="button" onClick={() => { if (window.confirm('이 파일 요청을 거절할까요?')) void run(async () => { await mutate(base + '/requests/' + item.id + '/reject', {}) }) }}>거절</button></>}
-              {['pending', 'approved'].includes(item.status) && <button className="button pro-danger" type="button" onClick={() => { if (window.confirm('이 요청 전체를 종료할까요? 진행 중인 업로드도 확정할 수 없게 되며 다시 받으려면 새 요청이 필요해요.')) void run(async () => { await mutate(base + '/requests/' + item.id + '/cancel', {}) }) }}>요청 전체 취소</button>}
             </div>
             {((item.status === 'approved' && item.direction === 'incoming') || (item.transfer?.status === 'available' && item.direction === 'outgoing')) && <ProTransfer acceptNewTransfers={acceptNewTransfers} key={item.id + (item.transfer?.status ?? item.status)} api={api} orgId={orgId} requestId={item.id} userId={userId} csrf={csrf} sending={item.status === 'approved'} project={item.project ?? ''} environment={item.environment ?? ''} peerLabel={item.direction === 'incoming' ? item.receiver : item.sender} onDone={load} onExpired={onExpired} onNavigate={onNavigate} />}
-            {item.transfer?.status === 'available' && <button className="button" type="button" onClick={() => { if (window.confirm('전달을 회수할까요? 이후 다운로드를 차단하며 이미 받은 사본은 지워지지 않아요.')) void run(async () => { await mutate(base + '/requests/' + item.id + '/transfer/revoke', {}) }) }}>전달 회수</button>}
+            <details className="pro-settings-section"><summary>요청 관리와 식별 정보</summary>
+              {task.group !== '상대 대기' && <CopyField label="요청 상세 링크 (로그인 필요)" value={location.origin + proPath(destination)} />}
+              <p className="device-id">요청 ID: {item.id}</p>{item.receiverDeviceId && <p className="device-id">수신 기기: {item.receiverDeviceId}</p>}
+              <div className="actions">{['pending', 'approved'].includes(item.status) && <button className="button pro-danger" type="button" onClick={() => { if (window.confirm('이 요청 전체를 종료할까요? 진행 중인 업로드도 확정할 수 없게 되며 다시 받으려면 새 요청이 필요해요.')) void run(async () => { await mutate(base + '/requests/' + item.id + '/cancel', {}) }) }}>요청 전체 취소</button>}
+              {item.transfer?.status === 'available' && <button className="button" type="button" onClick={() => { if (window.confirm('전달을 회수할까요? 이후 다운로드를 차단하며 이미 받은 사본은 지워지지 않아요.')) void run(async () => { await mutate(base + '/requests/' + item.id + '/transfer/revoke', {}) }) }}>전달 회수</button>}</div>
+            </details>
             </fieldset>
             {task.step === -1 && item.direction === 'outgoing' && <a className="button primary" href={proPath(createRoute)} onClick={event => followProLink(event,createRoute,onNavigate)}>새 파일 요청</a>}
-          </> : <a className={'button' + (task.group === '내가 처리할 일' ? ' primary' : '')} href={proPath(destination)} onClick={event => followProLink(event, destination, onNavigate)}>{task.action}</a>}
+          </> : <a className="button" href={proPath(destination)} onClick={event => followProLink(event, destination, onNavigate)}>{task.action}</a>}
         </article>
       })}</div></section>})}
+      {!detailId && !!shown.length && <p className="pro-list-footnote">진행 중인 요청과 최근 요청 100개를 표시해요.</p>}
     </>}
   </section>
 }

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Database } from './database.ts'
@@ -7,10 +8,11 @@ import { Deletions } from './deletions.ts'
 // Ordinary process restarts must not discard valid deliveries.
 export async function blockRestoredTransfers(db: Database, apply = false, now = Date.now()) {
   return db.transaction(async () => {
-    const counts = await db.get<{ requests: number; transfers: number; shares: number }>(`SELECT
+    const counts = await db.get<{ requests: number; transfers: number; shares: number; environmentFiles: number }>(`SELECT
       (SELECT count(*) FROM file_requests WHERE status IN ('pending','approved')) AS requests,
       (SELECT count(*) FROM uploads WHERE ended_at IS NULL) AS transfers,
-      (SELECT count(*) FROM external_shares WHERE ended_at IS NULL) AS shares`)
+      (SELECT count(*) FROM external_shares WHERE ended_at IS NULL) AS shares,
+      (SELECT count(*) FROM environment_versions WHERE ended_at IS NULL) AS "environmentFiles"`)
     // The count preview reads operational metadata even when no deliveries need to change.
     await db.run(`INSERT INTO organization_events(org_id,target_id,event,created_at)
       SELECT id,id,$1,$2::bigint FROM organizations
@@ -27,7 +29,13 @@ export async function blockRestoredTransfers(db: Database, apply = false, now = 
     await db.run('UPDATE external_shares SET token_hash=NULL')
     await db.run('DELETE FROM share_operations')
     await db.run('DELETE FROM transfer_challenges')
-    if (counts!.requests + counts!.transfers + counts!.shares > 0) {
+    await db.run("UPDATE environment_versions SET status=CASE WHEN status IN('reserved','writing') THEN 'cancelled' ELSE status END,ended_at=COALESCE(ended_at,$1),end_reason=COALESCE(end_reason,'restored'),write_until=NULL WHERE ended_at IS NULL",now)
+    await db.run('DELETE FROM environment_key_wraps')
+    await db.run('DELETE FROM environment_file_challenges')
+    const heads=await db.all<{environment_id:string}>('SELECT environment_id FROM environment_publication_heads')
+    for(const head of heads)await db.run("UPDATE environment_publication_heads SET generation=$1,version_id=NULL,end_reason='restored' WHERE environment_id=$2",randomUUID(),head.environment_id)
+
+    if (counts!.requests + counts!.transfers + counts!.shares + counts!.environmentFiles > 0) {
       await db.run(`INSERT INTO organization_events(org_id,target_id,event,created_at)
         SELECT id,id,'restored_transfers_blocked',$1 FROM organizations`, now)
     }

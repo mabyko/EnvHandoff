@@ -1,4 +1,5 @@
 import type { Database } from './database.ts'
+import { randomUUID } from 'node:crypto'
 
 export type InvalidationScope = { organizationId: string } | { userId: string } | { requestId: string } | { shareId: string }
 
@@ -37,7 +38,37 @@ export async function invalidateRequests(db: Database, now: number, scope?: Inva
     )`, now)
     await invalidateTransfers(db, now, scope)
     await invalidateShares(db, now, scope)
+    await invalidatePublications(db, now, scope)
   })
+}
+
+// Published files belong to the team. Losing the publisher's access cancels
+// pending writes but does not erase a committed snapshot or other recipients.
+export async function invalidatePublications(db: Database, now: number, scope?: InvalidationScope) {
+  if (scope && !('organizationId' in scope) && !('userId' in scope)) return
+  const organization = scope && 'organizationId' in scope ? scope.organizationId : undefined
+  const subject = scope && 'userId' in scope ? scope.userId : undefined
+  const filter = organization ? ' AND v.org_id=$2' : subject ? ' AND v.publisher_user_id=$2' : ''
+  const values = organization ? [now, organization] : subject ? [now, subject] : [now]
+  await db.run(`UPDATE environment_versions v SET status='cancelled',ended_at=$1,end_reason='access_revoked'
+    WHERE ended_at IS NULL AND status IN('reserved','writing') AND NOT EXISTS(
+      SELECT 1 FROM effective_file_permissions p JOIN devices d ON d.user_id=p.user_id
+      WHERE p.org_id=v.org_id AND p.environment_id=v.environment_id AND p.user_id=v.publisher_user_id
+      AND p.receive=1 AND p.send=1 AND d.id=v.publisher_device_id AND d.status='active')${filter}`, ...values)
+  await db.run(`UPDATE environment_versions v SET status='failed',ended_at=$1,end_reason='upload_expired'
+    WHERE ended_at IS NULL AND status IN('reserved','writing') AND created_at<=$1::bigint-3600000${filter}`, ...values)
+  if (!subject) await db.run(`UPDATE environment_versions v SET ended_at=$1,end_reason='environment_deleted',
+    status=CASE WHEN status IN('reserved','writing') THEN 'cancelled' ELSE status END
+    WHERE ended_at IS NULL AND NOT EXISTS(SELECT 1 FROM environments e JOIN projects p ON p.id=e.project_id
+      JOIN organizations o ON o.id=p.org_id AND o.active=1 WHERE e.id=v.environment_id AND p.org_id=v.org_id)${filter}`, ...values)
+  const heads = await db.all<{ environment_id: string }>(`SELECT h.environment_id FROM environment_publication_heads h
+    JOIN environment_versions v ON v.id=h.version_id WHERE v.ended_at IS NOT NULL${organization ? ' AND v.org_id=$1' : subject ? ' AND v.publisher_user_id=$1' : ''}`, ...(organization ? [organization] : subject ? [subject] : []))
+  for (const head of heads) await db.run(`UPDATE environment_publication_heads h SET generation=$1,version_id=NULL,
+    end_reason=(SELECT end_reason FROM environment_versions WHERE id=h.version_id) WHERE environment_id=$2`, randomUUID(), head.environment_id)
+  await db.run(`DELETE FROM environment_key_wraps w USING environment_versions v WHERE w.version_id=v.id
+    AND (v.ended_at IS NOT NULL OR NOT EXISTS(SELECT 1 FROM effective_file_permissions p JOIN devices d ON d.user_id=p.user_id
+      WHERE p.org_id=v.org_id AND p.environment_id=v.environment_id AND p.user_id=w.recipient_user_id AND p.receive=1
+      AND d.id=w.recipient_device_id AND d.status='active'))${organization ? ' AND v.org_id=$1' : subject ? ' AND w.recipient_user_id=$1' : ''}`, ...(organization ? [organization] : subject ? [subject] : []))
 }
 
 export async function invalidateTransfers(db: Database, now: number, scope?: InvalidationScope) {

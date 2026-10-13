@@ -1,9 +1,9 @@
 {
   "name": "@envhandoff/protocol",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "private": true,
   "type": "module",
-  "exports": { ".": "./src/index.ts", "./device-proof": "./src/device-proof.ts" },
+  "exports": { ".": "./src/index.ts", "./device-proof": "./src/device-proof.ts", "./environment-files": "./src/environment-files.ts" },
   "dependencies": { "@hpke/core": "1.9.0" },
   "scripts": { "typecheck": "tsc --noEmit" },
   "devDependencies": { "typescript": "~6.0.2" }

@@ -41,11 +41,15 @@ test('Pro routes round trip pages and creation context while rejecting unsafe or
       assert.deepEqual(readProRoute(url.pathname, url.search), route)
     }
   }
-  for (const route of [{ page: 'projects' as const, orgId, id }, { page: 'requests' as const, orgId, environmentId, create: true }, { page: 'shares' as const, orgId, id }]) {
+  for (const route of [{ page: 'projects' as const, orgId, id }, { page: 'projects' as const, orgId, id, environmentId }, { page: 'requests' as const, orgId, environmentId, create: true }, { page: 'shares' as const, orgId, id }]) {
     const url = new URL(proPath(route), 'https://example.test')
     assert.deepEqual(readProRoute(url.pathname, url.search), route)
   }
   assert.deepEqual(readProRoute('/pro', `?org=${orgId}&share=${id}`), { page: 'shares', orgId, id })
+  for (const path of [`/pro/projects?org=${orgId}&environment=${environmentId}`, `/pro/team?org=${orgId}&environment=${environmentId}`, `/pro/requests?org=${orgId}&environment=${environmentId}`, `/pro/projects/${id}?environment=${environmentId}`]) {
+    const url = new URL(path, 'https://example.test')
+    assert.equal(readProRoute(url.pathname, url.search), null, path)
+  }
   for (const path of ['/proevil', '//evil.test/pro', '/pro/unknown', '/pro/shares/invalid', `/pro/team/${id}?org=${orgId}`, `/pro/requests/${id}`, `/pro/shares/${id}?org=${orgId}&create=1`, `/pro/projects?org=${orgId}&create=1`, `/pro/requests?environment=${environmentId}`, '/pro?org=', '/pro?create=0', `/pro/shares?org=${orgId}&org=${orgId}`, '/pro/settings?next=https://evil.test', '/pro/shares?token=secret', '/pro/shares?code=secret']) {
     const query = path.indexOf('?')
     assert.equal(readProRoute(query < 0 ? path : path.slice(0, query), query < 0 ? '' : path.slice(query)), null, path)

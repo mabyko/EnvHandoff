@@ -110,17 +110,42 @@ export default function App() {
     else navigate('home')
   }
 
+  const brand = (
+    <a
+      className="brand"
+      href="/"
+      aria-label="EnvHandoff 소개 홈"
+      onClick={event => {
+        // Modified clicks open home elsewhere; ordinary clicks keep the work-loss check.
+        if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+        event.preventDefault()
+        home()
+      }}
+    >
+      <span className="brand-mark">
+        <ArrowRightLeft aria-hidden="true" />
+      </span>
+      EnvHandoff
+    </a>
+  )
+  const themeToggle = (
+    <button
+      type="button"
+      className="icon-button"
+      onClick={() => setDark(!dark)}
+      aria-label={dark ? '밝은 화면으로 전환' : '어두운 화면으로 전환'}
+    >
+      {dark ? <Sun /> : <Moon />}
+    </button>
+  )
+
   return (
     <div className={`page-wrap${route.view === 'pro' ? ' pro-page' : ''}`}>
       <a className="pro-skip-link" href="#main-content">본문으로 건너뛰기</a>
       <div className="app-window">
-        <header className="appbar">
-          <button type="button" className="brand" onClick={home} aria-label="EnvHandoff 소개 홈">
-            <span className="brand-mark">
-              <ArrowRightLeft aria-hidden="true" />
-            </span>
-            EnvHandoff
-          </button>
+        {/* Pro owns a single workspace header, so the marketing chrome stays out of its way. */}
+        {route.view !== 'pro' && <header className="appbar">
+          {brand}
           <div className="header-actions">
             {route.view === 'home' ? (
               <button
@@ -141,22 +166,15 @@ export default function App() {
               </button>
             )}
             {route.view === 'home' && <a className="text-button" href="/pro">Pro</a>}
-            <button
-              type="button"
-              className="icon-button"
-              onClick={() => setDark(!dark)}
-              aria-label={dark ? '밝은 화면으로 전환' : '어두운 화면으로 전환'}
-            >
-              {dark ? <Sun /> : <Moon />}
-            </button>
+            {themeToggle}
           </div>
-        </header>
+        </header>}
         <main id="main-content" tabIndex={-1} className={route.view === 'home' ? 'landing-main' : route.view === 'pro' ? 'pro-main' : 'work-area'}>
           {route.view === 'home' ? (
             <LandingHome onSend={() => navigate('send')} onReceive={() => navigate('receive')} />
           ) : (
             <div className={route.view === 'pro' ? 'pro-frame' : 'work-card'}>
-              {route.view === 'pro' && <ProLogin />}
+              {route.view === 'pro' && <ProLogin brand={brand} themeToggle={themeToggle} />}
               {route.view === 'external' && <ExternalReceive key={arrival} id={route.id} token={route.token} onHome={home} />}
               {route.view === 'send' && <SendFlow onHome={home} />}
               {route.view === 'receive' && (
@@ -165,7 +183,7 @@ export default function App() {
             </div>
           )}
         </main>
-        <footer className="app-footer">
+        {route.view !== 'pro' && <footer className="app-footer">
           <span>아는 사람끼리, 필요한 파일만.</span>
           <div className="footer-links">
             {route.view === 'home' && <a className="text-button" href="/pro">Pro</a>}
@@ -181,7 +199,7 @@ export default function App() {
               <ArrowUpRight aria-hidden="true" />
             </a>
           </div>
-        </footer>
+        </footer>}
       </div>
       {route.view !== 'home' && route.view !== 'pro' && (
         <p className="page-note">새로고침하거나 탭을 닫으면 진행 중인 작업이 지워져요.</p>

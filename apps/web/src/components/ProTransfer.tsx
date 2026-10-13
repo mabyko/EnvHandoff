@@ -168,37 +168,38 @@ export function ProTransfer({ api,orgId,requestId,userId,csrf,sending,project,en
  return <section className="pro-transfer" aria-label={sending?'파일 전달':'전달 파일 열기'} aria-busy={busy||cancelling} data-work-loss={!!files.length || !!opened || !!pending}>
   {sending&&!acceptNewTransfers&&<Notice>{betaClosedMessage}</Notice>}
   {error&&<Notice error>{error}</Notice>}{message&&<p role="status">{message}</p>}
-  <fieldset disabled={busy||cancelling} className="plain-fieldset pro-panel">
+  <fieldset disabled={busy||cancelling} className="plain-fieldset pro-transfer-workspace">
    <legend>{sending?'암호화해서 보내기':'내 기기로 파일 열기'}</legend>
    <p>{peerLabel?`${peerLabel}${sending?'에게 보낼 파일을 준비하세요.':'님이 보낸 파일을 받을 차례예요.'}`:sending?'내가 파일을 준비할 차례예요.':'내 기기로 파일을 받을 차례예요.'}</p>
    {!context&&<button type="button" className="button" onClick={()=>{void run(inspect,'기기와 전달 상태 확인 중…')}}>기기·전달 상태 다시 확인</button>}
-   {!sending&&<p>이 요청을 만든 브라우저에서 열어주세요. 새 기기라면 <a href={proPath(retryRoute)} onClick={event=>followProLink(event,retryRoute,onNavigate)}>새 파일 요청</a>으로 다시 받을 수 있어요.</p>}
+   {!sending&&<p className="help">이 요청을 만든 브라우저에서 열어주세요. 새 기기라면 <a href={proPath(retryRoute)} onClick={event=>followProLink(event,retryRoute,onNavigate)}>새 파일 요청</a>으로 다시 받을 수 있어요.</p>}
    {peer&&<>
-    {!trusted?<form className="pro-form" onSubmit={e=>{e.preventDefault();void run(async signal=>{await pinPeerIdentity(userId,peer,fingerprint.trim());if(!signal.aborted){setTrusted(true);setFingerprint('')}})}}>
+    {!trusted?<form className="pro-form pro-setup-note" onSubmit={e=>{e.preventDefault();void run(async signal=>{await pinPeerIdentity(userId,peer,fingerprint.trim());if(!signal.aborted){setTrusted(true);setFingerprint('')}})}}>
+     <h4>처음 주고받는 기기예요</h4>
      {localFingerprint&&<CopyField label="상대에게 보낼 내 기기 지문" value={localFingerprint}/>}
      <label>별도 대화로 받은 상대 기기 지문<input value={fingerprint} onChange={e=>setFingerprint(e.target.value)} required maxLength={43} autoComplete="off" spellCheck={false}/></label>
      <p className="help">알고 있는 연락 경로로 내 지문을 보내고, 상대가 그 기기 화면에서 보낸 지문을 입력하세요. 계정과 기기가 맞는지도 확인해주세요.</p><button className="button primary" type="submit">지문 대조 후 저장</button>
-    </form>:<p>이 브라우저에 확인한 상대 기기가 저장돼 있어요.</p>}</>}
-   <details><summary>기기 확인 정보·설정</summary>{peer&&<p>상대 계정: {peer.userId}<br/>상대 기기: {peer.deviceId}</p>}{trusted&&localFingerprint&&<CopyField label="상대에게 보낼 내 기기 지문" value={localFingerprint}/>}<div className="actions">{context&&<button type="button" className="button" onClick={()=>{void run(inspect,'기기와 전달 상태 확인 중…')}}>기기·전달 상태 다시 확인</button>}<a className="text-button" href={proPath({page:'settings',orgId})} onClick={event=>followProLink(event,{page:'settings',orgId},onNavigate)}>내 기기 등록·관리</a></div></details>
+    </form>:<p className="help">상대 기기 확인 완료</p>}</>}
    {context?.pendingUpload&&!pending&&<><p>이 요청에 이전 업로드가 남아 있어요. 파일을 잃었다면 이전 시도를 취소한 뒤 다시 선택해주세요.</p><button className="button" type="button" onClick={()=>{if(window.confirm('다른 탭에서 진행 중인 업로드도 중단돼요. 이전 업로드 시도를 취소할까요?'))void run(async signal=>{const result=await cancelUpload(context.pendingUpload!.id,signal);if(uploadResolution(result.status)==='complete')await onDone();else await inspect(signal)})}}>이전 업로드 취소</button></>}
    {trusted&&sending&&<>
-    <label className="pro-form">보낼 파일<input type="file" multiple disabled={!!pending} onChange={e=>{const selected=Array.from(e.target.files??[]).map(file=>({file,path:file.name}));try{validateFiles(selected.map(x=>({path:x.path,size:x.file.size})));setFiles(selected);setEditing(null)}catch(error){setError(explainError(error))}e.target.value=''}}/></label>
-    {files.map((file,index)=><div className="pro-form" key={index}><label>배치 경로<input value={file.path} disabled={!!pending} onChange={e=>setFiles(current=>current.map((f,i)=>i===index?{...f,path:e.target.value}:f))}/></label>
+    <label className="file-picker compact"><strong>보낼 파일</strong><span>{files.length ? `선택한 파일 ${files.length}개` : '전달할 설정 파일을 선택하세요'}</span><input type="file" multiple disabled={!!pending} onChange={e=>{const selected=Array.from(e.target.files??[]).map(file=>({file,path:file.name}));try{validateFiles(selected.map(x=>({path:x.path,size:x.file.size})));setFiles(selected);setEditing(null)}catch(error){setError(explainError(error))}e.target.value=''}}/></label>
+    {!!files.length&&<p className="help">받는 사람의 저장소 최상위 폴더 기준 경로를 확인하세요.</p>}
+    {files.map((file,index)=><div className="pro-file-row" key={index}><label className="pro-field">배치 경로<input value={file.path} disabled={!!pending} onChange={e=>setFiles(current=>current.map((f,i)=>i===index?{...f,path:e.target.value}:f))}/></label>
      {file.path.split('/').at(-1)?.startsWith('.env')&&<button className="button" type="button" disabled={!!pending} onClick={()=>{void run(async signal=>{const source=parseEditableEnv(new Uint8Array(await file.file.arrayBuffer()));if(!signal.aborted)setEditing({index,source,values:source.entries.map(x=>x.value)})})}}>환경변수 편집</button>}
     </div>)}
     {editingSource&&<form className="pro-form" onSubmit={e=>{e.preventDefault();try{const preview=previewEnvEdit(editingSource.source,editingSource.values);if(!window.confirm('수정한 환경변수 값을 보낼 파일에 적용할까요?'))return;setFiles(current=>current.map((f,i)=>i===editingSource.index?{...f,file:new File([preview.text],f.file.name)}:f));setEditing(null)}catch(error){setError(explainError(error))}}}>
      {editingSource.source.entries.map((entry,index)=><label key={index}>{entry.key}<input autoComplete="off" spellCheck={false} value={editingSource.values[index]} onChange={e=>setEditing({...editingSource,values:editingSource.values.map((v,i)=>i===index?e.target.value:v)})}/></label>)}
      <button className="button" type="submit">수정본 적용</button><button className="button" type="button" onClick={()=>setEditing(null)}>편집 취소</button>
     </form>}
-    <label className="pro-form">보관 기간<select value={days} disabled={!!pending} onChange={e=>setDays(Number(e.target.value))}><option value={1}>24시간</option><option value={3}>3일</option><option value={7}>7일</option></select></label>
-    <p>조직·프로젝트·환경 이름은 서버에 저장돼요. 파일 이름·배치 경로·내용은 암호화된 묶음 안에만 담겨요.</p>
-    <p>업로드 확정부터 이용할 수 있는 기간이에요. 만료·회수 뒤 저장소 삭제까지 최대 24시간이 더 걸릴 수 있어요.</p>
+    <label className="pro-field">보관 기간<select value={days} disabled={!!pending} onChange={e=>setDays(Number(e.target.value))}><option value={1}>24시간</option><option value={3}>3일</option><option value={7}>7일</option></select></label>
+    <details className="pro-settings-section"><summary>암호화와 보관 안내</summary><p>조직·프로젝트·환경 이름은 서버에 저장돼요. 파일 이름·배치 경로·내용은 암호화된 묶음 안에만 담겨요.</p><p>선택한 기간은 업로드 확정부터 시작해요. 만료·회수 뒤 저장소 삭제까지 최대 24시간이 더 걸릴 수 있어요.</p></details>
     <button className="button primary" type="button" disabled={!acceptNewTransfers||!files.length||!!editing} onClick={()=>{void run(send,'암호화·업로드 처리 중…')}}>{pending?'같은 업로드 재시도':'암호화해서 업로드'}</button>
    </>}
-   {trusted&&!sending&&<p>수신 확인은 이 브라우저가 파일 검사를 마쳤다는 보고예요. 파일 저장이나 프로젝트 적용 여부를 보장하지 않아요.</p>}
+   {trusted&&!sending&&<p className="help">다운로드 후 파일을 검사하고 수신 확인을 남겨요. 파일 저장이나 프로젝트 적용 여부를 보장하지 않아요.</p>}
    {trusted&&!sending&&!opened&&<button className="button primary" type="button" onClick={()=>{void run(receive,'파일 다운로드·검사 중…')}}>파일 다운로드·검사</button>}
    {pendingAck&&opened&&<button className="button primary" type="button" onClick={()=>{void run(signal=>acknowledge(pendingAck,signal),'수신 확인 기록 중…')}}>수신 확인 다시 보내기</button>}
    {pending&&<button className="button" type="button" onClick={()=>{void run(async signal=>{const value=await(await call('/uploads/'+pending.id,undefined,signal)).json();if(signal.aborted)return;if(uploadResolution(value.status)==='complete'){setFiles([]);setPending(null);await onDone()}else if(uploadResolution(value.status)==='ended'){setPending(null);setProgress(0);setMessage('이전 업로드는 종료됐어요. 새로 업로드할 수 있어요.')}else setMessage(value.status==='writing'?'서버가 파일을 저장하고 있어요. 완료 응답을 기다리거나 잠시 후 상태를 다시 확인해주세요.':'업로드 대기 중이에요. 같은 업로드를 재시도할 수 있어요.')})}}>결과 확인</button>}
+   <details className="pro-settings-section"><summary>기기 확인 정보·설정</summary>{peer&&<p className="device-id">상대 계정: {peer.userId}<br/>상대 기기: {peer.deviceId}</p>}{trusted&&localFingerprint&&<CopyField label="상대에게 보낼 내 기기 지문" value={localFingerprint}/>}<div className="actions">{context&&<button type="button" className="button" onClick={()=>{void run(inspect,'기기와 전달 상태 확인 중…')}}>기기·전달 상태 다시 확인</button>}<a className="text-button" href={proPath({page:'settings',orgId})} onClick={event=>followProLink(event,{page:'settings',orgId},onNavigate)}>내 기기 등록·관리</a></div></details>
   </fieldset>
   <p className="pro-operation-status" role="status">{cancelling?'업로드 취소 확인 중…':busy?operation:''}</p>
   {busy&&sending&&operation==='암호화·업로드 처리 중…'&&progress>0&&<progress max={100} value={progress} aria-label="파일 업로드 진행률"/>}

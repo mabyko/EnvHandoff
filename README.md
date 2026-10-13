@@ -6,7 +6,7 @@
 
 EnvHandoff encrypts `.env` and other development configuration files for sharing. It bundles the settings a teammate still needs after cloning a repository, preserving each file as it is. The recipient opens the bundle with a separately shared code, extracts the original files, and uses them in their own project.
 
-The web app starts with file sharing and downloads. A planned native desktop app in v4.0 will add comparison, application, and recovery within a project folder. The current version is **0.0.8**, with file sharing and live transfer available in local development. The app interface and design documents are currently in Korean.
+The web app starts with file sharing and downloads. A planned native desktop app in v4.0 will add comparison, application, and recovery within a project folder. The current version is **0.0.9**, with file sharing and live transfer available in local development. The app interface and design documents are currently in Korean.
 
 ## Screenshots
 
@@ -53,7 +53,7 @@ The web app lets people exchange files without installation. The planned desktop
 
 The folder selection and application flow is described in the [desktop design](docs/app-design.md).
 
-The v3 Pro beta adds GitHub sign-in, team permissions, asynchronous encrypted transfers, temporary storage, and guest sharing. Billing, persistent file versions, and the native desktop app remain v4 work. Production OAuth, HTTPS, recovery drills, and cross-device/browser QA are still release requirements; see the [v3 specification](docs/pro-v3-spec.md) and [QA record](docs/qa.md).
+The Pro beta adds GitHub sign-in, team permissions, asynchronous encrypted transfers, temporary storage, and guest sharing. It also supports publishing each environment's latest encrypted files: publish them with repository-relative placement paths, download them from the same environment, and create a fresh guest share from selected files. New devices need an existing holder to prepare key access. See the [publication design](docs/project-files-design.md). Billing, version history and restoration, and the native desktop app remain future work. Production migration, recovery drills, and cross-device/browser QA remain separate requirements; see the [v3 specification](docs/pro-v3-spec.md) and [QA record](docs/qa.md).
 
 ## Self-hosting v3
 

@@ -5,6 +5,7 @@ import { fields, HttpError, jsonBody } from './http.ts';
 import { githubAccount, Organizations } from './organizations.ts';
 import { Transfers } from './transfers.ts';
 import { Shares } from './shares.ts';
+import { Publications } from './publications.ts';
 import { Requests } from './requests.ts';
 import { SecurityApi } from './security.ts';
 import { Deletions } from './deletions.ts';
@@ -60,6 +61,7 @@ export class AuthApi {
   private readonly requests: Requests;
   private readonly transfers: Transfers;
   private readonly shares: Shares;
+  private readonly publications: Publications;
   private readonly deletions?: Deletions;
   constructor(db: Database, config: AuthConfig, fetcher = fetch, clock = Date.now) {
     for (const origin of [config.webOrigin, config.apiOrigin]) {
@@ -84,6 +86,7 @@ export class AuthApi {
     this.beta = new Beta(db, clock, config.operatorGithubId);
     this.transfers = new Transfers(db, config.fileStoragePath, clock, config.acceptNewTransfers);
     this.shares = new Shares(db, config.fileStoragePath, clock, config.acceptNewTransfers, () => this.deletions?.sync(this.db, this.clock()));
+    this.publications = new Publications(db, config.fileStoragePath, clock, config.acceptNewTransfers);
     this.requests = new Requests(db, this.organizations, clock, config.acceptNewTransfers);
     this.security = new SecurityApi(db, config.webOrigin, config.totpEncryptionKey, clock);
   }
@@ -130,6 +133,7 @@ export class AuthApi {
     await this.security.prune();
     await this.transfers.prune();
     await this.shares.prune();
+    await this.publications.prune();
     await this.requests.prune();
   }
   private async start(request: Request, headers: Headers): Promise<Response> {
@@ -434,6 +438,11 @@ export class AuthApi {
       await this.deletions?.sync(this.db, this.clock());
       if (url.pathname.startsWith('/shares/')) {
         const response = await this.shares.public(request);
+        for (const [key, value] of headers) response.headers.set(key, value);
+        return response;
+      }
+      if (/^\/organizations\/[^/]+\/environments\/[^/]+\/files(?:\/|$)/.test(url.pathname)) {
+        const response = await this.publications.handle(request, () => this.requireSession(request));
         for (const [key, value] of headers) response.headers.set(key, value);
         return response;
       }

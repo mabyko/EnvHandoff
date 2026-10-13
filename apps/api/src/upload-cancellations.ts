@@ -2,7 +2,7 @@ import type { Database } from './database.ts'
 import { HttpError } from './http.ts'
 import { limits } from './limits.ts'
 
-type Scope = { userId: string; orgId: string; kind: 'share' | 'team'; reservationId: string; requestId?: string }
+type Scope = { userId: string; orgId: string; kind: 'share' | 'team' | 'publication'; reservationId: string; requestId?: string }
 
 // Reservation creation and cancellation both call these within the serialized
 // DB transaction, including across API processes. Other actors cannot fence IDs.

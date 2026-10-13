@@ -107,6 +107,7 @@ export class SecurityApi {
         totp: !!await this.db.get('SELECT user_id FROM totp_credentials WHERE user_id=$1', auth.user_id),
         totpAvailable: !!this.key, reauthenticatedUntil: at ? at + RECENT : 0,
         sessionHash: await deviceHash(auth.token_hash),
+        accountDeletionPublishedEnvironmentCount: (await this.db.get<{ n: number }>('SELECT count(*) AS n FROM environment_publication_heads h JOIN environment_versions v ON v.id=h.version_id WHERE v.publisher_user_id=$1 AND v.ended_at IS NULL', auth.user_id))!.n,
         canRegisterDevice: !!await this.db.get('SELECT m.user_id FROM memberships m JOIN organizations o ON o.id=m.org_id WHERE m.user_id=$1 AND o.active=1 LIMIT 1', auth.user_id),
         devices: await Promise.all(devices.map(async row => {
           const identity: DeviceIdentity = JSON.parse(row.identity as string)

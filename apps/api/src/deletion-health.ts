@@ -4,17 +4,19 @@ import { Database } from './database.ts'
 
 type AgeSummary = { count: number; oldestAgeMs: number | null }
 type ObjectHealth = { stalledUploads: AgeSummary; overdueDeletions: AgeSummary }
-export type DeletionHealth = { status: 'ok' | 'delayed'; checkedAt: number; uploads: ObjectHealth; externalShares: ObjectHealth }
+export type DeletionHealth = { status: 'ok' | 'delayed'; checkedAt: number; uploads: ObjectHealth; externalShares: ObjectHealth; environmentFiles: ObjectHealth }
 
 // Observation only: do not migrate, sync the deletion ledger, end uploads or alter writer leases.
 // A live writer may defer removal, but cannot exempt an object from the deletion deadline.
 export async function deletionHealth(db: Database, now = Date.now()): Promise<DeletionHealth> {
   if (!Number.isSafeInteger(now) || now < 0) throw new Error('Invalid observation time')
-  const rows = await db.all<{ kind: 'uploads' | 'externalShares'; phase: keyof ObjectHealth; count: number; oldest: number }>(`
+  const rows = await db.all<{ kind: 'uploads' | 'externalShares' | 'environmentFiles'; phase: keyof ObjectHealth; count: number; oldest: number }>(`
     WITH objects AS (
       SELECT 'uploads' AS kind,status,created_at,ended_at,deleted_at FROM uploads
       UNION ALL
       SELECT 'externalShares',status,created_at,ended_at,deleted_at FROM external_shares
+      UNION ALL
+      SELECT 'environmentFiles',status,created_at,ended_at,deleted_at FROM environment_versions
     ), delayed AS (
       SELECT kind,'stalledUploads' AS phase,created_at AS started_at FROM objects
       WHERE ended_at IS NULL AND status IN ('reserved','writing') AND created_at <= $1
@@ -25,7 +27,7 @@ export async function deletionHealth(db: Database, now = Date.now()): Promise<De
     SELECT kind,phase,count(*) AS count,min(started_at) AS oldest FROM delayed GROUP BY kind,phase`,
   now - 3_600_000, now - 86_400_000)
   const empty = (): ObjectHealth => ({ stalledUploads: { count: 0, oldestAgeMs: null }, overdueDeletions: { count: 0, oldestAgeMs: null } })
-  const result: DeletionHealth = { status: rows.length ? 'delayed' : 'ok', checkedAt: now, uploads: empty(), externalShares: empty() }
+  const result: DeletionHealth = { status: rows.length ? 'delayed' : 'ok', checkedAt: now, uploads: empty(), externalShares: empty(), environmentFiles: empty() }
   for (const row of rows) result[row.kind][row.phase] = { count: row.count, oldestAgeMs: now - row.oldest }
   return result
 }

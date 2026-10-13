@@ -1,5 +1,13 @@
 # Pro API 개발 실행
 
+## 프로젝트·환경 최신 파일 게시
+
+현재 기능 브랜치는 환경별 최신 암호화 파일 한 묶음을 추가한다. 서버는 파일명·배치 경로·평문·코드를 받지 않고 불변 게시문 서명, 기기별 감싼 키와 암호문만 보관한다. 받기·보내기 권한자는 게시와 키 접근 제공을 하고, 현재 받기 권한과 활성 기기용 키 접근이 있는 사용자는 내려받는다. Owner도 파일 키를 자동으로 얻지 않는다.
+
+경로는 `/organizations/:org/environments/:env/files`이며 예약·게시·다운로드·키 제공·제거·취소의 요청과 증명 규격은 [프로젝트 파일 설계](../../docs/project-files-design.md#api와-소유권)를 따른다. `GET /security`의 `accountDeletionPublishedEnvironmentCount`는 영구 계정 삭제로 종료될 최신 환경 수다. 기존 팀 전달·외부 공유와 저장 용량·전송 한도를 합산하며 종료된 암호문도 실제 삭제 전까지 용량을 차지한다.
+
+SQL `012-environment-files.sql`은 로컬 마이그레이션 검사 대상이다. 운영 마이그레이션 gate는 012를 아직 허용하지 않으므로 별도의 검토·유지보수·배포 준비가 필요하다. 기존 운영 접수 중단 설정은 변경하지 않는다. 일반 탈퇴·기기 회수와 영구 계정 삭제의 차이, 복원 차단은 [설계](../../docs/project-files-design.md)와 [운영 절차](../../docs/operations.md)를 따른다.
+
 Node 24, `pnpm install`, Docker가 필요하다. API DB는 개발·테스트·운영 모두 PostgreSQL을 사용하며 드라이버는 `pg`다.
 
 1. [GitHub OAuth 앱 등록](https://github.com/settings/applications/new): 이름 `EnvHandoff Local`, Homepage `http://localhost:5173`, callback `http://localhost:3001/auth/github/callback`. Device Flow는 사용하지 않는다. 로그인 전용 앱으로 다른 연동의 앱을 재사용하지 않는다.

@@ -72,27 +72,55 @@ export function ExternalReceive({ id, token, onHome }: { id?: string; token?: st
     } catch (e) { if (!signal.aborted) setError(e instanceof Error && e.name === 'Error' ? e.message : explainError(e)) }
     finally { running.current = false; if (!signal.aborted) setBusy(false) }
   }
-  return <section aria-busy={busy} data-work-loss={sensitive}>
-    <Heading title="공유 파일 받기">로그인 없이, 별도로 받은 공유 코드로 파일을 열어요.</Heading>
-    {!token || !id ? <Notice error>접근 토큰이 없거나 링크가 올바르지 않아요. 새로고침했다면 발신자에게 받은 원래 링크를 다시 열어주세요.</Notice> : <>
-      {preview && <p>{new Date(preview.expiresAt).toLocaleString('ko-KR')}까지 열 수 있어요. {preview.acknowledgedAt ? '이 공유의 수신 확인이 기록돼 있어요.' : '아직 수신 확인 전이에요.'}</p>}
-      <p>공유 코드는 링크를 받은 곳과 다른 대화 경로로 받아주세요. 페이지 방문만으로 파일을 받거나 수신 확인을 남기지 않아요.</p>
-      {!opened && <form onSubmit={event => { event.preventDefault(); void receive() }}>
-        <fieldset className="plain-fieldset" disabled={busy}>
-          <legend>공유 코드로 열기</legend><CodeInput value={code} onChange={setCode} />
-          <button type="submit" className="button primary" disabled={!code.trim()}>{busy ? '다운로드·검사 중…' : '파일 열기'}</button>
-        </fieldset>
-      </form>}
-      <details className="share-options"><summary>수신 확인과 코드 분실 안내</summary>
-        <p>수신 확인은 파일 검사를 마쳤다는 보고예요. 받는 사람의 신원이나 파일 저장·프로젝트 적용을 증명하지 않아요.</p>
-        <p>코드를 잃었다면 복구할 수 없어요. 발신자가 원본으로 새 공유를 만들어야 해요.</p>
-      </details>
-    </>}
-    {error && <Notice error>{error}</Notice>}{message && <p role="status">{message}</p>}
-    {opened && <><OpenedFiles bundle={opened} /><div className="actions">
-      {pendingAck && <button className="button primary" type="button" disabled={busy} onClick={() => { void retryAcknowledgement() }}>{busy ? '수신 확인 보내는 중…' : '수신 확인 다시 보내기'}</button>}
-      <button className="button" type="button" disabled={busy} onClick={() => { setOpened(null); setPendingAck(null); setMessage('') }}>열어둔 파일 닫기</button>
-    </div></>}
-    <div className="actions"><button className="button" type="button" onClick={onHome}>소개로 돌아가기</button></div>
-  </section>
+  return (
+    <section aria-busy={busy} data-work-loss={sensitive}>
+      <Heading title={opened ? '파일을 프로젝트에 넣어주세요' : '공유 파일 받기'}>
+        {opened ? '파일을 내려받고, 표시된 경로에 직접 넣으세요.' : '보낸 사람이 따로 알려준 공유 코드를 입력하세요.'}
+      </Heading>
+      <div className="flow-layout">
+        <div className="flow-main">
+          {!token || !id ? (
+            <Notice error>접근 토큰이 없거나 링크가 올바르지 않아요. 새로고침했다면 발신자에게 받은 원래 링크를 다시 열어주세요.</Notice>
+          ) : !opened && (
+            <form onSubmit={event => { event.preventDefault(); void receive() }}>
+              <fieldset className="plain-fieldset" disabled={busy}>
+                <section className="flow-section" aria-label="공유 코드 입력">
+                  <CodeInput value={code} onChange={setCode} />
+                </section>
+                {preview && <p className="help">{new Date(preview.expiresAt).toLocaleString('ko-KR')}까지 열 수 있어요.</p>}
+                <div className="actions flow-toolbar">
+                  <span className="muted">로그인 없이 열 수 있어요.</span>
+                  <button type="submit" className="button primary" disabled={!code.trim()}>{busy ? '다운로드·검사 중…' : '파일 열기'}</button>
+                </div>
+              </fieldset>
+            </form>
+          )}
+          {error && <Notice error>{error}</Notice>}
+          {message && <p role="status" className="field-status">{message}</p>}
+          {opened && (
+            <div className="flow-result">
+              <OpenedFiles bundle={opened} />
+              <div className="actions flow-toolbar">
+                {pendingAck && <button className="button" type="button" disabled={busy} onClick={() => { void retryAcknowledgement() }}>{busy ? '수신 확인 보내는 중…' : '수신 확인 다시 보내기'}</button>}
+                <button className="button" type="button" disabled={busy} onClick={() => { setOpened(null); setPendingAck(null); setMessage('') }}>열어둔 파일 닫기</button>
+              </div>
+            </div>
+          )}
+          <div className="actions flow-toolbar"><button className="text-button" type="button" onClick={onHome}>소개로 돌아가기</button></div>
+        </div>
+        <aside className="flow-aside" aria-label="공유 파일 안내">
+          <div className="flow-section-header"><h2>{opened ? '다운로드 다음에는' : '코드는 따로 받아주세요'}</h2></div>
+          <p className="help">{opened ? '경로는 Git 저장소 루트 기준이에요. 기존 파일이 있으면 덮어쓰기 전에 내용을 확인하세요.' : '링크를 받은 곳과 다른 대화 경로로 코드를 받아야 해요. 링크만으로 파일이 열리지는 않아요.'}</p>
+          {token && id && (
+            <details className="share-options flow-options">
+              <summary>수신 확인과 코드 분실 안내</summary>
+              {preview && <p className="help">{preview.acknowledgedAt ? '이 공유의 수신 확인이 기록돼 있어요.' : '아직 수신 확인 전이에요.'}</p>}
+              <p className="help">수신 확인은 파일 검사를 마쳤다는 보고예요. 페이지 방문만으로 남지 않으며, 파일 저장·프로젝트 적용을 증명하지 않아요.</p>
+              <p className="help">코드를 잃었다면 복구할 수 없어요. 발신자에게 새 공유를 요청하세요.</p>
+            </details>
+          )}
+        </aside>
+      </div>
+    </section>
+  )
 }
