@@ -25,7 +25,7 @@ export async function verifyProCatalog() {
   const root = createRoot(container), originalFetch = window.fetch
   const catalog = { role: 'owner', teams: [{id:firstId,name:'모두',isDefault:1,members:[userId]}], projects: [] as {id:string;name:string;teamIds:string[];environments:[] }[] }
   let route: ProRoute = {page:'projects',orgId}, creations = 0, hold = false
-  const render = () => root.render(createElement(ProCatalog, {api,orgId,csrf:'test-only',members:[{id:userId,login:'qa-owner',role:'owner'}],route,onNavigate:next=>{route=next;render()},disabled:false,onExpired:()=>{throw new Error('Unexpected expiry')},onTeamsChanged:async()=>{}}))
+  const render = () => root.render(createElement(ProCatalog, {api,orgId,userId,csrf:'test-only',acceptNewTransfers:true,onExternalShare:()=>{},members:[{id:userId,login:'qa-owner',role:'owner'}],route,onNavigate:next=>{route=next;render()},disabled:false,onExpired:()=>{throw new Error('Unexpected expiry')},onTeamsChanged:async()=>{}}))
   window.fetch = async (input,init) => {
     const url = String(input)
     if (!url.startsWith(api)) return originalFetch(input,init)
@@ -51,7 +51,8 @@ export async function verifyProCatalog() {
     container.querySelector<HTMLAnchorElement>('.pro-project-card')!.click()
     await until(()=>!!container.querySelector('.pro-empty-state') && !!route.id)
     check(container.querySelector('h2')?.textContent==='QA 프로젝트','Project detail must identify the selected project')
-    check(container.querySelector('summary')?.textContent==='프로젝트 설정','Advanced settings remain available on demand')
+    const settings = [...container.querySelectorAll<HTMLDetailsElement>('details')].find(node => node.querySelector('summary')?.textContent === '프로젝트 설정')
+    check(settings && !settings.open,'Advanced settings remain available on demand without preceding the primary environment action')
     return {passed:true,checks:['empty workspace next action','rapid project submission prevention','create to detail navigation','advanced settings disclosure']}
   } finally {hold=false;root.unmount();window.fetch=originalFetch;container.remove()}
 }
@@ -134,7 +135,7 @@ export async function verifyProPages() {
     click('암호화해서 외부 공유'); click('암호화해서 외부 공유')
     await until(() => ready() && route.id === createdId && !!field('다른 경로로 전달할 공유 코드'))
     const code = field('다른 경로로 전달할 공유 코드')!.value
-    check(container.querySelectorAll('.task-card').length === 2 && !container.querySelector<HTMLDetailsElement>('.share-options')?.open, 'Share handoff must show two steps with management collapsed')
+    check(container.querySelectorAll('.pro-delivery-row').length === 2 && !container.querySelector<HTMLDetailsElement>('.share-options')?.open, 'Share handoff must show two steps with management collapsed')
     check(field('다른 경로로 전달할 공유 코드')!.type === 'password' && !field('다른 경로로 전달할 공유 코드')!.closest('details'), 'Share code stays masked and available outside advanced management')
     check(creations === 1, 'Rapid repeated clicks must create only one encrypted share')
     check(code.length === 43 && container.querySelectorAll('article').length === 1, 'Creation must navigate to only the new detail without losing its code')

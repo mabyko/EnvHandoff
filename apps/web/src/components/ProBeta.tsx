@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { KeyRound, ShieldCheck } from 'lucide-react'
 import { CopyField, Notice } from './ui.tsx'
 
 export type BetaStatus = { active: boolean; operator: boolean; owned: number; workspaceLimit: number }
@@ -35,15 +34,15 @@ export function ProBeta({ status, busy, call, run, onActivated, onCreate, onSett
     }
   }, [status.operator, busy, run, refresh])
   return <section className="pro-page">
-    <header className="pro-page-header"><div><span className="pro-badge">{status.operator ? '운영자' : '무료 베타'}</span><h2>{status.operator ? '베타 참여 관리' : status.active ? '내 베타 이용 현황' : 'Pro Beta 참여하기'}</h2><p>{status.operator ? '참여 코드를 발급하고 사용 현황을 확인하세요.' : '베타 코드는 내 워크스페이스를 만드는 권한이에요. 팀의 초대 링크로 참여할 때는 필요하지 않아요.'}</p></div></header>
-    {status.active ? <div className="pro-welcome-card pro-beta-overview"><ShieldCheck aria-hidden="true" /><div><h3>Pro Beta가 활성화됐어요</h3><p>소유 워크스페이스 {status.owned} / {status.workspaceLimit}개 · 초대받아 참여한 워크스페이스는 별도예요.</p><button className={'button' + (status.operator ? '' : ' primary')} disabled={busy || status.owned >= status.workspaceLimit} onClick={onCreate}>워크스페이스 만들기</button>{status.owned >= status.workspaceLimit && <p className="help">소유 한도에 도달했어요. 사이드바에서 기존 워크스페이스를 선택하세요.</p>}</div></div> :
-      <form className="pro-welcome-card pro-form" onSubmit={event => { event.preventDefault(); void run(async () => { onActivated(await call('/beta/redeem', { code }) as BetaStatus); setCode('') }) }}>
-        <KeyRound aria-hidden="true" /><div><h3>베타 참여 코드를 입력하세요</h3><p id="beta-code-help">운영자에게 받은 베타 코드를 입력하면 내 워크스페이스를 최대 {status.workspaceLimit}개 만들 수 있어요. 워크스페이스 초대 링크는 ‘워크스페이스 참여’에서 수락해주세요.</p>
+    <header className="pro-page-header"><div><h2>{status.operator ? '베타 참여 관리' : status.active ? '내 베타 이용 현황' : 'Pro Beta 참여하기'}</h2><p>{status.operator ? '참여 코드를 발급하고 사용 현황을 확인하세요.' : '베타 참여 코드를 사용하면 내 워크스페이스를 만들 수 있어요.'}</p></div><span className="pro-badge">{status.operator ? '운영자' : '무료 베타'}</span></header>
+    {status.active ? <section className="pro-beta-overview pro-section-header"><div><h3>Pro Beta가 활성화됐어요</h3><p className="help">소유 워크스페이스 {status.owned} / {status.workspaceLimit}개 · 초대받아 참여한 워크스페이스는 별도예요.</p>{status.owned >= status.workspaceLimit && <p className="help">소유 한도에 도달했어요. 사이드바에서 기존 워크스페이스를 선택하세요.</p>}</div><button className={'button' + (status.operator ? '' : ' primary')} disabled={busy || status.owned >= status.workspaceLimit} onClick={onCreate}>워크스페이스 만들기</button></section> :
+      <form className="pro-form pro-beta-enrollment" onSubmit={event => { event.preventDefault(); void run(async () => { onActivated(await call('/beta/redeem', { code }) as BetaStatus); setCode('') }) }}>
+        <h3>베타 참여 코드를 입력하세요</h3><p className="help" id="beta-code-help">운영자에게 받은 코드로 워크스페이스를 최대 {status.workspaceLimit}개 만들 수 있어요. 팀의 초대 링크로 참여할 때는 베타 코드가 필요하지 않아요.</p>
         <div className="pro-field"><label htmlFor="beta-code">베타 참여 코드</label><input id="beta-code" value={code} required maxLength={64} autoComplete="off" autoCapitalize="none" spellCheck={false} aria-describedby="beta-code-help" placeholder="운영자에게 받은 코드" onChange={event => setCode(event.target.value)} disabled={busy} /></div>
-        <button className="button primary" disabled={busy || !code.trim()} type="submit">{busy ? '활성화하는 중…' : 'Pro Beta 활성화'}</button></div>
+        <button className="button primary" disabled={busy || !code.trim()} type="submit">{busy ? '활성화하는 중…' : 'Pro Beta 활성화'}</button>
       </form>}
     {status.operator && <>
-      <section className="pro-panel pro-code-panel"><h3>참여 코드 발급</h3><p className="help">코드는 지정한 인원만 사용할 수 있어요. 유효 기간이 끝나도 이미 참여한 계정의 자격은 유지돼요.</p>
+      <section className="pro-code-panel"><h3>참여 코드 발급</h3><p className="help">참여 가능한 인원과 신청 기한을 설정하세요. 기한이 끝나도 기존 참여자의 자격은 유지돼요.</p>
         {canManage ? <p className="help">본인 확인 완료 · {new Date(verifiedUntil!).toLocaleTimeString()}까지 코드를 발급·취소할 수 있어요.</p> :
           <Notice><p role="status">{verifiedUntil === null ? busy ? '본인 확인 상태를 확인하고 있어요.' : '본인 확인 상태를 확인하지 못했어요. 발급 내역의 새로고침으로 다시 확인해주세요.' : '코드를 발급·취소하려면 먼저 본인 확인을 해주세요. 패스키 또는 인증 앱으로 확인하면 15분 동안 이용할 수 있어요.'}</p>
             {verifiedUntil !== null && <button type="button" className="button" onClick={onSettings}>내 설정에서 본인 확인</button>}</Notice>}
@@ -53,17 +52,17 @@ export function ProBeta({ status, busy, call, run, onActivated, onCreate, onSett
           setIssued(result.code); setLabel(''); await refresh()
         }) }}><fieldset className="plain-fieldset" disabled={busy}>
           <div className="pro-field"><label htmlFor="beta-label">관리용 이름</label><input id="beta-label" value={label} onChange={event => setLabel(event.target.value)} required maxLength={80} placeholder="예: 첫 번째 테스트 그룹" /></div>
-          <div className="pro-form-columns"><div className="pro-field"><label htmlFor="beta-uses">참여 가능 인원</label><input id="beta-uses" type="number" min={1} max={1000} required value={maxUses} aria-describedby="beta-uses-help" onChange={event => setMaxUses(event.target.value)} /><small id="beta-uses-help">1~1,000명 · 계정당 한 번</small></div>
+          <div className="pro-form-grid"><div className="pro-field"><label htmlFor="beta-uses">참여 가능 인원</label><input id="beta-uses" type="number" min={1} max={1000} required value={maxUses} aria-describedby="beta-uses-help" onChange={event => setMaxUses(event.target.value)} /><small id="beta-uses-help">1~1,000명 · 계정당 한 번</small></div>
           <div className="pro-field"><label htmlFor="beta-days">발급 시점부터 유효 일수</label><input id="beta-days" type="number" min={1} max={365} required value={days} aria-describedby="beta-days-help" onChange={event => setDays(event.target.value)} /><small id="beta-days-help">1~365일 · 참여 신청 기한</small></div></div>
           <button className="button primary" type="submit" disabled={!canManage}>코드 발급</button>
         </fieldset></form>
         {issued && <div className="pro-confirm" role="status"><p>코드 원문은 지금만 볼 수 있어요. 복사해서 보관해주세요.</p><CopyField label="발급된 베타 코드" value={issued} /><button type="button" className="text-button" onClick={() => setIssued('')}>코드 숨기기</button></div>}
       </section>
-      <section><div className="pro-page-heading"><h3>발급 내역</h3><button className="button" disabled={busy} onClick={() => { void run(refresh) }}>새로고침</button></div>
+      <section><div className="pro-section-header"><h3>발급 내역</h3><button className="button" disabled={busy} onClick={() => { void run(refresh) }}>새로고침</button></div>
         {!codes.length && <div className="pro-empty"><p>{busy ? '발급 내역을 불러오는 중…' : '아직 발급한 코드가 없어요. 위에서 첫 참여 코드를 발급하세요.'}</p></div>}
         <ul className="pro-list">{codes.map(item => {
           const state = item.revoked ? '취소됨' : item.expiresAt <= now ? '만료됨' : item.used >= item.maxUses ? '인원 마감' : '참여 가능'
-          return <li key={item.id}><div className="pro-page-heading"><h4>{item.label}</h4><span className="pro-badge">{state}</span></div><p>{item.used} / {item.maxUses}명 참여 · {new Date(item.expiresAt).toLocaleString()}까지</p>
+          return <li className="pro-task-row" key={item.id}><div className="pro-task-content"><div className="pro-section-header"><h4>{item.label}</h4><span className="pro-badge">{state}</span></div><p className="pro-item-meta">{item.used} / {item.maxUses}명 참여 · {new Date(item.expiresAt).toLocaleString()}까지</p></div>
             {state === '참여 가능' && <button className="text-button pro-danger-action" disabled={busy || !canManage} onClick={() => setRevoke(item)}>코드 취소</button>}</li>
         })}</ul>
         {revoke && <div className="pro-confirm" role="group" aria-label="코드 취소 확인"><p>‘{revoke.label}’ 코드를 취소할까요? 새로운 참여만 막고, 기존 참여자의 자격은 유지해요.</p><div className="actions"><button className="button" disabled={busy || !canManage} onClick={() => { void run(async () => {

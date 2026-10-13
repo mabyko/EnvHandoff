@@ -34,7 +34,7 @@ export async function mountProStatusQA(signedIn = true) {
     throw new Error('Unexpected QA request: ' + path)
   }
   root.render(createElement(ProLogin))
-  await until(() => !!host.querySelector(signedIn ? '.pro-welcome-card' : '.pro-entry .button') && !host.querySelector('[aria-busy="true"]'))
+  await until(() => !!host.querySelector(signedIn ? '.pro-beta-overview' : '.pro-entry .button') && !host.querySelector('[aria-busy="true"]'))
   return { host, state, cleanup: () => {
     state.hold = false; root.unmount(); host.remove(); window.fetch = previous.fetch
     history.replaceState(previous.history, '', previous.url)
@@ -80,7 +80,7 @@ export async function verifyProLoginPending() {
 
 export async function verifyProStatusLayout() {
   const qa = await mountProStatusQA(), { host, state } = qa
-  const positions = () => ['.pro-layout', '.pro-switcher', '.pro-page-header', '.pro-welcome-card'].map(selector => host.querySelector(selector)!.getBoundingClientRect().top)
+  const positions = () => ['.pro-layout', '.pro-switcher', '.pro-page-header', '.pro-beta-overview'].map(selector => host.querySelector(selector)!.getBoundingClientRect().top)
   const ready = () => !host.querySelector('[aria-busy="true"]')
   const startRefresh = async () => {
     state.hold = true; window.dispatchEvent(new Event('focus'))

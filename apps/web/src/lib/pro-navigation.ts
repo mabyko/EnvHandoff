@@ -48,7 +48,7 @@ export function readProRoute(pathname: string, search = ''): ProRoute | null {
   if (orgId !== null && !uuid.test(orgId) || environmentId !== null && !uuid.test(environmentId)) return null
   if (id && (!uuid.test(id) || !orgId || !['requests', 'shares', 'projects'].includes(page))) return null
   if (params.has('create') && (params.get('create') !== '1' || id || !['requests', 'shares'].includes(page))) return null
-  if (environmentId && (!orgId || params.get('create') !== '1')) return null
+  if (environmentId && (!orgId || !(page === 'projects' && id || ['requests', 'shares'].includes(page) && params.get('create') === '1'))) return null
   return { page, ...(orgId ? { orgId } : {}), ...(id ? { id } : {}), ...(environmentId ? { environmentId } : {}), ...(params.has('create') ? { create: true } : {}) }
 }
 

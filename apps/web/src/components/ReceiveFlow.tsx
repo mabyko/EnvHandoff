@@ -106,23 +106,34 @@ export function ReceiveFlow({
       <Steps labels={['공유 파일 열기', '파일 다운로드']} current={opened ? 1 : 0} />
       {opened ? (
         <>
-          <Heading title="이제 프로젝트에 넣어주세요">원본 파일을 다운로드하고, 안내된 경로에 직접 배치하면 돼요.</Heading>
+          <Heading title="이제 프로젝트에 넣어주세요">파일을 내려받고, 표시된 경로에 직접 넣으세요.</Heading>
+          <div className="flow-layout">
+          <div className="flow-main flow-result">
           {live && <LiveStatus state={state} receiving />}
           <OpenedFiles bundle={opened} />
-          <div className="actions end">
+          <div className="actions end flow-toolbar">
             <button type="button" className="button" onClick={onHome}>
               작업 마치기
             </button>
           </div>
+          </div>
+          <aside className="flow-aside" aria-label="파일 배치 안내">
+            <div className="flow-section-header"><h2>다운로드 다음에는</h2></div>
+            <p className="help">표시된 경로는 Git 저장소 루트 기준이에요. <code>apps/api/.env</code>라면 저장소의 <code>apps/api</code> 폴더에 넣으세요.</p>
+            <p className="help">기존 파일이 있으면 덮어쓰기 전에 내용을 확인하세요.</p>
+          </aside>
+          </div>
         </>
       ) : (
         <>
-          <Heading title={live ? '공유 파일을 받고 있어요' : '받은 파일을 열어주세요'}>
+          <Heading title={live ? '공유 파일을 받고 있어요' : '공유 파일 열기'}>
             {live
               ? '보낸 사람과 연결을 확인하고, 별도로 받은 코드를 입력해주세요.'
-              : 'EnvHandoff 공유 파일과 별도로 받은 공유 코드가 필요해요.'}
+              : '받은 .envhandoff 파일을 선택하고 공유 코드를 입력하세요.'}
           </Heading>
-          {live && <LiveStatus state={state} receiving />}
+          <div className="flow-layout">
+          <div className="flow-main">
+          {live && <section className="flow-section"><LiveStatus state={state} receiving /></section>}
           <form
             onSubmit={(event) => {
               event.preventDefault()
@@ -131,6 +142,8 @@ export function ReceiveFlow({
           >
             <fieldset disabled={busy} className="plain-fieldset">
               {!live && (
+                <section className="flow-section" aria-labelledby="receive-file-heading">
+                  <div className="flow-section-header"><h2 id="receive-file-heading">공유 파일</h2></div>
                 <label className={`file-picker ${file ? 'chosen' : ''}`}>
                   <FileUp aria-hidden="true" />
                   <strong>{file ? file.name : '공유 파일 선택'}</strong>
@@ -154,7 +167,9 @@ export function ReceiveFlow({
                     }}
                   />
                 </label>
+                </section>
               )}
+              <section className="flow-section" aria-label="공유 코드 입력">
               <CodeInput
                 value={code}
                 onChange={(value) => {
@@ -162,8 +177,9 @@ export function ReceiveFlow({
                   setError('')
                 }}
               />
+              </section>
               {error && <Notice error>{error}</Notice>}
-              <div className="actions">
+              <div className="actions flow-toolbar">
                 {live ? (
                   <button type="button" className="text-button" onClick={fallback}>
                     공유 파일로 가져오기
@@ -184,6 +200,13 @@ export function ReceiveFlow({
               </div>
             </fieldset>
           </form>
+          </div>
+          <aside className="flow-aside" aria-label="공유 파일 안내">
+            <div className="flow-section-header"><h2>준비할 것</h2></div>
+            <p className="help">보낸 사람에게 받은 공유 파일과 공유 코드가 필요해요. 코드는 파일을 받은 곳과 다른 경로로 확인하세요.</p>
+            <details className="flow-options"><summary>코드를 잃었다면</summary><p className="help">공유 코드는 복구할 수 없어요. 보낸 사람에게 새 공유 파일과 코드를 요청하세요.</p></details>
+          </aside>
+          </div>
         </>
       )}
     </>
@@ -196,7 +219,7 @@ export function OpenedFiles({ bundle }: { bundle: OpenedBundle }) {
   const [notice, setNotice] = useState('')
   return (
     <>
-      <div className="summary">
+      <div className="summary flow-summary">
         <Check aria-hidden="true" />
         <div>
           <strong>{bundle.projectLabel}</strong>
@@ -206,24 +229,20 @@ export function OpenedFiles({ bundle }: { bundle: OpenedBundle }) {
           </p>
         </div>
       </div>
-      <Notice>
-        표시된 배치 경로는 Git 저장소 루트 기준이에요. <code>config/.env</code>라면 저장소의 <code>config</code>{' '}
-        폴더에 넣어주세요. 브라우저는 파일을 자동 적용하지 않아요. 기존 파일이 있다면 내용을 먼저 확인해주세요.
-      </Notice>
-      <div className="received-files">
+      <p className="help">다운로드한 파일은 아래 경로에 직접 넣어주세요. 브라우저에서 자동으로 적용하지 않아요.</p>
+      <div className="received-files flow-file-list">
         {bundle.files.map((file) => {
           const content = preview === file.path ? previewText(file.bytes) : null
           return (
-            <section className="received-file" key={file.path}>
+            <section className="received-file flow-section" key={file.path}>
               <div className="received-row">
                 <File aria-hidden="true" />
                 <div className="file-details">
-                  <h2 className="mono">{file.path}</h2>
+                  <h2 className="mono">{file.path.split('/').at(-1)}</h2>
                   <p>
                     {formatSize(file.bytes.byteLength)}
                     {requested.includes(file.path) ? ' · 다운로드 요청함' : ''}
                   </p>
-                  <p className="help">다운로드 파일 이름: <code>{file.path.split('/').at(-1)}</code></p>
                 </div>
                 <div className="file-actions">
                   <button
@@ -235,7 +254,7 @@ export function OpenedFiles({ bundle }: { bundle: OpenedBundle }) {
                     {preview === file.path ? '내용 숨기기' : '내용 보기'}
                   </button>
                   <button
-                    className="button primary"
+                    className="button"
                     type="button"
                     aria-label={`${file.path} 다운로드`}
                     onClick={() => {
@@ -253,7 +272,7 @@ export function OpenedFiles({ bundle }: { bundle: OpenedBundle }) {
               </div>
               <CopyField value={file.path} label="Git 저장소 루트 기준 배치 경로" />
               {bundle.files.some(other => other.path !== file.path && other.path.split('/').at(-1) === file.path.split('/').at(-1)) && (
-                <Notice>다른 경로에도 같은 파일 이름이 있어요. 다운로드할 때마다 저장 결과를 확인하고 표시된 경로로 옮겨주세요. 브라우저가 이름에 숫자를 붙일 수도 있어요.</Notice>
+                <Notice>같은 이름의 파일이 다른 경로에도 있어요. 브라우저가 이름에 숫자를 붙일 수 있으니 저장 결과를 확인하고, 이 경로에 원래 이름으로 넣으세요.</Notice>
               )}
               {preview === file.path && (
                 <div className="preview">

@@ -11,7 +11,7 @@ const HOUR = 3_600_000, DAY = 24 * HOUR
 test('deletion health detects exact deadlines without changing objects, identities or writer leases', async t => {
   const db = (await testDatabase(t)).connect(), now = 1_800_000_000_000
   const empty = { stalledUploads: { count: 0, oldestAgeMs: null }, overdueDeletions: { count: 0, oldestAgeMs: null } }
-  assert.deepEqual(await deletionHealth(db, now), { status: 'ok', checkedAt: now, uploads: empty, externalShares: empty })
+  assert.deepEqual(await deletionHealth(db, now), { status: 'ok', checkedAt: now, uploads: empty, externalShares: empty, environmentFiles: empty })
   for (const table of ['uploads', 'external_shares']) {
     const add = async (status: string, created: number, ended: number | null = null, deleted: number | null = null, lease: number | null = null) => {
       const id = randomUUID()
@@ -41,7 +41,7 @@ test('deletion health detects exact deadlines without changing objects, identiti
   const before = await Promise.all(['uploads', 'external_shares'].map(table => db.all(`SELECT * FROM ${table} ORDER BY id`)))
   const health = await deletionHealth(db, now)
   const expected = { stalledUploads: { count: 2, oldestAgeMs: 2 * HOUR }, overdueDeletions: { count: 3, oldestAgeMs: 3 * DAY } }
-  assert.deepEqual(health, { status: 'delayed', checkedAt: now, uploads: expected, externalShares: expected })
+  assert.deepEqual(health, { status: 'delayed', checkedAt: now, uploads: expected, externalShares: expected, environmentFiles: empty })
   assert.doesNotMatch(JSON.stringify(health), /private-|sender|receiver|token|digest/)
   assert.deepEqual(await Promise.all(['uploads', 'external_shares'].map(table => db.all(`SELECT * FROM ${table} ORDER BY id`))), before)
   const earlier = await deletionHealth(db, now - 1)

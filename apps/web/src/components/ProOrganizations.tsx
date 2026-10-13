@@ -10,6 +10,8 @@ import { ProRequests } from './ProRequests.tsx'
 import type { RequestDraft } from './ProRequests.tsx'
 import { ProCatalog } from './ProCatalog.tsx'
 import { ProShares } from './ProShares.tsx'
+import { validateFiles } from '../lib/bundle.ts'
+import type { SourceFile } from '../lib/bundle.ts'
 import { followProLink, proPath } from '../lib/pro-navigation.ts'
 import type { ProRoute } from '../lib/pro-navigation.ts'
 
@@ -39,7 +41,7 @@ const errors: Record<string, string> = {
   csrf_failed: '로그인 상태가 바뀌었어요. 새로고침 후 다시 시도해주세요.',
 }
 
-export function ProOrganizations({ api, userId, csrf, initialToken, route, onNavigate: navigate, onResolvedOrganization, settings, disabled, acceptNewTransfers = true, onExpired, onAccepted }: { api: string; userId: string; csrf: string; initialToken: string; route: ProRoute; onNavigate: (route: ProRoute) => void; onResolvedOrganization: (orgId: string) => void; settings: ReactNode; disabled: boolean; acceptNewTransfers?: boolean; onExpired: () => void; onAccepted: () => void }) {
+export function ProOrganizations({ api, userId, csrf, initialToken, route, onNavigate: navigate, onResolvedOrganization, settings, disabled, acceptNewTransfers = true, onExpired, onAccepted }: { api: string; userId: string; csrf: string; initialToken: string; route: ProRoute; onNavigate: (route: ProRoute) => void | boolean; onResolvedOrganization: (orgId: string) => void; settings: ReactNode; disabled: boolean; acceptNewTransfers?: boolean; onExpired: () => void; onAccepted: () => void }) {
   const lifetime = useRef<AbortController | null>(null), running = useRef<AbortController | null>(null)
   const refresh = useRef(() => {})
   const [accessUnavailable, setAccessUnavailable] = useState(false)
@@ -73,14 +75,53 @@ export function ProOrganizations({ api, userId, csrf, initialToken, route, onNav
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [requestDraft, setRequestDraft] = useState<(RequestDraft & { orgId: string }) | null>(null)
+  const [shareImport, setShareImport] = useState<{ id: string; orgId: string; environmentId: string; files: SourceFile[] } | null>(null)
   const [removing, setRemoving] = useState<{ id: string; login: string } | null>(null)
   const [change, setChange] = useState<{ question: string; path: string; body: Record<string, unknown> } | null>(null)
   const createFirst = !detail && !preview && !inviteInput.trim() && beta?.active && beta.owned < beta.workspaceLimit
-  function onNavigate(next: ProRoute) { setError(''); setMessage(''); navigate(next) }
+  function onNavigate(next: ProRoute) {
+    if (navigate(next) === false) return false
+    setError(''); setMessage(''); return true
+  }
+  function sharePublishedFiles(files: SourceFile[], environmentId: string) {
+    if (!detail || locked || !acceptNewTransfers) return
+    validateFiles(files.map(({ file, path }) => ({ path, size: file.size })))
+    if (onNavigate({ page: 'shares', orgId: detail.id, environmentId, create: true })) {
+      setShareImport({ id: crypto.randomUUID(), orgId: detail.id, environmentId, files: files.map(item => ({ ...item })) })
+    }
+  }
   const inviteTeamId = detail?.teams.find((team) => team.id === teamId)?.id ?? detail?.teams[0]?.id ?? ''
   const nav = (page: ProRoute['page']): ProRoute => ({ page, ...(selected ? { orgId: selected } : {}) })
   if (requestDraft && (route.orgId !== requestDraft.orgId || (route.page !== 'settings' && !(route.page === 'requests' && route.create)))) setRequestDraft(null)
-  const workspaceRoute = (orgId: string): ProRoute => orgId === selected ? { ...route, orgId } : { page: route.page === 'start' ? 'requests' : route.page, orgId }
+  if (shareImport && (route.orgId !== shareImport.orgId || route.page !== 'shares')) setShareImport(null)
+  else if (shareImport?.files.length && !route.create) setShareImport({ ...shareImport, files: [] })
+  const workspaceRoute = (orgId: string): ProRoute => orgId === selected ? { ...route, orgId } : { page: route.page === 'start' ? 'projects' : route.page, orgId }
+  const navRef = useRef<HTMLElement>(null), contentRef = useRef<HTMLDivElement>(null)
+  const routeKey = [route.page, route.orgId, route.id, route.environmentId, route.create].join(':'), shownRoute = useRef(routeKey)
+  // One shared indicator slides between nav items instead of the old item blinking off.
+  useLayoutEffect(() => {
+    const nav = navRef.current
+    if (!nav) return
+    const place = () => {
+      const active = nav.querySelector<HTMLElement>('a[aria-current="page"]')
+      nav.dataset.indicator = active ? 'on' : 'off'
+      if (active) nav.style.cssText = `--indicator-x:${active.offsetLeft}px;--indicator-y:${active.offsetTop}px;--indicator-w:${active.offsetWidth}px;--indicator-h:${active.offsetHeight}px`
+    }
+    place()
+    const frame = requestAnimationFrame(() => { nav.dataset.ready = '' })
+    // Resizes and late font loads snap into place; only route changes slide. The first callback is the initial observation.
+    let observed = false
+    const observer = new ResizeObserver(() => { if (!observed) { observed = true; return } delete nav.dataset.ready; place(); requestAnimationFrame(() => { nav.dataset.ready = '' }) })
+    observer.observe(nav)
+    return () => { cancelAnimationFrame(frame); observer.disconnect() }
+  }, [route.page, detail?.id])
+  // Page changes arrive with a short rise; state and DOM update immediately underneath.
+  useLayoutEffect(() => {
+    if (shownRoute.current === routeKey) return
+    shownRoute.current = routeKey
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    contentRef.current?.animate?.([{ opacity: 0, transform: 'translateY(8px)', filter: 'blur(3px)' }, { opacity: 1, transform: 'none', filter: 'none' }], { duration: 250, easing: 'cubic-bezier(.22,1,.36,1)' })
+  }, [routeKey])
   const expired = useRef(onExpired)
   useEffect(() => { expired.current = onExpired }, [onExpired])
   const resolved = useRef(onResolvedOrganization)
@@ -177,20 +218,23 @@ export function ProOrganizations({ api, userId, csrf, initialToken, route, onNav
               {!organizations.some(org => org.active) && <p>참여 중인 워크스페이스가 없어요.</p>}
               <div className="pro-switcher-footer"><small>소유 {beta?.owned ?? 0} / {beta?.workspaceLimit ?? 2}개</small>
               {beta?.active ? <button type="button" disabled={busy || locked || beta.owned >= beta.workspaceLimit} onClick={openCreate}><Plus aria-hidden="true" />새 워크스페이스 만들기</button> : <a href={proPath(nav('beta'))} onClick={event => { followProLink(event,nav('beta'),onNavigate); if(switcher.current)switcher.current.open=false }}>Pro Beta 참여하기</a>}
-              {beta?.active && beta.owned >= beta.workspaceLimit && <small>베타에서는 최대 2개까지 소유할 수 있어요.</small>}</div>
+              {beta?.active && beta.owned >= beta.workspaceLimit && <small>베타에서는 최대 2개까지 소유할 수 있어요.</small>}
+              <a href={proPath(nav('start'))} onClick={event => { followProLink(event, nav('start'), onNavigate); if(switcher.current)switcher.current.open=false }}>워크스페이스 참여</a>
+              {beta?.active && <a href={proPath(nav('beta'))} onClick={event => { followProLink(event, nav('beta'), onNavigate); if(switcher.current)switcher.current.open=false }}>{beta.operator ? '베타 참여 관리' : '내 베타 이용 현황'}</a>}
+              </div>
             </div>
           </details>
         </div>
-        {detail && <nav aria-label="워크스페이스 메뉴">{([['requests','요청함',Inbox],['projects','프로젝트',Folder],['shares','외부 공유',Link],['team','멤버 · 팀',Users]] as const).map(([page,label,Icon]) => <a key={page} href={proPath(nav(page))} aria-current={route.page === page ? 'page' : undefined} onClick={event => followProLink(event, nav(page), onNavigate)}><Icon aria-hidden="true" />{label}</a>)}</nav>}
+        {detail && <nav className="pro-nav" ref={navRef} aria-label="워크스페이스 메뉴"><span className="pro-nav-indicator" aria-hidden="true" />{([['projects','프로젝트',Folder],['requests','요청함',Inbox],['shares','공유 링크',Link],['team','멤버 · 팀',Users]] as const).map(([page,label,Icon]) => <a key={page} href={proPath(nav(page))} aria-current={route.page === page ? 'page' : undefined} onClick={event => followProLink(event, nav(page), onNavigate)}><Icon aria-hidden="true" />{label}</a>)}</nav>}
         <div className="pro-sidebar-bottom"><a href={proPath(nav('start'))} aria-current={route.page === 'start' ? 'page' : undefined} onClick={event => followProLink(event, nav('start'), onNavigate)}>워크스페이스 참여</a>
         <a href={proPath(nav('beta'))} aria-current={route.page === 'beta' ? 'page' : undefined} onClick={event => followProLink(event,nav('beta'),onNavigate)}>{beta?.operator ? '베타 참여 관리' : beta?.active ? '내 베타 이용 현황' : 'Pro Beta 참여하기'}</a></div>
       </aside>
-      <div className="pro-content" tabIndex={-1} aria-label="워크스페이스 내용">
+      <div className="pro-content" ref={contentRef} tabIndex={-1} aria-label="워크스페이스 내용">
       {error && !creating && <Notice error={error !== errors.reauthentication_required}><span role={error === errors.reauthentication_required ? 'status' : undefined}>{error}</span>{error === errors.reauthentication_required && <button type="button" className="button" onClick={() => onNavigate(nav('settings'))}>내 설정에서 본인 확인</button>}</Notice>}
       {accessUnavailable && <button type="button" className="button" disabled={busy || disabled} onClick={() => refresh.current()}>워크스페이스 상태 다시 확인</button>}
       {message && <p role="status">{message}</p>}
       {route.page === 'start' && <section className="pro-page"><header className="pro-page-header"><div><h2>워크스페이스 참여</h2><p>{detail ? '참여 중인 팀을 열거나 새로운 워크스페이스에 참여하세요.' : '팀의 초대 링크로 참여하세요. 직접 팀을 시작하려면 베타 참여 코드가 필요해요.'}</p></div></header>
-        {detail && <div className="pro-current-workspace"><div><span className="pro-badge">현재 워크스페이스 · {detail.role === 'owner' ? 'Owner' : 'Member'}</span><h3>{detail.name}</h3><p>요청함에서 팀의 파일 전달 요청을 확인할 수 있어요.</p></div><div className="actions"><a className={'button' + (preview ? '' : ' primary')} href={proPath(nav('requests'))} onClick={event => followProLink(event, nav('requests'), onNavigate)}>요청함 열기</a>{detail.role === 'owner' && <a className="text-button" href={proPath(nav('team'))} onClick={event => followProLink(event, nav('team'), onNavigate)}>멤버 초대·관리</a>}</div></div>}
+        {detail && <div className="pro-current-workspace"><div><span className="pro-badge">현재 워크스페이스 · {detail.role === 'owner' ? 'Owner' : 'Member'}</span><h3>{detail.name}</h3><p>프로젝트와 환경을 선택해 게시 파일과 배치 경로를 확인하세요.</p></div><div className="actions"><a className={'button' + (preview ? '' : ' primary')} href={proPath(nav('projects'))} onClick={event => followProLink(event, nav('projects'), onNavigate)}>프로젝트 열기</a><a className="button" href={proPath(nav('requests'))} onClick={event => followProLink(event, nav('requests'), onNavigate)}>요청함 열기</a>{detail.role === 'owner' && <a className="text-button" href={proPath(nav('team'))} onClick={event => followProLink(event, nav('team'), onNavigate)}>멤버 초대·관리</a>}</div></div>}
       <div className="pro-join-grid">
       <section className="pro-join-card" aria-labelledby="workspace-invite-title"><div className="pro-join-icon"><Users aria-hidden="true" /></div><span className="pro-badge">워크스페이스 초대 링크</span><h3 id="workspace-invite-title">초대받은 워크스페이스에 참여</h3><p id="workspace-invite-help">워크스페이스 Owner에게 받은 링크를 붙여넣으세요. 베타 코드 없이도 해당 워크스페이스의 멤버로 참여할 수 있어요.</p>
       <fieldset className="plain-fieldset" disabled={busy || locked}>
@@ -220,15 +264,16 @@ export function ProOrganizations({ api, userId, csrf, initialToken, route, onNav
       {route.page === 'settings' && <>{requestDraft && requestDraft.orgId === route.orgId && <Notice>기기 등록·승인을 마친 뒤 요청 작성으로 돌아가세요. 선택한 환경과 멤버를 이 탭에 유지하고 있어요.<a className="button primary" href={proPath({page:'requests',orgId:requestDraft.orgId,create:true,...(requestDraft.environmentId ? {environmentId:requestDraft.environmentId} : {})})} onClick={event => followProLink(event,{page:'requests',orgId:requestDraft.orgId,create:true,...(requestDraft.environmentId ? {environmentId:requestDraft.environmentId} : {})},onNavigate)}>요청 작성으로 돌아가기</a></Notice>}{settings}</>}
       {route.page === 'beta' && beta && <ProBeta status={beta} busy={busy || locked} call={call} run={run} onActivated={setBeta} onCreate={openCreate} onSettings={() => onNavigate(nav('settings'))} />}
         {detail && (!route.orgId || detail.id === route.orgId) && <>
-          {route.page === 'team' && <section className="pro-page"><header className="pro-page-header"><div><h2>멤버 · 팀</h2><p>{detail.name} · {detail.members.length}명의 멤버</p></div>{detail.role === 'owner' && <button className="button primary" disabled={busy || locked} onClick={() => { if(memberInvite.current) { memberInvite.current.open = true; memberInvite.current.querySelector('input')?.focus() } }}>워크스페이스에 멤버 초대</button>}</header><fieldset className="plain-fieldset pro-panel" disabled={busy || locked}><legend>멤버</legend>
+          {route.page === 'team' && <section className="pro-page"><header className="pro-page-header"><div><h2>멤버 · 팀</h2><p>{detail.name} · {detail.members.length}명의 멤버</p></div>{detail.role === 'owner' && <button className="button primary" disabled={busy || locked} onClick={() => { if(memberInvite.current) { memberInvite.current.open = true; memberInvite.current.querySelector('input')?.focus() } }}>워크스페이스에 멤버 초대</button>}</header><fieldset className="plain-fieldset" disabled={busy || locked}><legend className="sr-only">멤버 목록</legend>
           <ul className="pro-members">{detail.members.map((member) => <li key={member.id}><span>{member.login}{member.id === userId ? ' · 나' : ''}<small>{member.role === 'owner' ? 'Owner' : 'Member'}</small></span><div className="actions">
             {detail.role === 'owner' && <details className="pro-member-menu" onKeyDown={event => { if (event.key === 'Escape') { event.currentTarget.open = false; event.currentTarget.querySelector('summary')?.focus() } }}><summary aria-label={`${member.login} 멤버 관리`}>멤버 관리</summary><div className="actions"><button type="button" className="button" onClick={() => { setRemoving(null); setChange({question:`${member.login} 계정을 ${member.role === 'owner' ? 'Member' : 'Owner'}로 변경할까요? ${member.role === 'owner' ? '저장된 팀원 권한이 적용되고, 접근을 잃는 진행 중 요청과 공유는 종료돼요.' : '모든 프로젝트에서 받기·보내기·외부 공유 권한을 자동으로 받아요.'}`,path:`/members/${member.id}/role`,body:{role:member.role === 'owner' ? 'member' : 'owner'}}) }}>{member.role === 'owner' ? 'Member로 변경' : 'Owner로 지정'}</button>{member.id !== userId && <button type="button" className="button" onClick={() => { setRemoving(null); setChange({question:`${member.login} 계정으로 Owner를 이전할까요? 상대는 모든 파일 작업 권한을 받고, 나는 Member로 바뀌어 저장된 팀원 권한이 적용돼요. 접근을 잃는 진행 중 요청과 공유는 종료돼요.`,path:'/owner-transfer',body:{userId:member.id}}) }}>Owner 이전</button>}<button type="button" className="button pro-danger-action" onClick={() => { setChange(null); setRemoving(member) }}>{member.id === userId ? '탈퇴' : '제외'}</button></div></details>}
             {detail.role !== 'owner' && member.id === userId && <button type="button" className="button pro-danger-action" onClick={() => { setChange(null); setRemoving(member) }}>탈퇴</button>}
           </div></li>)}</ul>
           {removing && <div className="pro-confirm" role="group" aria-label="멤버 제외 확인"><p>{removing.login} 계정을 이 워크스페이스에서 제외할까요? 이 조직의 파일 접근도 종료돼요.</p><div className="actions"><button type="button" className="button" onClick={() => { void run(async () => { await call(`/organizations/${detail.id}/members/${removing.id}/remove`, {}); setRemoving(null); if(removing.id === userId){setDetail(null);await load('');onNavigate({page:'start'})}else{await load();setMessage('워크스페이스에서 제외했어요.')} }) }}>제외 확인</button><button type="button" className="button" onClick={() => setRemoving(null)}>취소</button></div></div>}
           {change && <div className="pro-confirm" role="group" aria-label="워크스페이스 변경 확인"><p>{change.question}</p><div className="actions"><button type="button" className="button" onClick={() => { void run(async () => { await call('/organizations/'+detail.id+change.path,change.body);setChange(null);if(change.path==='/remove'){setDetail(null);await load('');onNavigate({page:'start'})}else{await load();setMessage('변경 사항을 저장했어요.')} }) }}>변경 확인</button><button type="button" className="button" onClick={() => setChange(null)}>취소</button></div></div>}
-          {detail.role === 'owner' && <>
-            <details className="pro-panel pro-member-invitation" ref={memberInvite}><summary>워크스페이스에 멤버 초대</summary><p className="help">이 워크스페이스에 참여할 사람을 초대해요. 베타 개설 권한은 부여하지 않아요.</p><form className="pro-form" onSubmit={(event) => { event.preventDefault(); void run(async () => {
+          </fieldset>
+          {detail.role === 'owner' && <fieldset className="plain-fieldset" disabled={busy || locked}><legend className="sr-only">초대와 워크스페이스 관리</legend>
+            <details className="pro-settings-section pro-member-invitation" ref={memberInvite}><summary>워크스페이스에 멤버 초대</summary><p className="help">참여할 GitHub 계정을 지정해 초대 링크를 만들어요.</p><form className="pro-form" onSubmit={(event) => { event.preventDefault(); void run(async () => {
               const invite = await call(`/organizations/${detail.id}/invitations`, { login: login.trim(), teamId: inviteTeamId })
               setCreatedLink(invite.url); setLogin(''); await load(); setMessage(`${invite.login} 계정용 초대를 만들었어요. 7일 안에 수락할 수 있어요.`)
             }) }}>
@@ -241,11 +286,11 @@ export function ProOrganizations({ api, userId, csrf, initialToken, route, onNav
             {detail.invitations.length > 0 && <><h3>수락 대기 중</h3><ul className="pro-members">{detail.invitations.map((invite) => <li key={invite.id}><span>{invite.login} · {new Date(invite.expiresAt).toLocaleDateString()}까지</span><button type="button" className="button" onClick={() => { void run(async () => { await call(`/organizations/${detail.id}/invitations/${invite.id}/cancel`, {}); setCreatedLink(''); await load(); setMessage('초대를 취소했어요.') }) }}>초대 취소</button></li>)}</ul></>}
             <p className="pro-onboarding-note">Owner 변경·이전·조직 삭제는 최근 15분 이내 본인 확인이 필요해요. <a href={proPath(nav('settings'))} onClick={event => followProLink(event,nav('settings'),onNavigate)}>설정에서 본인 확인</a></p>
             <details className="pro-danger"><summary>워크스페이스 삭제</summary><p>이 조직의 멤버 관계와 파일 접근을 종료해요. 계정·기기·다른 워크스페이스는 유지돼요.</p><button className="button pro-danger-action" type="button" onClick={() => {setRemoving(null);setChange({question:`${detail.name} 워크스페이스를 삭제할까요? 되돌릴 수 없어요.`,path:'/remove',body:{}})}}>워크스페이스 삭제</button></details>
-          </>}
-          </fieldset></section>}
+          </fieldset>}
+          </section>}
           {route.page === 'requests' && <ProRequests key={'requests:' + detail.id + userId + csrf} route={route} onNavigate={onNavigate} api={api} orgId={detail.id} userId={userId} csrf={csrf} acceptNewTransfers={acceptNewTransfers} disabled={busy || locked} onExpired={onExpired} draft={requestDraft?.orgId === detail.id ? requestDraft : undefined} onPrepareDevice={draft => { setRequestDraft({...draft,orgId:detail.id}); onNavigate(nav('settings')) }} onRequestCreated={() => setRequestDraft(null)} />}
-          {route.page === 'shares' && <ProShares key={'shares:' + detail.id + userId + csrf} route={route} onNavigate={onNavigate} api={api} orgId={detail.id} userId={userId} csrf={csrf} acceptNewTransfers={acceptNewTransfers} disabled={busy || locked} onExpired={onExpired} />}
-          {(route.page === 'projects' || route.page === 'team') && <ProCatalog key={detail.id+':'+route.page} api={api} orgId={detail.id} csrf={csrf} members={detail.members} route={route} onNavigate={onNavigate} disabled={busy || locked} onExpired={onExpired} onTeamsChanged={async () => {
+          {route.page === 'shares' && <ProShares key={'shares:' + detail.id + userId + csrf + ':' + (shareImport?.id ?? 'direct')} initialFiles={shareImport && route.create && route.environmentId === shareImport.environmentId ? shareImport.files : undefined} route={route} onNavigate={onNavigate} api={api} orgId={detail.id} userId={userId} csrf={csrf} acceptNewTransfers={acceptNewTransfers} disabled={busy || locked} onExpired={onExpired} />}
+          {(route.page === 'projects' || route.page === 'team') && <ProCatalog key={detail.id+':'+route.page} api={api} orgId={detail.id} userId={userId} acceptNewTransfers={acceptNewTransfers} onExternalShare={sharePublishedFiles} csrf={csrf} members={detail.members} route={route} onNavigate={onNavigate} disabled={busy || locked} onExpired={onExpired} onTeamsChanged={async () => {
             const updated: Detail = await call('/organizations/' + detail.id)
             setDetail((current) => current?.id === updated.id ? updated : current)
           }} />}

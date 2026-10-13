@@ -169,10 +169,16 @@ export function SendFlow({ onHome }: { onHome: () => void }) {
             check()
           }}
         >
-          <Heading title="보낼 파일을 골라주세요">
-            .env나 개발 설정 파일을 선택하면, 이 브라우저에서 암호화해요.
+          <Heading title="설정 파일 보내기">
+            파일을 고르고, 받는 사람이 넣을 경로를 확인하세요.
           </Heading>
-          <fieldset className="plain-fieldset" disabled={busy}>
+          <fieldset className="plain-fieldset flow-layout" disabled={busy}>
+            <div className="flow-main">
+            <section className="flow-section" aria-labelledby="send-files-heading">
+              <div className="flow-section-header">
+                <h2 id="send-files-heading">보낼 파일</h2>
+                <span className="muted">{selected.length ? `${selected.length}개 · ${formatSize(total)}` : '.env · 개발 설정 파일'}</span>
+              </div>
             <label
               className={`file-picker ${files.length ? 'compact' : ''} ${dragging ? 'dragging' : ''}`}
               onDragOver={(event) => {
@@ -197,7 +203,7 @@ export function SendFlow({ onHome }: { onHome: () => void }) {
               }}
             >
               <FilePlus2 aria-hidden="true" />
-              <strong>{dragging ? '여기에 파일을 놓아주세요' : '파일을 끌어다 놓거나 눌러서 선택'}</strong>
+              <strong>{dragging ? '여기에 파일을 놓아주세요' : files.length ? '파일 추가' : '파일을 끌어다 놓거나 선택하세요'}</strong>
               <span>파일당 1 MiB · 전체 10 MiB · 최대 100개</span>
               <input
                 type="file"
@@ -210,7 +216,7 @@ export function SendFlow({ onHome }: { onHome: () => void }) {
               />
             </label>
             {files.length > 0 && (
-              <section className="file-list" aria-label="보낼 파일 목록">
+              <section className="file-list flow-file-list" aria-label="보낼 파일 목록">
                 <div className="file-list-header">
                   <label className="check-label">
                     <input
@@ -251,7 +257,7 @@ export function SendFlow({ onHome }: { onHome: () => void }) {
                         <span>{formatSize(item.file.size)}</span>
                       </div>
                       <label className="help" htmlFor={`path-${item.id}`}>
-                        {item.file.name}의 Git 저장소 루트 기준 배치 경로
+                        배치 경로 <span className="sr-only">· {item.file.name} · Git 저장소 루트 기준</span>
                       </label>
                       <input
                         id={`path-${item.id}`}
@@ -322,77 +328,11 @@ export function SendFlow({ onHome }: { onHome: () => void }) {
                 <p className="help" role="status">{envEditNotice}</p>
               </section>
             )}
-            <details className="share-options">
-              <summary>공유 설정 <span>이름 · 환경</span></summary>
-              <div className="fields two-columns">
-                <div className="field">
-                  <label htmlFor="project">프로젝트 표시명</label>
-                  <input
-                    id="project"
-                    value={project}
-                    onChange={(event) => {
-                      edit()
-                      setProject(event.target.value)
-                    }}
-                    placeholder="설정 공유 (선택 입력)"
-                    maxLength={80}
-                    autoComplete="off"
-                  />
-                  <p className="help">비워두면 ‘설정 공유’로 표시해요.</p>
-                </div>
-                <div className="field">
-                  <label htmlFor="environment">환경 이름</label>
-                  <input
-                    id="environment"
-                    value={environment}
-                    onChange={(event) => {
-                      edit()
-                      setEnvironment(event.target.value)
-                    }}
-                    maxLength={48}
-                    autoComplete="off"
-                  />
-                  <p className="help">예: development, staging</p>
-                </div>
-              </div>
-            </details>
-            <fieldset className="method-options" disabled={busy}>
-              <legend>전달 방식</legend>
-              <label className={`method-option ${method === 'file' ? 'selected' : ''}`}>
-                <input
-                  type="radio"
-                  name="method"
-                  value="file"
-                  checked={method === 'file'}
-                  onChange={() => setMethod('file')}
-                />
-                <File aria-hidden="true" />
-                <span>
-                  <strong>공유 파일로 전달 <span className="tag">기본</span></strong>
-                  <small>암호화 파일을 내려받아 AirDrop이나 메신저로 보내요.</small>
-                  <span className="tag">서로 접속 시간이 달라도 괜찮아요</span>
-                </span>
-              </label>
-              <label className={`method-option ${method === 'live' ? 'selected' : ''}`}>
-                <input
-                  type="radio"
-                  name="method"
-                  value="live"
-                  checked={method === 'live'}
-                  onChange={() => setMethod('live')}
-                />
-                <Radio aria-hidden="true" />
-                <span>
-                  <strong>실시간으로 전달</strong>
-                  <small>연결 링크를 보내고, 상대를 확인한 뒤 바로 전달해요.</small>
-                  <span className="tag">두 사람 모두 이 화면을 열어두세요</span>
-                </span>
-              </label>
-            </fieldset>
-            <details className="env-editor" ref={envEditor}>
-              <summary>환경변수 직접 입력</summary>
+            </section>
+            <details className="env-editor flow-options" ref={envEditor}>
+              <summary>파일 없이 .env 만들기</summary>
               <p className="help" id="env-help">
-                파일이 없어도 키와 값을 입력해 공유할 수 있어요. 값은 따옴표로 감싸지 말고 그대로 입력해주세요.
+                키와 값을 입력하면 보낼 파일 목록에 .env를 추가해요. 값은 따옴표 없이 입력하세요.
               </p>
               <div className="env-rows">
                 {envRows.map((row, index) => (
@@ -463,29 +403,103 @@ export function SendFlow({ onHome }: { onHome: () => void }) {
                 </button>
                 <button type="button" className="button" onClick={addEnv}>.env 파일로 추가</button>
               </div>
-              <p className="help" role="status">{envAdded ? '.env 파일을 아래 목록에 추가했어요. 공유 경로를 확인해주세요.' : ''}</p>
+              <p className="help" role="status">{envAdded ? '.env 파일을 목록에 추가했어요. 배치 경로를 확인해주세요.' : ''}</p>
             </details>
             {files.length > 0 && (
               <p className="help spaced">
-                배치 경로는 보내는 프로젝트의 Git 저장소 루트 기준 상대 경로예요. 예를 들어 저장소의{' '}
-                <code>config/.env</code> 파일은 <code>config/.env</code>로 적어주세요. 브라우저는 Git 루트를 자동으로 찾지 않아요.
+                배치 경로는 Git 저장소 루트 기준이에요. 예: <code>apps/api/.env</code>. 받는 사람이 이 위치에 직접 넣어요.
               </p>
             )}
             {error && <Notice error>{error}</Notice>}
-            <div className="actions">
+            <div className="actions flow-toolbar">
               <span className="muted">선택한 파일만 공유해요.</span>
               <button className="button primary" type="submit" disabled={!selected.length || busy}>
                 {busy ? '암호화하는 중…' : method === 'live' ? '실시간 전달 준비' : '공유 파일 만들기'}
                 <ArrowRight aria-hidden="true" />
               </button>
             </div>
+            </div>
+            <aside className="flow-aside" aria-label="공유 옵션">
+              <div className="flow-section-header"><h2>전달 준비</h2></div>
+              <p className="help">파일은 이 브라우저에서 암호화해요. 만든 공유 파일과 코드를 상대에게 보내면 돼요.</p>
+            <details className="share-options flow-options">
+              <summary>이름과 환경 <span>선택 입력</span></summary>
+              <div className="fields two-columns">
+                <div className="field">
+                  <label htmlFor="project">프로젝트 표시명</label>
+                  <input
+                    id="project"
+                    value={project}
+                    onChange={(event) => {
+                      edit()
+                      setProject(event.target.value)
+                    }}
+                    placeholder="설정 공유 (선택 입력)"
+                    maxLength={80}
+                    autoComplete="off"
+                  />
+                  <p className="help">비워두면 ‘설정 공유’로 표시해요.</p>
+                </div>
+                <div className="field">
+                  <label htmlFor="environment">환경 이름</label>
+                  <input
+                    id="environment"
+                    value={environment}
+                    onChange={(event) => {
+                      edit()
+                      setEnvironment(event.target.value)
+                    }}
+                    maxLength={48}
+                    autoComplete="off"
+                  />
+                  <p className="help">예: development, staging</p>
+                </div>
+              </div>
+            </details>
+            <details className="flow-options">
+              <summary>전달 방식 <span>{method === 'live' ? '실시간 연결' : '공유 파일'}</span></summary>
+            <fieldset className="method-options" disabled={busy}>
+              <legend>전달 방식</legend>
+              <label className={`method-option ${method === 'file' ? 'selected' : ''}`}>
+                <input
+                  type="radio"
+                  name="method"
+                  value="file"
+                  checked={method === 'file'}
+                  onChange={() => setMethod('file')}
+                />
+                <File aria-hidden="true" />
+                <span>
+                  <strong>공유 파일</strong>
+                  <small>내려받아 메신저·AirDrop으로 전달</small>
+                </span>
+              </label>
+              <label className={`method-option ${method === 'live' ? 'selected' : ''}`}>
+                <input
+                  type="radio"
+                  name="method"
+                  value="live"
+                  checked={method === 'live'}
+                  onChange={() => setMethod('live')}
+                />
+                <Radio aria-hidden="true" />
+                <span>
+                  <strong>실시간 연결</strong>
+                  <small>둘 다 접속한 상태에서 상대를 확인하고 전달</small>
+                </span>
+              </label>
+            </fieldset>
+            </details>
+            </aside>
           </fieldset>
         </form>
       )}
       {step === 1 &&
         sealed &&
         (method === 'live' ? (
-          <LiveSender sealed={sealed} onFallback={() => setMethod('file')} onHome={onHome} />
+          <div className="flow-result">
+            <LiveSender sealed={sealed} onFallback={() => setMethod('file')} onHome={onHome} />
+          </div>
         ) : (
           <FileDelivery sealed={sealed} onHome={onHome} />
         ))}
@@ -498,14 +512,14 @@ function FileDelivery({ sealed, onHome }: { sealed: SealedBundle; onHome: () => 
   return (
     <>
       <Heading title="이제 파일과 코드를 건네주세요">
-        암호화 파일이 준비됐어요. 두 가지만 전달하면 돼요.
+        공유 파일을 보내고, 코드는 다른 대화 경로로 전달하세요.
       </Heading>
-      <section className="task-card">
-        <span className="task-number">1</span>
+      <div className="flow-layout">
+      <div className="flow-main flow-result">
+      <section className="task-card flow-section">
         <div>
-          <h2>공유 파일 전달하기</h2>
-          <p className="muted">내려받은 파일을 AirDrop·메신저·이메일 첨부로 보내주세요.</p>
-          <div className="download-card">
+          <div className="flow-section-header"><h2>1. 공유 파일 보내기</h2></div>
+          <div className="download-card flow-file-list">
             <File aria-hidden="true" />
             <div>
               <strong className="mono">{sealed.filename}</strong>
@@ -530,19 +544,24 @@ function FileDelivery({ sealed, onHome }: { sealed: SealedBundle; onHome: () => 
           </p>
         </div>
       </section>
-      <section className="task-card">
-        <span className="task-number">2</span>
+      <section className="task-card flow-section">
         <div>
-          <h2>공유 코드는 따로 전달하기</h2>
-          <p className="muted">파일을 보낸 곳과 다른 대화 경로로 공유해주세요.</p>
+          <div className="flow-section-header"><h2>2. 공유 코드 따로 보내기</h2></div>
+          <p className="help">파일을 메신저로 보냈다면 코드는 전화 등 다른 경로로 알려주세요.</p>
           <CopyField value={sealed.code} label="이 파일의 공유 코드" secret />
         </div>
       </section>
-      <Notice>파일과 코드의 복사·다운로드만으로 상대의 수신 여부를 확인할 수는 없어요.</Notice>
-      <div className="actions end">
+      <div className="actions end flow-toolbar">
         <button type="button" className="button" onClick={onHome}>
           작업 마치기
         </button>
+      </div>
+      </div>
+      <aside className="flow-aside" aria-label="받는 사람 안내">
+        <div className="flow-section-header"><h2>받는 사람은</h2></div>
+        <p className="help">EnvHandoff에서 공유 파일을 선택하고 코드를 입력하면 원본 파일과 배치 경로를 볼 수 있어요.</p>
+        <p className="help">복사·다운로드만으로 상대의 수신 여부를 확인할 수는 없어요.</p>
+      </aside>
       </div>
     </>
   )

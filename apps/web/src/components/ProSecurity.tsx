@@ -3,7 +3,7 @@ import { startAuthentication, startRegistration, WebAuthnAbortService } from '@s
 import QRCode from 'qrcode'
 import { answerDeviceChallenge, deviceIdentity, identityFingerprint } from '@envhandoff/protocol/device-proof'
 import type { DeviceAction, DeviceIdentity, EncryptedDeviceChallenge } from '@envhandoff/protocol/device-proof'
-import { createLocalDevice, deleteLocalDevice, loadLocalDevice } from '../lib/device-keys.ts'
+import { createLocalDevice, deleteLocalDevice, loadLocalDevice, pinPeerIdentity } from '../lib/device-keys.ts'
 import type { LocalDevice } from '../lib/device-keys.ts'
 import { CopyField, Notice } from './ui.tsx'
 
@@ -11,6 +11,7 @@ type Device = { identity: DeviceIdentity; status: 'pending' | 'active' | 'revoke
 type Security = {
   passkeys: { id: string; label: string }[]; totp: boolean; totpAvailable: boolean; reauthenticatedUntil: number
   sessionHash: string; canRegisterDevice: boolean; devices: Device[]
+  accountDeletionPublishedEnvironmentCount?: number
 }
 const errors: Record<string, string> = {
   reauthentication_required: '패스키 또는 인증 앱으로 먼저 본인 확인을 해주세요.',
@@ -41,6 +42,7 @@ export function ProSecurity({ api, userId, csrf, disabled, onExpired, onDeleted 
   const [setup, setSetup] = useState<{ id: string; secret: string; qr: string; expiresAt: number } | null>(null)
   const [selection, setSelection] = useState<{ action: 'approve' | 'revoke'; device: Device } | null>(null)
   const [fingerprint, setFingerprint] = useState('')
+  const [pinOwn, setPinOwn] = useState(false)
   const [deletion, setDeletion] = useState('')
   const lifetime = useRef(new AbortController())
   const running = useRef(false)
@@ -116,20 +118,24 @@ export function ProSecurity({ api, userId, csrf, disabled, onExpired, onDeleted 
     const expected = { ...wire.challenge, action, actor, target: intended, sessionHash: state.sessionHash }
     const proof = await answerDeviceChallenge(wire, expected, keys.keys, keys.signingKeys.privateKey)
     await call('/security/devices/complete', { id: wire.challenge.id, proof })
-    setSelection(null); setFingerprint('')
+    // Explicit opt-in: the same confirmed fingerprint lets environment files grant keys to this own device.
+    if (action === 'approve' && pinOwn) await pinPeerIdentity(userId, intended, fingerprint.trim())
+    setSelection(null); setFingerprint(''); setPinOwn(false)
   }
 
   return <section className="pro-organizations pro-security" aria-labelledby="security-title" aria-busy={locked}>
-    <h2 id="security-title">본인 확인과 내 기기</h2>
-    <p className="help">인증 수단을 등록하고, 파일을 받을 브라우저를 확인하세요.</p>
+    <header className="pro-page-header"><div><h2 id="security-title">본인 확인과 내 기기</h2><p>로그인을 보호하고 파일을 받을 브라우저를 관리하세요.</p></div>
+      <button type="button" className="button" disabled={locked} onClick={() => { void run(async () => {}) }}>보안 상태 다시 조회</button>
+    </header>
     {error && <Notice error>{error}</Notice>}
     <p className="pro-operation-status" role="status">{busy ? '보안 설정을 확인하고 있어요.' : message}</p>
-    <button type="button" className="button" disabled={locked} onClick={() => { void run(async () => {}) }}>보안 상태 다시 조회</button>
     {state && <>
-      <fieldset className="plain-fieldset pro-panel" disabled={locked}>
+      <div className="pro-security-summary"><span>인증 수단 {state.passkeys.length + Number(state.totp)}개</span><span>등록 기기 {state.devices.filter(device => device.status !== 'revoked').length}개</span><span>{mine ? `현재 브라우저 ${mine.status === 'active' ? '사용 가능' : mine.status === 'pending' ? '승인 대기' : '회수됨'}` : '현재 브라우저 미등록'}</span></div>
+      <fieldset className="plain-fieldset pro-security-reauth" disabled={locked}>
         <legend>본인 확인</legend>
-        <p>인증 수단 추가·삭제나 기기 승인·회수 전에 등록한 패스키 또는 인증 앱으로 확인해주세요. 확인은 현재 로그인에서 15분간 유효해요.</p>
-        {state.reauthenticatedUntil > Date.now() && <p>본인 확인 완료 · {new Date(state.reauthenticatedUntil).toLocaleTimeString()}까지</p>}
+        <p className="help">인증 수단이나 기기를 변경하기 전에 확인해주세요. 현재 로그인에서 15분간 유효해요.</p>
+        {state.reauthenticatedUntil > Date.now() && <p className="pro-badge">본인 확인 완료 · {new Date(state.reauthenticatedUntil).toLocaleTimeString()}까지</p>}
+        <div className="pro-form-grid">
         {state.passkeys.length > 0 && <button className="button" type="button" onClick={() => { void run(async () => {
           const { id, options } = await call('/security/reauth/options', {})
           const response = await startAuthentication({ optionsJSON: options })
@@ -142,11 +148,11 @@ export function ProSecurity({ api, userId, csrf, disabled, onExpired, onDeleted 
           <input id="reauth-code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} required value={code} onChange={event => setCode(event.target.value)} />
           <button className="button" type="submit">코드로 본인 확인</button>
         </form>}
-        {!state.totp && !state.passkeys.length && <Notice>아래에서 첫 인증 수단을 등록해주세요. 첫 등록은 로그인 후 15분 안에 할 수 있어요.</Notice>}
+        </div>{!state.totp && !state.passkeys.length && <Notice>아래에서 첫 인증 수단을 등록해주세요. 첫 등록은 로그인 후 15분 안에 할 수 있어요.</Notice>}
       </fieldset>
-      <fieldset className="plain-fieldset pro-panel" disabled={locked}>
+      <fieldset className="plain-fieldset pro-security-section" disabled={locked}>
         <legend>인증 수단</legend>
-        <p>패스키와 인증 앱을 함께 등록해두면 하나를 잃어도 다른 수단을 쓸 수 있어요. 모든 수단을 잃으면 여기서 직접 복구할 수 없어요.</p>
+        <p className="help">패스키와 인증 앱을 함께 등록해두면 하나를 잃어도 다른 수단을 쓸 수 있어요. 모든 수단을 잃으면 직접 복구할 수 없어요.</p>
         {(state.passkeys.length > 0 || state.totp) && removalReason && <p id="factor-removal-reason">{removalReason}</p>}
         <ul className="pro-members">{state.passkeys.map(key => <li key={key.id}><span>패스키 · {key.label}</span><button className="button" type="button" disabled={!!removalReason} aria-describedby={removalReason ? 'factor-removal-reason' : undefined} onClick={() => {
           void run(async () => { await call('/security/passkeys/remove', { id: key.id }); setSetup(null) }, '패스키를 삭제했어요.', `${key.label} 패스키를 삭제할까요?`)
@@ -156,8 +162,9 @@ export function ProSecurity({ api, userId, csrf, disabled, onExpired, onDeleted 
           const response = await startRegistration({ optionsJSON: options })
           await call('/security/passkeys/verify', { id, response })
         }, '패스키를 등록했어요. 위에서 본인 확인을 진행할 수 있어요.') }}>
-          <label htmlFor="passkey-name">패스키 이름</label><input id="passkey-name" value={name} maxLength={60} required onChange={event => setName(event.target.value)} />
+          <div className="pro-toolbar"><div className="pro-field"><label htmlFor="passkey-name">패스키 이름</label><input id="passkey-name" value={name} maxLength={60} required onChange={event => setName(event.target.value)} /></div>
           <button className={!state.passkeys.length && !state.totp ? 'button primary' : 'button'} type="submit" disabled={state.passkeys.length >= 5}>패스키 추가</button>
+          </div>
         </form>
         {state.totp ? <div className="actions"><span>인증 앱 등록됨</span><button type="button" className="button" disabled={!!removalReason} aria-describedby={removalReason ? 'factor-removal-reason' : undefined} onClick={() => {
           void run(async () => { await call('/security/totp/remove', {}); setCode('') }, '인증 앱을 삭제했어요.', '등록한 인증 앱을 삭제할까요?')
@@ -180,13 +187,13 @@ export function ProSecurity({ api, userId, csrf, disabled, onExpired, onDeleted 
           </form>
         </div>}
       </fieldset>
-      <fieldset className="plain-fieldset pro-panel" disabled={locked}>
+      <fieldset className="plain-fieldset pro-security-section" disabled={locked}>
         <legend>파일을 받을 내 기기</legend>
-        <p>브라우저마다 별도 기기로 등록해요. 패스키는 파일을 여는 키를 복구하지 않아요. 공용 PC에서는 기기를 등록하지 마세요.</p>
+        <p className="help">브라우저마다 별도로 등록해요. 패스키로 파일 키를 복구할 수 없으니 공용 PC에서는 등록하지 마세요.</p>
         {localError && <Notice error>{localError}</Notice>}
         {!state.canRegisterDevice && <Notice>워크스페이스에 참여한 뒤 기기를 등록할 수 있어요. 참여 후 보안 상태를 다시 조회해주세요.</Notice>}
         {mine && <p>현재 브라우저: {mine.status === 'active' ? '사용 가능' : mine.status === 'pending' ? '기존 기기의 승인 대기' : '회수됨'}</p>}
-        {localFingerprint && <CopyField label="이 기기의 지문 · 기존 기기에서 승인할 때 확인" value={localFingerprint} />}
+        {localFingerprint && <details className="pro-settings-section" open={mine?.status === 'pending'}><summary>이 브라우저의 기기 지문</summary><CopyField label="이 기기의 지문 · 기존 기기에서 승인할 때 확인" value={localFingerprint} /></details>}
         {!mine && !localError && <div className="actions">
           <button className={state.passkeys.length || state.totp ? 'button primary' : 'button'} type="button" disabled={!state.canRegisterDevice} onClick={() => { void run(() => deviceAction('register'), '기기 등록 상태를 확인해주세요. 추가 기기는 기존 기기에서 승인해야 해요.') }}>이 브라우저 등록</button>
           {state.devices.length > 0 && <button className="button" type="button" disabled={!state.canRegisterDevice} onClick={() => {
@@ -202,22 +209,25 @@ export function ProSecurity({ api, userId, csrf, disabled, onExpired, onDeleted 
         }}>이 브라우저 등록 해제</button></div>}
         {mine?.status === 'pending' && <p>기존 기기가 없다면 본인 확인 후 이 브라우저 키를 삭제하고 ‘모든 기기를 잃었어요’를 선택해주세요.</p>}
         <ul className="pro-members">{state.devices.map(device => <li key={device.identity.deviceId}>
-          <span className="security-device">{device.identity.deviceId === local?.deviceId ? '현재 기기' : '다른 기기'} · {device.status === 'active' ? '사용 가능' : device.status === 'pending' ? '승인 대기' : '회수됨'}<code>{device.identity.deviceId}</code></span>
+          <div className="security-device"><strong>{device.identity.deviceId === local?.deviceId ? '현재 기기' : '다른 기기'}</strong> <span className="pro-badge">{device.status === 'active' ? '사용 가능' : device.status === 'pending' ? '승인 대기' : '회수됨'}</span><details><summary>기기 식별 정보 · {device.identity.deviceId.slice(0, 8)}</summary><code>{device.identity.deviceId}</code></details></div>
           {mine?.status === 'active' && device.status !== 'revoked' && <div className="actions">
-            {device.status === 'pending' && <button className="button" type="button" onClick={() => { setSelection({ action: 'approve', device }); setFingerprint('') }}>승인</button>}
+            {device.status === 'pending' && <button className="button" type="button" onClick={() => { setSelection({ action: 'approve', device }); setFingerprint(''); setPinOwn(false) }}>승인</button>}
             <button className="button" type="button" onClick={() => { setSelection({ action: 'revoke', device }); setFingerprint('') }}>회수</button>
           </div>}
         </li>)}</ul>
         {selection && <form className="pro-form" onSubmit={event => { event.preventDefault(); void run(() => deviceAction(selection.action, selection.device), selection.action === 'approve' ? '기기를 승인했어요.' : '기기를 회수했어요.') }}>
           <p>{selection.device.identity.deviceId} 기기를 {selection.action === 'approve' ? '승인' : '회수'}할까요?</p>
-          {selection.action === 'approve' ? <><label htmlFor="device-fingerprint">새 기기 화면에서 확인한 지문</label><input id="device-fingerprint" value={fingerprint} autoComplete="off" spellCheck={false} required maxLength={43} onChange={event => setFingerprint(event.target.value)} /></> : <p>회수하면 이 기기로 새 파일을 받을 수 없어요. 이미 받은 파일은 원격으로 삭제할 수 없어요.</p>}
+          {selection.action === 'approve' ? <><label htmlFor="device-fingerprint">새 기기 화면에서 확인한 지문</label><input id="device-fingerprint" value={fingerprint} autoComplete="off" spellCheck={false} required maxLength={43} onChange={event => setFingerprint(event.target.value)} />
+            <label className="pro-check"><input type="checkbox" checked={pinOwn} onChange={event => setPinOwn(event.target.checked)} />이 브라우저에서 환경 파일 키 접근을 이 기기에 제공할 수 있게 지문을 저장</label></> : <p>회수하면 이 기기로 새 파일을 받을 수 없어요. 이미 받은 파일은 원격으로 삭제할 수 없어요.</p>}
           <div className="actions"><button className="button" type="submit">{selection.action === 'approve' ? '승인 확인' : '회수 확인'}</button><button className="button" type="button" onClick={() => setSelection(null)}>취소</button></div>
         </form>}
       </fieldset>
-      <details className="pro-panel pro-danger-zone"><summary>계정 삭제</summary>
+      <details className="pro-settings-section pro-danger-zone"><summary>계정 삭제</summary>
       <fieldset className="plain-fieldset" disabled={locked}>
         <legend>계정 삭제</legend>
         <p>모든 워크스페이스 참여와 인증 수단·기기를 삭제하고 모든 로그인 세션을 종료해요. 마지막 Owner라면 팀 설정에서 Owner 이전 또는 워크스페이스 삭제가 먼저 필요해요. 다른 사람의 계정과 워크스페이스는 유지돼요.</p>
+        {!!state.accountDeletionPublishedEnvironmentCount && <Notice error>내가 게시한 최신 환경 파일 {state.accountDeletionPublishedEnvironmentCount}개가 종료되고 팀원이 더 이상 받을 수 없어요. 삭제 전에 다른 권한자가 원본을 새 키로 다시 게시하도록 안내해주세요. 워크스페이스 탈퇴만 필요하다면 계정 삭제 대신 탈퇴를 사용하세요.</Notice>}
+        <p>내가 게시한 환경 파일은 게시가 종료되고, 내가 제공하거나 받은 키 접근도 삭제돼요.</p>
         <p>관련 전달은 즉시 차단하고 남은 암호문은 24시간 안에 삭제해요. 최소 보안 기록은 30일, 암호화된 메타데이터 백업은 최대 7일 남을 수 있어요. 복원 때도 삭제 상태를 우선 적용해요.</p>
         <form className="pro-form" onSubmit={event => { event.preventDefault(); if (deletion !== '계정 삭제') return; void run(async () => {
           await call('/auth/account/remove', {})
@@ -233,7 +243,7 @@ export function ProSecurity({ api, userId, csrf, disabled, onExpired, onDeleted 
       </fieldset>
       </details>
     </>}
-    {local && <div className="pro-form">
+    {local && <details className="pro-settings-section"><summary>서버 연결 없이 이 브라우저의 키 삭제</summary><div className="pro-form">
       <p>연결할 수 없다면 이 브라우저의 키와 신뢰 기록만 삭제할 수 있어요. 서버 회수는 완료되지 않으니 연결 복구 후 다른 등록 기기에서 회수하거나 모든 기기 복구를 진행해주세요.</p>
       <button type="button" className="button" disabled={busy} onClick={() => {
         void run(async () => {
@@ -242,6 +252,6 @@ export function ProSecurity({ api, userId, csrf, disabled, onExpired, onDeleted 
           setLocal(undefined); setLocalFingerprint(''); setSelection(null)
         }, '로컬 키와 신뢰 기록을 삭제했어요. 서버의 기기 회수는 완료되지 않았어요.', '로컬 키만 삭제할까요? 과거 파일을 열 수 없게 돼요. 서버의 기기 회수는 완료되지 않아요.', false)
       }}>로컬 키만 삭제</button>
-    </div>}
+    </div></details>}
   </section>
 }

@@ -82,7 +82,7 @@ export async function verifyTransferAcknowledgementRetry() {
     await until(() => !!button('파일 다운로드·검사') && idle())
     button('파일 다운로드·검사')!.click()
     await until(() => acknowledgements === 1 && !!button('수신 확인 다시 보내기') && idle())
-    check(host.textContent?.includes('config/.env') && downloads === 1 && done === 0, 'ACK failure must retain the decrypted file without claiming completion')
+    check(host.querySelector<HTMLInputElement>('.received-files input[readonly]')?.value === 'config/.env' && !!host.querySelector('button[aria-label="config/.env 다운로드"]') && downloads === 1 && done === 0, 'ACK failure must retain the decrypted file without claiming completion')
     info.status = 'revoked'; button('수신 확인 다시 보내기')!.click()
     await until(() => idle() && host.textContent?.includes('수신 확인을 남길 수 없어요.') === true)
     check(acknowledgements === 1 && ackProofs === 1 && downloads === 1, 'Retry must inspect current permission and stop before proving or ACKing a revoked transfer')
@@ -94,7 +94,7 @@ export async function verifyTransferAcknowledgementRetry() {
     await until(() => acknowledgements === 2 && !!releaseAck)
     check(downloads === 1 && ackProofs === 2 && retry.matches(':disabled'), 'Rapid ACK retries must re-prove once without re-downloading or duplicating the report')
     releaseAck!(); await until(() => done === 1 && !button('수신 확인 다시 보내기') && idle())
-    check(host.textContent?.includes('config/.env') && downloads === 1, 'Successful ACK retry must preserve the open file and notify its parent once')
+    check(host.querySelector<HTMLInputElement>('.received-files input[readonly]')?.value === 'config/.env' && !!host.querySelector('button[aria-label="config/.env 다운로드"]') && downloads === 1, 'Successful ACK retry must preserve the open file and notify its parent once')
     return { passed: true, checks: ['pinned peer proceeds directly', 'ACK failure preserves file', 'revoked/different transfer blocks ACK', 'retry re-proves without download', 'duplicate retries blocked'] }
   } finally { releaseAck?.(); root.unmount(); host.remove(); window.fetch = originalFetch; await Promise.all([deleteLocalDevice(senderId), deleteLocalDevice(userId)]) }
 }

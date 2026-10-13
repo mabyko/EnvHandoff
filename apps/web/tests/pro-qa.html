@@ -6,6 +6,7 @@
     <title>EnvHandoff Pro QA</title>
     <link rel="icon" href="data:," />
     <link rel="stylesheet" href="/src/index.css" />
+    <link rel="stylesheet" href="/src/styles/workspace.css" />
   </head>
   <body>
     <!-- Browser regressions mount their own screens and mock requests here. -->
@@ -16,6 +17,14 @@
         document.documentElement.dataset.theme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
         const { mountBetaQA } = await import('./pro-beta.browser.tsx')
         await mountBetaQA(false, true)
+      } else if (preview === 'files') {
+        document.documentElement.dataset.theme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+        const { mountPublishedFilesQA } = await import('./published-share-flow.browser.tsx')
+        await mountPublishedFilesQA()
+      } else if (preview === 'workspace') {
+        document.documentElement.dataset.theme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+        const { mountWorkspacePreview } = await import('./workspace-preview.tsx')
+        await mountWorkspacePreview()
       }
     </script>
   </body>

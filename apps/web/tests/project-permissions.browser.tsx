@@ -26,7 +26,7 @@ export async function verifyProjectPermissions() {
   const form = (suffix: string) => container.querySelector<HTMLFormElement>(`form[aria-label="qa-member ${suffix}"]`)!
   const box = (suffix: string, name: string) => form(suffix).querySelector<HTMLInputElement>(`input[name="${name}"]`)!
   const inheritance = () => form('환경 예외').querySelector<HTMLInputElement>('input:not([name])')!
-  const render = () => root.render(<ProCatalog api={api} orgId="10000000-0000-4000-8000-000000000001" csrf="test-only" members={[{ id: 'owner', login: 'qa-owner', role: 'owner' }, member]} route={{ page: 'projects', orgId: '10000000-0000-4000-8000-000000000001', id: project.id }} onNavigate={() => {}} disabled={false} onExpired={() => { throw new Error('Unexpected expiry') }} onTeamsChanged={async () => {}} />)
+  const render = () => root.render(<ProCatalog api={api} orgId="10000000-0000-4000-8000-000000000001" csrf="test-only" userId="owner" acceptNewTransfers={true} onExternalShare={() => {}} members={[{ id: 'owner', login: 'qa-owner', role: 'owner' }, member]} route={{ page: 'projects', orgId: '10000000-0000-4000-8000-000000000001', id: project.id }} onNavigate={() => {}} disabled={false} onExpired={() => { throw new Error('Unexpected expiry') }} onTeamsChanged={async () => {}} />)
   window.fetch = async (input, init) => {
     const path = String(input)
     if (!path.startsWith(api)) return originalFetch(input, init)
@@ -34,6 +34,7 @@ export async function verifyProjectPermissions() {
     const body = JSON.parse(init?.body as string)
     writes.push({ path, body })
     check(init?.method === 'POST' && new Headers(init.headers).get('x-csrf-token') === 'test-only', 'Permission writes require POST and CSRF')
+    if (path.endsWith(`/projects/${project.id}/teams`)) { project.teamIds = body.teamIds as string[]; return Response.json({ok:true}) }
     check(body.userId === member.id, 'Owner must never be a permission write target')
     const updated = { userId: member.id, receive: Number(body.receive), send: Number(body.send), externalShare: Number(body.externalShare) }
     if (path.endsWith(`/projects/${project.id}/permissions`)) project.grants = [updated]
@@ -45,8 +46,14 @@ export async function verifyProjectPermissions() {
     render(); await until(ready)
     check(!container.querySelector('form[aria-label^="qa-owner"]'), 'Owner must have no personal permission forms')
     check(container.textContent?.includes('Owner 자동 권한'), 'Effective rights must identify the Owner source')
+    check([...container.querySelectorAll<HTMLButtonElement>('.pro-environment button')].some(node => node.textContent?.startsWith('파일 열기')), 'Environment exposes the primary file action')
+    const settings = [...container.querySelectorAll('details')].find(item => item.querySelector('summary')?.textContent === '프로젝트 설정')!
+    check(!settings.open, 'Project settings starts collapsed behind environment actions')
+    settings.querySelector('summary')!.click()
+    await until(() => settings.open)
     const details = [...container.querySelectorAll('details')].find(item => item.querySelector('summary')?.textContent === '환경 설정·권한 예외')!
-    details.open = true
+    details.querySelector('summary')!.click()
+    await until(() => details.open)
     check(inheritance().checked && box('환경 예외', 'send').checked && box('환경 예외', 'send').disabled, 'Environment initially displays inherited rights')
     box('프로젝트 기본 권한', 'externalShare').click()
     form('프로젝트 기본 권한').requestSubmit()
@@ -62,10 +69,24 @@ export async function verifyProjectPermissions() {
     await until(() => writes.length === 4 && ready() && inheritance().checked)
     check(JSON.stringify(writes[3]!.body) === JSON.stringify({ userId: member.id, inherit: true }), 'Reset must send inheritance without stale flags')
     check(!box('환경 예외', 'receive').checked && box('환경 예외', 'externalShare').checked, 'Reset must display the latest project defaults')
+    const refresh = () => [...container.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === '설정 새로고침')!.click()
+    check(container.textContent?.includes('워크스페이스 전체 멤버') && !container.querySelector('input[name="team"]'), 'One connected default team has a clear static scope without a meaningless save form')
+    check(container.querySelector('.pro-environment')!.compareDocumentPosition(settings) & Node.DOCUMENT_POSITION_FOLLOWING, 'Environment file actions must come before project settings')
+    catalog.teams = []; project.teamIds = []; refresh()
+    await until(() => ready() && container.textContent!.includes('등록된 팀이 없어요'))
+    check(!container.querySelector('input[name="team"]') && ![...container.querySelectorAll('button')].some(node => node.textContent === '팀 연결 저장'), 'No teams must not render an empty scope save form')
+    catalog.teams = [{id:'team',name:'기본 팀',isDefault:1,members:[member.id]}]; refresh()
+    await until(() => ready() && container.textContent!.includes('현재 연결된 팀이 없어요'))
+    ;[...container.querySelectorAll<HTMLButtonElement>('button')].find(node => node.textContent === '워크스페이스 멤버 연결')!.click()
+    await until(() => ready() && writes.length === 5 && container.textContent!.includes('워크스페이스 전체 멤버'))
+    check(JSON.stringify(writes[4]!.body) === JSON.stringify({teamIds:['team']}), 'One disconnected team must use the explicit team connection endpoint')
+    catalog.teams.push({id:'backend',name:'백엔드 팀',isDefault:0,members:[member.id]}); refresh()
+    await until(() => ready() && container.querySelectorAll('input[name="team"]').length === 2)
+    check(container.textContent!.includes('프로젝트에 접근할 팀') && [...container.querySelectorAll<HTMLInputElement>('input[name="team"]')].map(node => node.value).join(',') === 'team,backend', 'Multiple teams must have concrete named selection controls')
     catalog.role = 'member'; project.grants = []; environment.permissionSource = 'project'
     ;[...container.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === '설정 새로고침')!.click()
     await until(() => ready() && !container.querySelector('form'))
     check(container.textContent?.includes('프로젝트 기본값'), 'Member must see its permission source without management forms')
-    return { passed: true, checks: ['Owner automatic rights without checkboxes', 'project permission save', 'environment inheritance', 'override survives project edits', 'reset inherits current defaults', 'Member read-only permission source'] }
+    return { passed: true, checks: ['Owner automatic rights without checkboxes', 'project permission save', 'environment inheritance', 'override survives project edits', 'reset inherits current defaults', 'environments before settings', 'zero team guidance without empty form', 'one team static scope and explicit reconnect', 'named multiple team scope', 'Member read-only permission source'] }
   } finally { root.unmount(); window.fetch = originalFetch; container.remove() }
 }

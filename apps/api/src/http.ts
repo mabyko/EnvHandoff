@@ -10,7 +10,7 @@ export function canonicalPath(target: string): string | null {
   return path === target.split('?')[0] ? path : null
 }
 
-export async function jsonBody(request: Request): Promise<Record<string, unknown>> {
+export async function jsonBody(request: Request, maxBytes = 8192): Promise<Record<string, unknown>> {
   if (request.headers.get('content-type')?.split(';')[0]?.trim() !== 'application/json') throw new HttpError(415, 'json_required')
   const reader = request.body?.getReader()
   if (!reader) throw new HttpError(400, 'invalid_input')
@@ -21,7 +21,7 @@ export async function jsonBody(request: Request): Promise<Record<string, unknown
       const { value, done } = await reader.read()
       if (done) break
       size += value.byteLength
-      if (size > 8192) { await reader.cancel(); throw new HttpError(413, 'body_too_large') }
+      if (size > maxBytes) { await reader.cancel(); throw new HttpError(413, 'body_too_large') }
       chunks.push(value)
     }
     const value: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'))

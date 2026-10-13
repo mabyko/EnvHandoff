@@ -31,6 +31,13 @@ export async function eraseOrganization(db:Database,id:string,at:number,now=Date
 export async function eraseUser(db:Database,id:string,at:number,now=Date.now()) {
   const existing=await db.get('SELECT github_id FROM users WHERE id=$1',id)
   await db.run('UPDATE users SET disabled=1 WHERE id=$1',id)
+  // Erasure removes historical public keys too; ordinary departure keeps team files.
+  const heads=await db.all<{environment_id:string}>('SELECT h.environment_id FROM environment_publication_heads h JOIN environment_versions v ON v.id=h.version_id WHERE v.publisher_user_id=$1',id)
+  for(const head of heads)await db.run("UPDATE environment_publication_heads SET version_id=NULL,generation=$1,end_reason='publisher_erased' WHERE environment_id=$2",randomUUID(),head.environment_id)
+  await db.run("UPDATE environment_versions SET ended_at=COALESCE(ended_at,$1),end_reason='publisher_erased',status=CASE WHEN status IN('reserved','writing') THEN 'cancelled' ELSE status END,publisher_identity='{}',signature='',publisher_user_id='',publisher_device_id='' WHERE publisher_user_id=$2",now,id)
+  await db.run("DELETE FROM environment_key_wraps WHERE recipient_user_id=$1 OR wrapper_user_id=$1 OR version_id IN(SELECT id FROM environment_versions WHERE end_reason='publisher_erased')",id)
+  await db.run("DELETE FROM environment_file_challenges WHERE version_id IN(SELECT id FROM environment_versions WHERE end_reason='publisher_erased') OR body::jsonb->'actor'->>'userId'=$1 OR body::jsonb->'target'->>'userId'=$1",id)
+
   await invalidateRequests(db,now,{userId:id})
   await db.run('DELETE FROM invitations WHERE issuer_id=$1 OR accepted_by=$1 OR target_id=(SELECT github_id FROM users WHERE id=$1)',id)
   await db.run('DELETE FROM oauth_flows WHERE previous_session IN(SELECT token_hash FROM sessions WHERE user_id=$1)',id)
@@ -110,6 +117,9 @@ export class Deletions {
       if(bound && bound.ledger_id!==ledgerId)throw unavailable()
       const known=await db.all<{kind:string;target_id:string;deleted_at:number;restored:boolean}>(`SELECT d.kind,d.target_id,d.deleted_at,
         CASE WHEN d.kind='user' THEN EXISTS(SELECT 1 FROM users u WHERE u.id=d.target_id)
+            OR EXISTS(SELECT 1 FROM environment_versions v WHERE v.publisher_user_id=d.target_id OR v.publisher_identity::jsonb->>'userId'=d.target_id)
+            OR EXISTS(SELECT 1 FROM environment_key_wraps w WHERE w.recipient_user_id=d.target_id OR w.wrapper_user_id=d.target_id)
+            OR EXISTS(SELECT 1 FROM environment_file_challenges c WHERE c.body::jsonb->'actor'->>'userId'=d.target_id OR c.body::jsonb->'target'->>'userId'=d.target_id)
           ELSE EXISTS(SELECT 1 FROM organizations o WHERE o.id=d.target_id AND o.active=1)
             OR EXISTS(SELECT 1 FROM memberships m WHERE m.org_id=d.target_id)
             OR EXISTS(SELECT 1 FROM teams t WHERE t.org_id=d.target_id)
@@ -118,6 +128,10 @@ export class Deletions {
             OR EXISTS(SELECT 1 FROM upload_cancellations c WHERE c.org_id=d.target_id)
             OR EXISTS(SELECT 1 FROM management_recovery_contacts c WHERE c.org_id=d.target_id)
             OR EXISTS(SELECT 1 FROM management_recoveries r WHERE r.org_id=d.target_id)
+            OR EXISTS(SELECT 1 FROM environment_versions v WHERE v.org_id=d.target_id AND v.ended_at IS NULL)
+            OR EXISTS(SELECT 1 FROM environment_publication_heads h WHERE h.org_id=d.target_id AND h.version_id IS NOT NULL)
+            OR EXISTS(SELECT 1 FROM environment_key_wraps w JOIN environment_versions v ON v.id=w.version_id WHERE v.org_id=d.target_id)
+            OR EXISTS(SELECT 1 FROM environment_file_challenges c JOIN environment_versions v ON v.id=c.version_id WHERE v.org_id=d.target_id)
           END AS restored FROM deletion_records d`)
       const indexed=new Map(entries.map(entry=>[entry.kind+':'+entry.id,entry.deletedAt]))
       for(const row of known)if(indexed.get(row.kind+':'+row.target_id)!==row.deleted_at)throw unavailable()

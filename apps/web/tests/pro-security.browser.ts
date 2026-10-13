@@ -8,7 +8,7 @@ export async function verifyFactorRemoval() {
   const container = document.createElement('div'); document.body.append(container)
   const root = createRoot(container), originalFetch = window.fetch, originalConfirm = window.confirm
   const api = '/__security-regression', userId = crypto.randomUUID()
-  const state = { passkeys: [{ id: 'test-key', label: '내 패스키' }], totp: false, totpAvailable: true, reauthenticatedUntil: 0, sessionHash: 'test-only', canRegisterDevice: false, devices: [] }
+  const state = { passkeys: [{ id: 'test-key', label: '내 패스키' }], totp: false, totpAvailable: true, reauthenticatedUntil: 0, sessionHash: 'test-only', canRegisterDevice: false, devices: [], accountDeletionPublishedEnvironmentCount: 2 }
   let requests = 0, confirmations = 0
   const check = (value: unknown, message: string) => { if (!value) throw new Error(message) }
   const until = async (condition: () => boolean) => {
@@ -52,6 +52,10 @@ export async function verifyFactorRemoval() {
   try {
     root.render(createElement(ProSecurity, { api, userId, csrf: 'test-only', disabled: false, onExpired: () => { throw new Error('Unexpected expiry') }, onDeleted: () => { throw new Error('Unexpected deletion') } }))
     await until(ready)
+    const deletion = container.querySelector<HTMLDetailsElement>('.pro-danger-zone')!
+    deletion.open = true
+    check(deletion.textContent!.includes('환경 파일 2개가 종료') && deletion.textContent!.includes('새 키로 다시 게시'), 'Account erasure must show the affected environment count and re-publication prerequisite')
+    deletion.open = false
     blocked('마지막 인증 수단')
     state.reauthenticatedUntil = Date.now() + 60_000; await refresh(); blocked('마지막 인증 수단')
     state.passkeys = []; state.totp = true; await refresh(); blocked('마지막 인증 수단')

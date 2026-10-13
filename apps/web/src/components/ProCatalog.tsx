@@ -1,9 +1,12 @@
 import { useEffect, useId, useRef, useState } from 'react'
+import { ArrowRight, ChevronLeft, Folder } from 'lucide-react'
 import { METADATA_LIMITS } from '@envhandoff/protocol'
 import { limitMessage, subscribeTabReturn } from '../lib/pro-feedback.ts'
 import { CopyField, Notice } from './ui.tsx'
 import { followProLink, proPath } from '../lib/pro-navigation.ts'
 import type { ProRoute } from '../lib/pro-navigation.ts'
+import type { SourceFile } from '../lib/bundle.ts'
+import { ProEnvironment } from './ProEnvironment.tsx'
 
 type Flags = { receive: boolean; send: boolean; externalShare: boolean }
 type Grant = { userId: string; receive: number; send: number; externalShare: number }
@@ -51,8 +54,9 @@ function PermissionForm({ login, defaults, override, environment = false, connec
   </form>
 }
 
-export function ProCatalog({ api, orgId, csrf, members, route, onNavigate, disabled, onExpired, onTeamsChanged }: {
-  api: string; orgId: string; csrf: string; members: { id: string; login: string; role: string }[]; disabled: boolean; onExpired: () => void; onTeamsChanged: () => Promise<void>
+export function ProCatalog({ api, orgId, csrf, userId, members, route, onNavigate, disabled, acceptNewTransfers, onExpired, onTeamsChanged, onExternalShare }: {
+  api: string; orgId: string; csrf: string; userId: string; members: { id: string; login: string; role: string }[]; disabled: boolean; acceptNewTransfers: boolean
+  onExpired: () => void; onTeamsChanged: () => Promise<void>; onExternalShare: (files: SourceFile[], environmentId: string) => void
   route: ProRoute; onNavigate: (route: ProRoute) => void
 }) {
   const [data, setData] = useState<Catalog | null>(null)
@@ -114,41 +118,33 @@ export function ProCatalog({ api, orgId, csrf, members, route, onNavigate, disab
   const fileMembers = members.filter(member => member.role !== 'owner')
   const connected = (userId: string) => !!project && !!data?.teams.some(team => project.teamIds.includes(team.id) && team.members.includes(userId))
   const projectsRoute: ProRoute = {page:'projects',orgId}
+  const selected = project && route.environmentId ? project.environments.find(env => env.id === route.environmentId) : undefined
+  const projectRoute: ProRoute = {page:'projects',orgId,id:route.id}
+  const Title = route.page === 'team' ? 'h3' : 'h2'
+  const environments = project ? selected ? [selected] : route.environmentId ? [] : project.environments : []
   return <section className="pro-catalog pro-page" aria-busy={busy || disabled} aria-label={route.page === 'team' ? '팀 구성' : '프로젝트와 환경'}>
     {error && <Notice error>{error}</Notice>}
-    <header className="pro-page-header"><div>{route.id && <a className="pro-back" href={proPath(projectsRoute)} onClick={event => followProLink(event,projectsRoute,onNavigate)}>프로젝트 목록</a>}<h2>{route.page === 'team' ? '팀 구성' : project?.name ?? (route.id ? '프로젝트 상세' : '프로젝트')}</h2><p>{route.page === 'team' ? '멤버를 팀으로 묶고 프로젝트 참여 범위를 정하세요.' : route.id ? '프로젝트 기본 권한과 환경별 예외를 확인하고 파일을 주고받으세요.' : '팀에서 공유하는 개발 환경을 한곳에서 확인하세요.'}</p></div><button type="button" className="button" disabled={busy || disabled} onClick={() => { void refresh.current() }}>설정 새로고침</button></header>
+    <header className={route.page === 'team' ? 'pro-section-header pro-team-header' : 'pro-page-header'}><div>{route.id && (route.environmentId ? <a className="pro-back" href={proPath(projectRoute)} onClick={event => followProLink(event,projectRoute,onNavigate)}><ChevronLeft aria-hidden="true" />{project?.name ?? '프로젝트'} 환경 목록</a> : <a className="pro-back" href={proPath(projectsRoute)} onClick={event => followProLink(event,projectsRoute,onNavigate)}><ChevronLeft aria-hidden="true" />프로젝트 목록</a>)}<Title>{route.page === 'team' ? '팀 구성' : selected ? `${project!.name} · ${selected.name}` : project?.name ?? (route.id ? '프로젝트 상세' : '프로젝트')}</Title><p>{route.page === 'team' ? '멤버를 팀으로 묶고 프로젝트 참여 범위를 정하세요.' : selected ? '최신 설정 파일과 배치 경로를 확인하세요.' : route.id ? '환경을 열어 팀이 게시한 설정 파일을 받거나 게시하세요.' : '팀에서 공유하는 개발 환경을 한곳에서 확인하세요.'}</p></div>{!selected && <button type="button" className="button" disabled={busy || disabled} onClick={() => { void refresh.current() }}>설정 새로고침</button>}</header>
     <p className="pro-status-line" role="status">{busy ? '설정을 확인하고 있어요.' : message}</p>
     {route.page === 'projects' && <>
+    {/* File work stays separate from settings refresh, including upload cancellation. */}
+    {project && selected?.permissions.receive && <ProEnvironment key={[userId, csrf, orgId, project.id, selected.id].join(':')} api={api} orgId={orgId} projectId={project.id} environmentId={selected.id} project={project.name} environment={selected.name} userId={userId} csrf={csrf} acceptNewTransfers={acceptNewTransfers} disabled={disabled} onExpired={onExpired} onNavigate={onNavigate} onExternalShare={onExternalShare} />}
     <fieldset className="plain-fieldset" disabled={busy || disabled}>
       <legend className="sr-only">프로젝트와 환경</legend>
       {data?.projects.length === 0 && <div className="pro-empty-state"><h3>{owner ? '첫 프로젝트를 등록해보세요' : '아직 연결된 프로젝트가 없어요'}</h3><p>{owner ? '아래에서 프로젝트를 만든 뒤 개발·운영 환경과 파일 권한을 설정하세요.' : 'Owner에게 팀 연결을 요청해주세요.'}</p>{!owner && <CopyField label="Owner에게 보낼 안내" value="워크스페이스에 참여했지만 연결된 프로젝트가 없어요. 제 팀 소속과 프로젝트 참여 범위를 확인해주세요." />}</div>}
-      {!route.id && <div className="pro-project-grid">{data?.projects.map(item => <a className="pro-project-card" key={item.id} href={proPath({...projectsRoute,id:item.id})} onClick={event => followProLink(event,{...projectsRoute,id:item.id},onNavigate)}><h3>{item.name}</h3><p>환경 {item.environments.length}개</p><span>프로젝트 열기</span></a>)}</div>}
+      {!route.id && <div className="pro-project-grid">{data?.projects.map(item => <a className="pro-project-card" key={item.id} href={proPath({...projectsRoute,id:item.id})} onClick={event => followProLink(event,{...projectsRoute,id:item.id},onNavigate)}><span className="pro-project-icon"><Folder aria-hidden="true" /></span><div><h3>{item.name}</h3>{item.environments.length ? <p className="pro-chips">{item.environments.map(env => <span className="pro-chip" key={env.id}>{env.name}</span>)}</p> : <p>환경을 추가해 파일 공유를 시작하세요</p>}</div><span className="pro-meta">환경 {item.environments.length}개 <ArrowRight aria-hidden="true" /></span></a>)}</div>}
+      {route.environmentId && project && !selected && <Notice error>환경을 찾을 수 없거나 접근 권한이 없어요. 프로젝트에서 다시 선택해주세요.</Notice>}
       {route.id && data && !project && <Notice error>프로젝트를 찾을 수 없거나 접근 권한이 없어요. 목록에서 다시 선택해주세요.</Notice>}
       {project && <article className="pro-project" key={project.id}>
-        {owner && <details><summary>프로젝트 설정</summary>
-          <NameForm key={project.name} label="프로젝트 이름" initial={project.name} save={(name) => mutate(`/projects/${project.id}/rename`, { name })} />
-          {(multipleTeams || project.teamIds.length === 0) && <form className="pro-form" key={project.teamIds.join(',')} onSubmit={(event) => { event.preventDefault(); void mutate(`/projects/${project.id}/teams`, { teamIds: new FormData(event.currentTarget).getAll('team') }) }}>
-            <fieldset className="plain-fieldset"><legend>프로젝트 참여 범위</legend>{data.teams.map((team) => <label className="pro-check" key={team.id}><input type="checkbox" name="team" value={team.id} defaultChecked={project.teamIds.includes(team.id)} />{multipleTeams ? team.name : '워크스페이스 멤버'}</label>)}</fieldset>
-            <button className="button" type="submit">참여 범위 저장</button>
-          </form>}
-          <DeleteButton label={`${project.name} 프로젝트와 하위 환경·권한 설정`} remove={async () => {const ok=await mutate(`/projects/${project.id}/remove`, {});if(ok)onNavigate(projectsRoute);return ok}} />
-        </details>}
-        {owner && <section className="pro-panel" aria-label="프로젝트 기본 파일 권한">
-          <h3>프로젝트 기본 파일 권한</h3>
-          <p>Owner는 받기·보내기·외부 공유를 모두 사용할 수 있어요. 별도로 자기 권한을 설정할 필요가 없어요.</p>
-          {!!fileMembers.length && <><p>팀원 권한은 여기서 한 번 설정하세요. 새 환경에도 적용되며, 환경에 별도 예외가 있으면 그 설정을 따라요.</p>
-            {fileMembers.map(member => {
-              const grant = project.grants?.find(item => item.userId === member.id)
-              return <PermissionForm key={member.id + JSON.stringify(grant) + connected(member.id)} login={member.login} defaults={grantFlags(grant)} connected={connected(member.id)} save={flags => mutate(`/projects/${project.id}/permissions`, { userId: member.id, ...flags })} />
-            })}</>}
-        </section>}
-        {project.environments.length === 0 && <div className="pro-empty-state"><h3>아직 등록된 환경이 없어요</h3><p>{owner ? '아래에서 development, staging처럼 팀에서 쓰는 환경을 추가하세요.' : 'Owner에게 환경 등록과 파일 권한을 요청해주세요.'}</p>{!owner && <CopyField label="Owner에게 보낼 안내" value={`${project.name}에 등록된 환경이 없어요. 필요한 환경을 등록하고 제 받기 권한을 확인해주세요.`} />}</div>}
-        {project.environments.map((env) => <div className="pro-environment" key={env.id}>
-          <h3>{env.name}</h3><p>내 파일 권한: {Object.entries(permissionLabels).filter(([key]) => env.permissions[key as keyof Flags]).map(([, label]) => label).join(' · ') || '모두 꺼짐'} · {permissionSources[env.permissionSource] ?? (owner ? permissionSources.owner : permissionSources.project)}</p>
+        {!route.environmentId && <div className="pro-section-header"><div><h3>환경</h3><p>파일을 받거나 게시할 환경을 선택하세요.</p></div><span className="pro-meta">{project.environments.length}개 환경</span></div>}
+        {!route.environmentId && project.environments.length === 0 && <div className="pro-empty-state"><h3>아직 등록된 환경이 없어요</h3><p>{owner ? '아래에서 development, staging처럼 팀에서 쓰는 환경을 추가하세요.' : 'Owner에게 환경 등록과 파일 권한을 요청해주세요.'}</p>{!owner && <CopyField label="Owner에게 보낼 안내" value={`${project.name}에 등록된 환경이 없어요. 필요한 환경을 등록하고 제 받기 권한을 확인해주세요.`} />}</div>}
+        {environments.map((env) => <div className="pro-environment" key={env.id}>
+          <div className="pro-section-header"><div><h3>{selected ? '내 파일 권한' : env.name}</h3><p>{Object.entries(permissionLabels).filter(([key]) => env.permissions[key as keyof Flags]).map(([, label]) => label).join(' · ') || '파일 권한 없음'} <span className="pro-meta">· {permissionSources[env.permissionSource] ?? (owner ? permissionSources.owner : permissionSources.project)}</span></p></div>{!selected && env.permissions.receive && <button className="button" type="button" onClick={() => onNavigate({...projectRoute,environmentId:env.id})}>파일 열기 <ArrowRight aria-hidden="true" /></button>}</div>
           {env.name.length > METADATA_LIMITS.environment && <Notice error>이 환경 이름은 파일 전달에 사용할 수 있는 길이를 넘었어요. {owner ? '환경 설정에서 48자 이하로 바꿔주세요.' : 'Owner에게 환경 이름을 48자 이하로 바꿔달라고 요청해주세요.'}</Notice>}
-          <div className="actions">{env.permissions.receive && <button className="button primary" type="button" onClick={() => onNavigate({page:'requests',orgId,create:true,environmentId:env.id})}>파일 요청</button>}{env.permissions.externalShare && <button className="button" type="button" onClick={() => onNavigate({page:'shares',orgId,create:true,environmentId:env.id})}>외부 공유 만들기</button>}</div>
+          {selected && <p className="help">특정 팀원에게 한 번만 받으려면 <button className="text-button" type="button" onClick={() => onNavigate({page:'requests',orgId,create:true,environmentId:env.id})}>파일 요청</button>을 사용하세요.</p>}
           {!owner && !env.permissions.receive && <Notice>이 환경의 받기 권한이 없어 파일을 요청할 수 없어요.<CopyField label="Owner에게 보낼 안내" value={`${project.name} / ${env.name}의 파일을 요청하려는데 받기 권한이 없어요. 제 프로젝트 기본 받기 권한과 이 환경의 권한 예외를 확인해주세요.`} /></Notice>}
-          {owner && <details><summary>환경 설정·권한 예외</summary>
+          {owner && <details className="pro-settings-section"><summary>환경 설정·권한 예외</summary>
+            {selected && <button type="button" className="button" onClick={() => { void refresh.current() }}>설정 새로고침</button>}
             <NameForm key={env.name} label="환경 이름" initial={env.name} maxLength={METADATA_LIMITS.environment} save={(name) => mutate(`/environments/${env.id}/rename`, { name })} />
             {!!fileMembers.length && <p>이 환경에서만 권한을 다르게 정할 때 기본값 사용을 해제하세요. 예외는 프로젝트 기본 권한이 바뀌어도 유지돼요.</p>}
             {fileMembers.map((member) => {
@@ -159,9 +155,20 @@ export function ProCatalog({ api, orgId, csrf, members, route, onNavigate, disab
             <DeleteButton label={`${env.name} 환경과 권한 설정`} remove={() => mutate(`/environments/${env.id}/remove`, {})} />
           </details>}
         </div>)}
-        {owner && <NameForm label="새 환경 이름" maxLength={METADATA_LIMITS.environment} save={(name) => mutate(`/projects/${project.id}/environments`, { name })} />}
+        {owner && !route.environmentId && <details className="pro-settings-section pro-create-section" open={project.environments.length === 0}><summary>환경 추가</summary><NameForm label="새 환경 이름" maxLength={METADATA_LIMITS.environment} save={(name) => mutate(`/projects/${project.id}/environments`, { name })} /></details>}
+        {owner && !route.environmentId && <details className="pro-settings-section"><summary>프로젝트 설정</summary>
+          <section className="pro-settings-group"><h4>프로젝트 이름</h4><NameForm key={project.name} label="프로젝트 이름" initial={project.name} save={(name) => mutate(`/projects/${project.id}/rename`, { name })} /></section>
+          <section className="pro-settings-group"><h4>프로젝트에 접근할 팀</h4><p className="help">연결된 팀의 멤버에게 프로젝트가 보여요. 파일 받기·게시 권한은 아래에서 별도로 설정하세요.</p>
+            {!data.teams.length ? <p>등록된 팀이 없어요. <button className="text-button" type="button" onClick={() => onNavigate({page:'team',orgId})}>멤버·팀에서 팀 만들기</button></p>
+              : data.teams.length === 1 && project.teamIds.includes(data.teams[0].id) ? <p className="pro-access-summary">{data.teams[0].isDefault ? '워크스페이스 전체 멤버' : data.teams[0].name}</p>
+              : data.teams.length === 1 ? <div className="pro-form"><p>현재 연결된 팀이 없어요.</p><button className="button" type="button" onClick={() => { void mutate(`/projects/${project.id}/teams`, {teamIds:[data.teams[0].id]}) }}>{data.teams[0].isDefault ? '워크스페이스 멤버 연결' : `${data.teams[0].name} 연결`}</button></div>
+              : <form className="pro-form" key={project.teamIds.join(',')} onSubmit={event => { event.preventDefault(); void mutate(`/projects/${project.id}/teams`, {teamIds:new FormData(event.currentTarget).getAll('team')}) }}><fieldset className="plain-fieldset"><legend className="sr-only">프로젝트에 접근할 팀</legend>{data.teams.map(team => <label className="pro-check" key={team.id}><input type="checkbox" name="team" value={team.id} defaultChecked={project.teamIds.includes(team.id)} />{team.name}</label>)}</fieldset><button className="button" type="submit">팀 연결 저장</button></form>}
+          </section>
+          <section className="pro-settings-group" aria-label="프로젝트 기본 파일 권한"><h4>프로젝트 기본 파일 권한</h4><p className="help">Owner는 모든 파일 작업을 사용할 수 있어요. 팀원 권한은 새 환경에도 적용되며, 환경별 예외를 설정할 수 있어요.</p>{!fileMembers.length && <p>권한을 설정할 팀원이 아직 없어요.</p>}{fileMembers.map(member => { const grant = project.grants?.find(item => item.userId === member.id); return <PermissionForm key={member.id + JSON.stringify(grant) + connected(member.id)} login={member.login} defaults={grantFlags(grant)} connected={connected(member.id)} save={flags => mutate(`/projects/${project.id}/permissions`, {userId:member.id,...flags})} /> })}</section>
+          <section className="pro-settings-group pro-danger-zone"><h4>프로젝트 삭제</h4><p className="help">하위 환경과 권한 설정도 함께 삭제돼요.</p><DeleteButton label={`${project.name} 프로젝트와 하위 환경·권한 설정`} remove={async () => { const ok = await mutate(`/projects/${project.id}/remove`, {}); if(ok) onNavigate(projectsRoute); return ok }} /></section>
+        </details>}
       </article>}
-      {!route.id && owner && data && <details className="pro-panel" open={data.projects.length === 0}><summary>프로젝트 추가</summary><form className="pro-form" onSubmit={(event) => {
+      {!route.id && owner && data && <details className="pro-settings-section pro-create-section" open={data.projects.length === 0}><summary>프로젝트 추가</summary><form className="pro-form" onSubmit={(event) => {
         event.preventDefault(); const form = event.currentTarget, values = new FormData(form)
         void mutate('/projects', { name: values.get('name'), ...(data.teams.length > 1 ? { teamIds: values.getAll('team') } : {}) }).then((ok) => { if (ok) form.reset() })
       }}><div className="pro-field"><label htmlFor="new-project-name">프로젝트 이름</label><input id="new-project-name" name="name" required maxLength={80} placeholder="예: 팀 웹 서비스" /></div>
@@ -169,9 +176,8 @@ export function ProCatalog({ api, orgId, csrf, members, route, onNavigate, disab
         <button type="submit" className="button primary">프로젝트 추가</button>
       </form></details>}
     </fieldset>
-    <Notice>Owner는 모든 파일 작업을 할 수 있어요. 팀원은 프로젝트 기본 권한을 따르고, 필요한 환경에서만 예외를 설정해요. 받기·보내기·외부 공유는 각각 독립적이에요.</Notice>
     </>}
-    {route.page === 'team' && data && <fieldset className="plain-fieldset pro-panel" disabled={busy || disabled}><legend>팀 구성</legend>
+    {route.page === 'team' && data && <fieldset className="plain-fieldset pro-panel" disabled={busy || disabled}><legend className="sr-only">팀 구성</legend>
         {!multipleTeams && <p>현재 하나의 팀을 사용하고 있어요. {owner ? '별도 팀이 필요하면 아래에서 추가하세요.' : '팀을 나누려면 Owner에게 요청해주세요.'}</p>}
         {multipleTeams && data.teams.map((team) => <div className="pro-project" key={team.id}><h3>{team.name}</h3>
           {owner && <>
@@ -182,7 +188,7 @@ export function ProCatalog({ api, orgId, csrf, members, route, onNavigate, disab
             {!team.isDefault && <DeleteButton label={`${team.name} 팀과 프로젝트 연결`} remove={() => mutate(`/teams/${team.id}/remove`, {}, true)} />}
           </>}{!owner && <p>{team.members.map(id=>members.find(member=>member.id===id)?.login).filter(Boolean).join(' · ') || '등록된 멤버 없음'}</p>}
         </div>)}
-        {owner && <details><summary>새 팀 만들기</summary><NameForm label="새 팀 이름" save={(name) => mutate('/teams', { name }, true)} /></details>}
+        {owner && <details className="pro-settings-section pro-create-section"><summary>새 팀 만들기</summary><NameForm label="새 팀 이름" save={(name) => mutate('/teams', { name }, true)} /></details>}
     </fieldset>}
   </section>
 }

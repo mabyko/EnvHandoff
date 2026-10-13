@@ -27,3 +27,7 @@ export function previewText(bytes: Uint8Array): { text: string; truncated: boole
     return null
   }
 }
+
+export function formatTime(value: number): string {
+  return new Date(value).toLocaleString('ko-KR', { dateStyle: 'medium', timeStyle: 'short' })
+}

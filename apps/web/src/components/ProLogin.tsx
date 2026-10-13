@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { ArrowRight, Info, LogOut, Settings, ShieldCheck } from 'lucide-react'
 import { Notice } from './ui.tsx'
 import { ProOrganizations } from './ProOrganizations.tsx'
@@ -11,7 +12,7 @@ import { pendingInvitation } from '../lib/invitation.ts'
 const api = import.meta.env.VITE_PRO_API_ORIGIN ?? (import.meta.env.DEV ? 'http://localhost:3001' : 'https://api.envhandoff.mabyko.com')
 type Session = { user: { id: string; login: string }; csrf: string; expiresAt: number; acceptNewTransfers?: boolean }
 
-export function ProLogin() {
+export function ProLogin({ brand, themeToggle }: { brand?: ReactNode; themeToggle?: ReactNode } = {}) {
   const [route, setRoute] = useState(pendingProRoute)
   const [initialToken, setInitialToken] = useState(pendingInvitation)
   const [session, setSession] = useState<Session | null>()
@@ -37,10 +38,11 @@ export function ProLogin() {
   }
   function navigate(next: ProRoute) {
     const path = proPath(next)
-    if (restoring.current || !canNavigate(next)) return
-    if (currentRoute.current && proPath(currentRoute.current) === path) return
+    if (restoring.current || !canNavigate(next)) return false
+    if (currentRoute.current && proPath(currentRoute.current) === path) return true
     history.pushState({ envhandoffProIndex: ++historyIndex.current }, '', path)
     setRoute(next)
+    return true
   }
   function resolveOrganization(orgId: string) {
     const previous = currentRoute.current
@@ -164,7 +166,7 @@ export function ProLogin() {
   return (
     <section className="pro-app" aria-busy={busy}>
       <div className="pro-topbar">
-        <div><p className="pro-eyebrow">TEAM WORKSPACE</p><h1>EnvHandoff <span>Pro</span> <small className="pro-badge">BETA</small></h1>
+        <div className="pro-topbar-brand">{brand}{brand && <span className="pro-topbar-divider" aria-hidden="true">/</span>}<h1>팀 워크스페이스 <small className="pro-badge">Beta</small></h1>
           <div className="pro-header-status">
             {session?.acceptNewTransfers === false && <details className="pro-service-status"
               onBlur={event => { if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false }}
@@ -175,7 +177,8 @@ export function ProLogin() {
             <span className="pro-session-status" role="status">{busy ? authAction === 'start' ? 'GitHub로 이동 중…' : authAction === 'logout' ? '로그아웃 중…' : '로그인 확인 중…' : ''}</span>
           </div>
         </div>
-        {session && <div className="pro-account"><span className="pro-account-name">{session.user.login}</span><a className="text-button" href={proPath(settingsRoute)} aria-current={route?.page === 'settings' ? 'page' : undefined} onClick={event => followProLink(event, settingsRoute, navigate)}><Settings aria-hidden="true" />내 설정</a><button type="button" className="text-button" disabled={busy} onClick={() => { void act('logout') }}><LogOut aria-hidden="true" />로그아웃</button></div>}
+        {session && <div className="pro-account"><span className="pro-account-name">{session.user.login}</span><a className="text-button" href={proPath(settingsRoute)} aria-current={route?.page === 'settings' ? 'page' : undefined} onClick={event => followProLink(event, settingsRoute, navigate)}><Settings aria-hidden="true" />내 설정</a><button type="button" className="text-button" disabled={busy} onClick={() => { void act('logout') }}><LogOut aria-hidden="true" />로그아웃</button>{themeToggle}</div>}
+        {!session && themeToggle && <div className="pro-account">{themeToggle}</div>}
       </div>
       {error && <Notice error>{error}</Notice>}
       {sessionUnavailable && <Notice error>서버에 연결하지 못해 작업을 잠시 멈췄어요. 이 탭의 파일과 코드는 유지돼요. <button className="button" type="button" disabled={busy} onClick={() => refreshSession.current()}>연결 다시 확인</button></Notice>}
@@ -187,8 +190,8 @@ export function ProLogin() {
           <div>
             <p className="pro-entry-kicker"><ShieldCheck aria-hidden="true" />팀을 위한 설정 파일 공유</p>
             <div className="pro-entry-intro">
-              <h2>팀의 설정,<br />필요할 때 요청하세요.</h2>
-              <p className="lead">매번 누구에게 물어볼지 찾지 않아도 돼요. 팀의 프로젝트에서 필요한 설정을 요청하고 받아보세요.</p>
+              <h2>팀의 설정 파일을<br />한곳에서 공유하세요.</h2>
+              <p className="lead">프로젝트와 환경별 파일을 게시하고, 필요한 설정과 배치 경로를 확인하세요.</p>
             </div>
             <button type="button" className="button primary" disabled={busy} onClick={() => { void act('start') }}>
               {authAction === 'start' ? 'GitHub로 이동 중…' : 'GitHub로 로그인'}<ArrowRight aria-hidden="true" />
@@ -197,7 +200,7 @@ export function ProLogin() {
           </div>
           <ol className="pro-entry-steps" aria-label="팀에서 시작하는 방법">
             <li><span aria-hidden="true">01</span><div><strong>팀에 참여하기</strong><p>GitHub로 로그인하고 받은 초대를 수락해요.</p></div></li>
-            <li><span aria-hidden="true">02</span><div><strong>필요한 설정 요청하기</strong><p>프로젝트와 환경을 골라 팀원에게 요청해요.</p></div></li>
+            <li><span aria-hidden="true">02</span><div><strong>프로젝트의 파일 열기</strong><p>환경을 선택해 게시 파일을 받거나 추가해요.</p></div></li>
             <li><span aria-hidden="true">03</span><div><strong>받아서 프로젝트에 넣기</strong><p>승인된 브라우저에서 열고 원본을 다운로드해요.</p></div></li>
           </ol>
         </div>

@@ -106,7 +106,7 @@ export class Transfers {
       return this.summary(prior)
     }
     if (!this.acceptNewTransfers) throw new HttpError(503, 'beta_closed')
-    if (await this.db.get('SELECT 1 FROM external_shares WHERE id=$1',uploadId)) throw new HttpError(409,'operation_conflict')
+    if (await this.db.get('SELECT 1 FROM stored_objects WHERE id=$1',uploadId)) throw new HttpError(409,'operation_conflict')
     if (r.status !== 'approved') throw new HttpError(409, 'request_closed')
     if (await this.db.get("SELECT 1 FROM uploads WHERE request_id=$1 AND status IN ('reserved','writing','committed')", r.id)) throw new HttpError(409, 'upload_in_progress')
     const quota = await this.db.get<{ bytes: number; active: number }>("SELECT COALESCE(sum(size) FILTER(WHERE deleted_at IS NULL),0)::bigint AS bytes,count(*) FILTER(WHERE status IN ('reserved','writing')) AS active FROM stored_objects WHERE org_id=$1", r.org_id)
