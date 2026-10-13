@@ -111,12 +111,22 @@ export default function App() {
   }
 
   const brand = (
-    <button type="button" className="brand" onClick={home} aria-label="EnvHandoff 소개 홈">
+    <a
+      className="brand"
+      href="/"
+      aria-label="EnvHandoff 소개 홈"
+      onClick={event => {
+        // Modified clicks open home elsewhere; ordinary clicks keep the work-loss check.
+        if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+        event.preventDefault()
+        home()
+      }}
+    >
       <span className="brand-mark">
         <ArrowRightLeft aria-hidden="true" />
       </span>
       EnvHandoff
-    </button>
+    </a>
   )
   const themeToggle = (
     <button
