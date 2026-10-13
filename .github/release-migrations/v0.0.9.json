@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "release": "v0.0.9",
+  "baselineSha": "e26ef92a6c9f7386a3f8a2e8df26326e3e22cf23",
+  "deployRef": "release/v0.0.9",
+  "deployVersion": "0.0.9",
+  "migrations": {
+    "apps/api/sql/012-environment-files.sql": "c283f4bd1806ee16e020a80b502ec638a770f5165931aeaa08697be5eee8ec33"
+  },
+  "manualPreflight": [
+    "The operator acknowledges this exact candidate SHA only after completing the separately reviewed private preflight; this manifest is not evidence that those operations ran.",
+    "Confirm production still runs the v0.0.8 baseline SHA at schema version 11, the PostgreSQL container/volume and encrypted-object storage are unchanged, and the independent deletion ledger is healthy.",
+    "Prepare an encrypted policy-compliant metadata and schema backup privately with at most 7 days retention; exclude share token hashes, sessions, challenges and retry records, environment_key_wraps and environment_file_challenges. Never roll back the independent deletion ledger.",
+    "Gate external API changes for this API domain and confirm the old API process has stopped before the candidate starts; keep the cookie-less /auth/session check and container health available.",
+    "Keep maintenance in place until schema version 12, the five environment publication tables, the upload_cancellations publication kind, deletion-ledger health, API health and the matching web/relay release are verified. Require stale clients to reload.",
+    "After migrations commit, recovery is forward-only: keep traffic gated and the old API stopped on failure. Do not automatically restore the old API image; database disaster recovery requires the separately reviewed restore-safe procedure."
+  ]
+}

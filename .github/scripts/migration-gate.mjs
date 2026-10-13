@@ -5,9 +5,9 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
-const baseline = 'c4cbc4d6c9a15f246f515ac6d14ac32049a2eb6c'
-const manifestPath = '.github/release-migrations/v0.0.7.json'
-const migrationPaths = ['apps/api/sql/010-project-permissions.sql', 'apps/api/sql/011-upload-cancellations.sql']
+const baseline = 'e26ef92a6c9f7386a3f8a2e8df26326e3e22cf23'
+const manifestPath = '.github/release-migrations/v0.0.9.json'
+const migrationPaths = ['apps/api/sql/012-environment-files.sql']
 const digest = bytes => createHash('sha256').update(bytes).digest('hex')
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] })
 
@@ -22,14 +22,14 @@ function gate(env, cwd = process.cwd(), expectedBaseline = baseline) {
   const delta = changes(['apps/api/sql'])
   if (!delta) return 'none'
   assert.equal(current, expectedBaseline, 'Unreviewed migration baseline')
-  assert.equal(ref, 'release/v0.0.7', 'Unreviewed migration release')
-  assert.equal(version, '0.0.7', 'Unreviewed migration version')
+  assert.equal(ref, 'release/v0.0.9', 'Unreviewed migration release')
+  assert.equal(version, '0.0.9', 'Unreviewed migration version')
   assert.equal(acknowledgement, target, 'Exact deployment SHA requires completed manual migration preflight')
   git(cwd, 'merge-base', '--is-ancestor', current, target)
-  assert.deepEqual(delta.split('\n').sort(), migrationPaths.map(path => `A\t${path}`).sort(), 'Only the two reviewed migration additions are permitted')
+  assert.deepEqual(delta.split('\n').sort(), migrationPaths.map(path => `A\t${path}`).sort(), 'Only the reviewed migration addition is permitted')
   const manifest = JSON.parse(git(cwd, 'show', `${target}:${manifestPath}`).toString())
   assert.equal(manifest.schemaVersion, 1)
-  assert.equal(manifest.release, 'v0.0.7')
+  assert.equal(manifest.release, 'v0.0.9')
   assert.equal(manifest.baselineSha, current, 'Stale migration manifest baseline')
   assert.equal(manifest.deployRef, ref)
   assert.equal(manifest.deployVersion, version)
@@ -40,11 +40,11 @@ function gate(env, cwd = process.cwd(), expectedBaseline = baseline) {
     assert(/^[a-f0-9]{64}$/.test(manifest.migrations[path]), 'Invalid pinned migration digest')
     assert.equal(digest(git(cwd, 'show', `${target}:${path}`)), manifest.migrations[path], 'Migration content differs from its reviewed digest')
   }
-  return 'v0.0.7'
+  return 'v0.0.9'
 }
 
 function selfTest() {
-  const manifest = JSON.parse(readFileSync(new URL('../release-migrations/v0.0.7.json', import.meta.url), 'utf8'))
+  const manifest = JSON.parse(readFileSync(new URL('../release-migrations/v0.0.9.json', import.meta.url), 'utf8'))
   for (const path of migrationPaths) assert.equal(digest(readFileSync(new URL('../../' + path, import.meta.url))), manifest.migrations[path], 'Checked-out SQL must match the release manifest')
   const cwd = mkdtempSync(join(tmpdir(), 'envhandoff-migration-gate-'))
   const put = (path, content) => { mkdirSync(dirname(join(cwd, path)), { recursive: true }); writeFileSync(join(cwd, path), content) }
@@ -60,12 +60,12 @@ function selfTest() {
     const env = { CURRENT_DEPLOY_SHA: base, DEPLOY_SHA: base }
     assert.equal(gate(env, cwd, base), 'none')
     put('unrelated.txt', 'An unreviewed current deployment\n'); const wrongBaseline = commit()
-    const sql = ['SELECT 10;\n', 'SELECT 11;\n']
+    const sql = ['SELECT 12;\n']
     manifest.baselineSha = base
     for (const [index, path] of migrationPaths.entries()) { put(path, sql[index]); manifest.migrations[path] = digest(sql[index]) }
     put(manifestPath, JSON.stringify(manifest)); const candidate = commit()
-    Object.assign(env, { DEPLOY_SHA: candidate, DEPLOY_REF: 'release/v0.0.7', DEPLOY_VERSION: '0.0.7', MIGRATION_PREFLIGHT_SHA: candidate })
-    assert.equal(gate(env, cwd, base), 'v0.0.7')
+    Object.assign(env, { DEPLOY_SHA: candidate, DEPLOY_REF: 'release/v0.0.9', DEPLOY_VERSION: '0.0.9', MIGRATION_PREFLIGHT_SHA: candidate })
+    assert.equal(gate(env, cwd, base), 'v0.0.9')
     for (const mutation of [
       { CURRENT_DEPLOY_SHA: candidate }, { DEPLOY_REF: 'release/v0.0.8' }, { DEPLOY_VERSION: '0.0.8' },
       { MIGRATION_PREFLIGHT_SHA: '' }, { MIGRATION_PREFLIGHT_SHA: base }, { DEPLOY_SHA: base },
@@ -82,9 +82,8 @@ function selfTest() {
       const target = commit()
       assert.throws(() => gate({ ...env, DEPLOY_SHA: target, MIGRATION_PREFLIGHT_SHA: target }, cwd, base))
     }
-    rejectChange(migrationPaths[0], 'SELECT 12;\n')
-    rejectChange(migrationPaths[1], null)
-    rejectChange('apps/api/sql/012-unreviewed.sql', 'SELECT 12;\n')
+    rejectChange(migrationPaths[0], 'SELECT 13;\n')
+    rejectChange('apps/api/sql/013-unreviewed.sql', 'SELECT 13;\n')
     rejectChange('apps/api/sql/001-initial.sql', 'SELECT 2;\n')
     rejectChange('compose.production.yaml', 'services: {changed: {}}\n')
     rejectChange(manifestPath, JSON.stringify({ ...manifest, baselineSha: '0'.repeat(40) }))
