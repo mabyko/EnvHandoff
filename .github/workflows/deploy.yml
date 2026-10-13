@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       migration_preflight_sha:
-        description: 'Reviewed v0.0.7 migration only: exact SHA after operator maintenance and encrypted permission backup'
+        description: 'Reviewed v0.0.9 migration only: exact SHA after operator maintenance and encrypted metadata backup'
         required: false
         type: string
 
@@ -144,7 +144,7 @@ jobs:
           current_sha=$(jq -er '.commitSha | select(test("^[a-f0-9]{40}$"))' "$temporary/current.json")
           git cat-file -e "$current_sha^{commit}" \
             || { echo '::error::Current deployment commit is unavailable; stop for operator review'; exit 1; }
-          # Only the separately reviewed v0.0.7 migration accepts an exact-SHA
+          # Only the separately reviewed v0.0.9 migration accepts an exact-SHA
           # preflight acknowledgement. Every other schema/Compose delta fails closed.
           CURRENT_DEPLOY_SHA="$current_sha" node .github/scripts/migration-gate.mjs
           # Keep the existing database and persistent stack; only deploy the API service.
